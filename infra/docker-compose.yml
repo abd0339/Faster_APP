@@ -1,23 +1,26 @@
 version: '3.8'
 
 services:
-  # The Vault (Permanent Database)
+
+  # ─── PostgreSQL Database ───────────────────────────
   postgres:
-    image: postgres:15
-    container_name: super_app_db
+    image: postgres:latest
+    container_name: faster_postgres
+    restart: always
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: logistics_db
+      POSTGRES_DB: faster_db
+      POSTGRES_USER: faster_user
+      POSTGRES_PASSWORD: ***REMOVED***
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # The Fast-Track (Live Cache)
+  # ─── Redis (Live GPS Storage) ──────────────────────
   redis:
     image: redis:alpine
-    container_name: super_app_redis
+    container_name: faster_redis
+    restart: always
     ports:
       - "6379:6379"
 
