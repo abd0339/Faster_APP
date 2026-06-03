@@ -4,7 +4,7 @@ services:
 
   # ─── PostgreSQL Database ───────────────────────────
   postgres:
-    image: postgres:latest
+    image: postgres:16
     container_name: faster_postgres
     restart: always
     environment:
@@ -12,7 +12,7 @@ services:
       POSTGRES_USER: faster_user
       POSTGRES_PASSWORD: ***REMOVED***
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
