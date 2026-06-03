@@ -1,12 +1,14 @@
 package com.faster.backend.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Email;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "users")
@@ -20,54 +22,74 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // ─── Identity ──────────────────────────────────
+    // ─── Identity ───────────────────────────────────
+    @Column(nullable = false)
+    private String fullName;
+
     @Column(nullable = false, unique = true)
     private String phone;
 
-    // Email is optional but recommended for receipts & recovery
-    @Column(unique = true)
+    @Email
+    @Column(nullable = false, unique = true)
     private String email;
 
     @Column(nullable = false)
     private String password;
 
-    @Column(nullable = false)
-    private String fullName;
-
-    // ─── Role: MERCHANT | DRIVER | CUSTOMER ────────
+    // ─── Role ────────────────────────────────────────
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;
 
-    // ─── Driver-specific fields ─────────────────────
-    // Current debt the driver owes the platform (20%)
-    @Builder.Default
-    private BigDecimal debtAmount = BigDecimal.ZERO;
-
-    // When debt hits $20, this becomes true → no new orders
-    @Builder.Default
-    private Boolean isBlocked = false;
-
-    // Driver mode: PEOPLE | PACKAGE | HYBRID
-    @Enumerated(EnumType.STRING)
-    private DriverMode driverMode;
-
-    // Is the driver currently online?
-    @Builder.Default
-    private Boolean isOnline = false;
-
-    // ─── Account status ─────────────────────────────
+    // ─── Account Status ──────────────────────────────
     @Builder.Default
     private Boolean isActive = true;
 
-    // ─── The Role Enum (inside same file) ───────────
+    // Is email verified?
+    @Builder.Default
+    private Boolean isEmailVerified = false;
+
+    // Is phone verified?
+    @Builder.Default
+    private Boolean isPhoneVerified = false;
+
+    // ─── Driver-specific fields ──────────────────────
+    @Builder.Default
+    private BigDecimal debtAmount = BigDecimal.ZERO;
+
+    @Builder.Default
+    private Boolean isBlocked = false;
+
+    @Enumerated(EnumType.STRING)
+    private DriverMode driverMode;
+
+    @Builder.Default
+    private Boolean isOnline = false;
+
+    // ─── Timestamps ──────────────────────────────────
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    // ─── Enums ───────────────────────────────────────
     public enum Role {
         MERCHANT,
         DRIVER,
         CUSTOMER
     }
 
-    // ─── Driver Mode Enum ───────────────────────
     public enum DriverMode {
         PEOPLE,
         PACKAGE,
