@@ -36,7 +36,9 @@ public class SecurityConfig {
                 .requestMatchers(
                     "/api/auth/register",
                     "/api/auth/login",
-                    "/tracking/public/**"   // offline customer tracking link
+                    "/tracking/public/**",
+                    "/api/store/**",
+                    "/uploads/**"
                 ).permitAll()
 
                 // MERCHANT only routes
