@@ -1,10 +1,31 @@
 package com.faster.backend.entity;
 
-import jakarta.persistence.*;
-import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "items", indexes = {
@@ -16,6 +37,8 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties({"hibernateLazyInitializer",
+                       "handler"})
 public class Item {
 
     @Id
@@ -25,11 +48,14 @@ public class Item {
     // ─── Owner ───────────────────────────────────────
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "merchant_id", nullable = false)
+    @JsonIgnore
     private User merchant;
 
     // ─── Category ────────────────────────────────────
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = false)
+    @JsonIgnoreProperties({"items", "merchant",
+                            "hibernateLazyInitializer"})
     private Category category;
 
     // ─── Basic Info ──────────────────────────────────
@@ -87,16 +113,19 @@ public class Item {
     @OneToMany(mappedBy = "item",
                cascade = CascadeType.ALL,
                fetch = FetchType.LAZY)
+    @JsonIgnore
     private List<ItemModifierGroup> modifierGroups;
 
     @OneToMany(mappedBy = "item",
                cascade = CascadeType.ALL,
                fetch = FetchType.LAZY)
+    @JsonIgnore
     private List<ItemAddon> addons;
 
     @OneToMany(mappedBy = "item",
                cascade = CascadeType.ALL,
                fetch = FetchType.LAZY)
+    @JsonIgnore
     private List<ScheduledDiscount> scheduledDiscounts;
 
     // ─── Timestamps ──────────────────────────────────

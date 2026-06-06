@@ -1,5 +1,8 @@
 package com.faster.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
@@ -22,6 +25,7 @@ public class Offer {
     // ─── Which merchant created this offer ──────────
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "merchant_id", nullable = false)
+    @JsonIgnore
     private User merchant;
 
     // ─── Offer details ───────────────────────────────
