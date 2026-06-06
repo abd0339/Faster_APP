@@ -1,5 +1,9 @@
 package com.faster.backend.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.hibernate6.Hibernate6Module;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +21,15 @@ import java.time.Duration;
 @EnableCaching
 public class RedisConfig {
 
+    // ─── ObjectMapper with JavaTimeModule for Redis ───
+    private GenericJackson2JsonRedisSerializer redisSerializer() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.registerModule(new Hibernate6Module());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return new GenericJackson2JsonRedisSerializer(mapper);
+    }
+
     // ─── General purpose Redis template ──────────────
     @Bean
     public RedisTemplate<String, Object> redisTemplate(
@@ -25,15 +38,10 @@ public class RedisConfig {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(factory);
 
-        // Keys as plain strings
         template.setKeySerializer(new StringRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());
-
-        // Values as JSON
-        template.setValueSerializer(
-                new GenericJackson2JsonRedisSerializer());
-        template.setHashValueSerializer(
-                new GenericJackson2JsonRedisSerializer());
+        template.setValueSerializer(redisSerializer());
+        template.setHashValueSerializer(redisSerializer());
 
         template.afterPropertiesSet();
         return template;
@@ -46,15 +54,13 @@ public class RedisConfig {
 
         RedisCacheConfiguration config = RedisCacheConfiguration
                 .defaultCacheConfig()
-                // Cache expires after 5 minutes
                 .entryTtl(Duration.ofMinutes(5))
                 .serializeKeysWith(
                     RedisSerializationContext.SerializationPair
                         .fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(
                     RedisSerializationContext.SerializationPair
-                        .fromSerializer(
-                            new GenericJackson2JsonRedisSerializer()));
+                        .fromSerializer(redisSerializer()));
 
         return RedisCacheManager.builder(factory)
                 .cacheDefaults(config)
