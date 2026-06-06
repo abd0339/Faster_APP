@@ -38,7 +38,8 @@ public class SecurityConfig {
                     "/api/auth/login",
                     "/tracking/public/**",
                     "/api/store/**",
-                    "/uploads/**"
+                    "/uploads/**",
+                    "/ws/**"
                 ).permitAll()
 
                 // MERCHANT only routes
