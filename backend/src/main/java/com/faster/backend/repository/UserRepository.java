@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
@@ -21,4 +22,25 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     // Find user by email (for future email login option)
     Optional<User> findByEmail(String email);
+
+    // ─── Find all active users by role ───────────────
+    // Used by LedgerService daily merchant commission job
+    List<User> findByRoleAndIsActiveTrue(User.Role role);
+
+    // ─── Find users by role ───────────────────────────
+    List<User> findByRole(User.Role role);
+
+    // ─── Count by role ────────────────────────────────
+    long countByRole(User.Role role);
+
+    // ─── Count blocked drivers ────────────────────────
+    long countByIsBlockedTrue();
+
+    // ─── Count online drivers ─────────────────────────
+    long countByIsOnlineTrue();
+
+    // ─── Find blocked drivers ─────────────────────────
+    List<User> findByRoleAndIsBlockedTrue(
+            User.Role role);
+
 }

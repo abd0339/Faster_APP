@@ -100,7 +100,8 @@ public class User {
     public enum Role {
         MERCHANT,
         DRIVER,
-        CUSTOMER
+        CUSTOMER,
+        ADMIN
     }
 
     public enum DriverMode {

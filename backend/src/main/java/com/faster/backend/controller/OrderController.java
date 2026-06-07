@@ -47,6 +47,7 @@ public class OrderController {
                     req.getOfflineCustomerPhone(),
                     req.getOfflineLandmark(),
                     req.getTotalPrice(),
+                    req.getDeliveryFee(),
                     req.getPickupLat(),
                     req.getPickupLng(),
                     req.getPickupAddress());
@@ -57,6 +58,7 @@ public class OrderController {
                     user.getId(),
                     user.getId(),
                     req.getTotalPrice(),
+                    req.getDeliveryFee(),
                     req.getPickupLat(),
                     req.getPickupLng(),
                     req.getPickupAddress(),

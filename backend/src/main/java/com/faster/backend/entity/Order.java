@@ -16,7 +16,9 @@ import java.time.LocalDateTime;
     @Index(name = "idx_order_status",
            columnList = "status"),
     @Index(name = "idx_order_tracking",
-           columnList = "tracking_code")
+           columnList = "tracking_code"),
+    @Index(name = "idx_order_created",
+           columnList = "created_at")
 })
 @Data
 @Builder
@@ -31,7 +33,7 @@ public class Order {
     private Long id;
 
     // ─── Unique tracking code for O2O link ───────────
-    // e.g. "FST-20260606-A3X9"
+    // Format: FST-20260606-A3X9
     @Column(nullable = false, unique = true)
     private String trackingCode;
 
@@ -44,16 +46,16 @@ public class Order {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "driver_id")
     @JsonIgnoreProperties({"password", "debtAmount",
-                            "isBlocked", "hibernateLazyInitializer"})
+                            "isBlocked",
+                            "hibernateLazyInitializer"})
     private User driver;
 
-    // ─── Customer info (app user or offline) ─────────
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "customer_id")
     @JsonIgnore
     private User customer;
 
-    // ─── Offline customer (O2O bridge) ───────────────
+    // ─── O2O Bridge (offline customer) ───────────────
     // Used when merchant creates order for phone customer
     private String offlineCustomerPhone;
     private String offlineCustomerLandmark;
@@ -70,26 +72,53 @@ public class Order {
     @Builder.Default
     private OrderStatus status = OrderStatus.PENDING;
 
-    // ─── Financials ───────────────────────────────────
-    // Total price customer pays
-    @Column(nullable = false, precision = 10, scale = 2)
+    // ─── FINANCIALS ───────────────────────────────────
+
+    // Product value only (what driver pays merchant)
+    @Column(nullable = false,
+            name = "total_price",
+            precision = 10, scale = 2)
     private BigDecimal totalPrice;
 
-    // Platform commission (20% of total)
-    @Column(precision = 10, scale = 2)
-    private BigDecimal commissionAmount;
+    // Delivery fee charged to customer
+    // This is what the driver earns per trip
+    @Builder.Default
+    @Column(name = "delivery_fee",
+            precision = 10, scale = 2)
+    private BigDecimal deliveryFee = BigDecimal.ZERO;
 
-    // Amount driver pays merchant at pickup
-    @Column(precision = 10, scale = 2)
-    private BigDecimal driverPaysMerchant;
+    // Platform commission = 20% of delivery fee ONLY
+    // Auto-calculated on order creation
+    @Builder.Default
+    @Column(name = "commission_amount",
+            precision = 10, scale = 2)
+    private BigDecimal commissionAmount = BigDecimal.ZERO;
+
+    // Grand total customer pays
+    // = totalPrice + deliveryFee
+    @Builder.Default
+    @Column(name = "grand_total",
+            precision = 10, scale = 2)
+    private BigDecimal grandTotal = BigDecimal.ZERO;
+
+    // What driver pays merchant at pickup (= totalPrice)
+    @Builder.Default
+    @Column(name = "driver_pays_merchant",
+            precision = 10, scale = 2)
+    private BigDecimal driverPaysMerchant = BigDecimal.ZERO;
+
+    // Merchant daily commission = 10% of daily sales
+    // Calculated and stored per order for daily totals
+    @Builder.Default
+    @Column(name = "merchant_commission",
+            precision = 10, scale = 2)
+    private BigDecimal merchantCommission = BigDecimal.ZERO;
 
     // ─── Location data ────────────────────────────────
-    // Pickup location (merchant address)
     private Double pickupLat;
     private Double pickupLng;
     private String pickupAddress;
 
-    // Delivery location (customer address)
     private Double deliveryLat;
     private Double deliveryLng;
     private String deliveryAddress;
@@ -99,11 +128,10 @@ public class Order {
     private LocalDateTime pickedUpAt;
     private LocalDateTime deliveredAt;
 
-    // Estimated prep time in minutes
     @Builder.Default
     private Integer estimatedPrepMinutes = 15;
 
-    // ─── Notes ───────────────────────────────────────
+    // ─── Notes & Dispute ─────────────────────────────
     @Column(columnDefinition = "TEXT")
     private String customerNotes;
 
@@ -126,21 +154,21 @@ public class Order {
         updatedAt = LocalDateTime.now();
     }
 
-    // ─── Order Type Enum ─────────────────────────────
+    // ─── Order Type ───────────────────────────────────
     public enum OrderType {
         LOGISTICS,   // Package delivery
         MOBILITY     // People transport
     }
 
-    // ─── Order Status Enum ───────────────────────────
+    // ─── Order Status ─────────────────────────────────
     public enum OrderStatus {
         PENDING,           // Waiting for driver
         ACCEPTED,          // Driver accepted
         PREPARING,         // Merchant preparing
         READY_FOR_PICKUP,  // Ready at merchant
-        PICKED_UP,         // Driver has it
-        DELIVERED,         // Done ✅
-        CANCELLED,         // Cancelled
-        DISPUTED           // Problem reported
+        PICKED_UP,         // Driver has the package
+        DELIVERED,         // Completed ✅
+        CANCELLED,         // Cancelled ❌
+        DISPUTED           // Problem reported ⚠️
     }
 }
