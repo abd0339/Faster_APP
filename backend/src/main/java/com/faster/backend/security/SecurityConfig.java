@@ -45,10 +45,12 @@ public class SecurityConfig {
                 // MERCHANT only routes
                 .requestMatchers("/api/merchant/**")
                     .hasRole("MERCHANT")
-
-                // DRIVER only routes
+                //DRIVER only routes
                 .requestMatchers("/api/driver/**")
                     .hasRole("DRIVER")
+                //Admin only routes 
+                .requestMatchers("/api/admin/**")
+                    .hasRole("ADMIN")
 
                 // Everything else needs a valid token
                 .anyRequest().authenticated()

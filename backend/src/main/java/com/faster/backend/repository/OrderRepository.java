@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -96,4 +97,34 @@ public interface OrderRepository
     java.math.BigDecimal sumDriverCommission(
             @Param("driverId") Long driverId,
             @Param("from") LocalDateTime from);
+
+        // ─── Count by status ──────────────────────────────
+    long countByStatus(Order.OrderStatus status);
+
+    // ─── Find by status ordered ───────────────────────
+    List<Order> findByStatusOrderByCreatedAtDesc(
+            Order.OrderStatus status);
+
+    // ─── Count orders created today ───────────────────
+    long countByCreatedAtBetween(
+            LocalDateTime from,
+            LocalDateTime to);
+
+    // ─── Count delivered orders today ────────────────
+    long countByStatusAndDeliveredAtBetween(
+            Order.OrderStatus status,
+            LocalDateTime from,
+            LocalDateTime to);
+
+    // ─── Merchant daily sales total ──────────────────
+    @Query("SELECT COALESCE(SUM(o.totalPrice), 0) " +
+           "FROM Order o " +
+           "WHERE o.merchant.id = :merchantId " +
+           "AND o.status = 'DELIVERED' " +
+           "AND o.deliveredAt >= :from " +
+           "AND o.deliveredAt < :to")
+    BigDecimal getMerchantDailySales(
+            @Param("merchantId") Long merchantId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 }
