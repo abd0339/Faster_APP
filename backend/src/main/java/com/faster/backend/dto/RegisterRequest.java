@@ -37,10 +37,11 @@ public class RegisterRequest {
     private String password;
 
     // ─── Role ────────────────────────────────────────
+    // ─── Role ────────────────────────────────────────
     @NotBlank(message = "Role is required")
     @Pattern(
-        regexp = "^(MERCHANT|DRIVER|CUSTOMER)$",
-        message = "Role must be MERCHANT, DRIVER, or CUSTOMER"
+        regexp = "^(MERCHANT|DRIVER|CUSTOMER|ADMIN)$",
+         message = "Role must be MERCHANT, DRIVER, CUSTOMER, or ADMIN"
     )
     private String role;
 }
