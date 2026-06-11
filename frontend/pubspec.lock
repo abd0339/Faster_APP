@@ -1289,10 +1289,10 @@ packages:
     dependency: "direct main"
     description:
       name: stomp_dart_client
-      sha256: "8779d1383f0a6faa0623af27ab6d4b228ab76c75020d9a83ade5ee204eac5153"
+      sha256: "54a73fd73f160a2956036fa39539e283f58535c3e84bff3a40e16003dd320123"
       url: "https://pub.dev"
     source: hosted
-    version: "0.4.4"
+    version: "3.0.1"
   stream_channel:
     dependency: transitive
     description:
@@ -1509,6 +1509,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  web_socket:
+    dependency: transitive
+    description:
+      name: web_socket
+      sha256: "34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   web_socket_channel:
     dependency: transitive
     description:

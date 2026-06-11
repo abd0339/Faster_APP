@@ -6,6 +6,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../driver/screens/driver_profile_screen.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
@@ -145,12 +146,12 @@ class _LoginScreenState extends State<LoginScreen>
                           const SizedBox(height: 32),
 
                           // ─── Title ────────────
-                          Text(
+                          const Text(
                             'Welcome back',
                             style: AppTextStyles.displayMedium,
                           ),
                           const SizedBox(height: 8),
-                          Text(
+                          const Text(
                             'Sign in to continue',
                             style: AppTextStyles.bodyMedium,
                           ),
@@ -328,16 +329,37 @@ class _LoginScreenState extends State<LoginScreen>
 
   // ─── Navigate by role ─────────────────────────────
   void _navigateByRole(BuildContext context, String role) {
-    // Will be replaced with proper router in Step 7
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('✅ Logged in as $role — Router coming next!'),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
+    Widget destination;
+
+    switch (role) {
+      case 'DRIVER':
+        // Driver goes to profile completion first
+        // Will be replaced with verification check in router
+        destination = const DriverProfileScreen();
+        break;
+      default:
+        // Merchant, Customer, Admin → show snackbar for now
+        // Full dashboards coming next
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Logged in as $role — Dashboard coming next!'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+        return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+                value: context.read<AuthBloc>(),
+                child: destination,
+              )),
     );
   }
 }

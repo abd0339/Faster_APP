@@ -106,7 +106,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ─── Role selector ────────────
-                  Text(
+                  const Text(
                     'I am a...',
                     style: AppTextStyles.headlineSmall,
                   ),

@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/services/api_service.dart';
 import 'core/services/storage_service.dart';
+import 'core/router/app_router.dart';
 import 'features/auth/bloc/auth_bloc.dart';
-import 'features/auth/screens/login_screen.dart';
+import 'features/auth/bloc/auth_event.dart';
 import 'shared/theme/app_theme.dart';
 import 'core/constants/app_colors.dart';
 
@@ -35,8 +36,10 @@ void main() async {
     );
   }
 
+  // ─── Initialize services ──────────────────────────
   await ApiService.instance.init();
 
+  // ─── Check existing session ───────────────────────
   final isLoggedIn = await StorageService.instance.isLoggedIn();
   final role = await StorageService.instance.getRole();
 
@@ -59,12 +62,17 @@ class FasterApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => AuthBloc(),
+      create: (_) {
+        final bloc = AuthBloc();
+        // Auto-check session on startup
+        bloc.add(CheckAuthStatus());
+        return bloc;
+      },
       child: MaterialApp(
         title: 'Faster',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const LoginScreen(),
+        home: const AppRouter(),
       ),
     );
   }
