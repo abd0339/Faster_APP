@@ -34,22 +34,19 @@ public class AdminController {
 
     // GET /api/admin/stats
     @GetMapping("/stats")
-    public ResponseEntity<AdminStatsResponse>
-            getStats() {
+    public ResponseEntity<AdminStatsResponse> getStats() {
         return ResponseEntity.ok(
-            adminService.getPlatformStats());
+                adminService.getPlatformStats());
     }
 
     // GET /api/admin/revenue
     @GetMapping("/revenue")
     public ResponseEntity<?> getRevenue(
-            @RequestParam(required = false)
-                LocalDateTime from,
-            @RequestParam(required = false)
-                LocalDateTime to) {
+            @RequestParam(required = false) LocalDateTime from,
+            @RequestParam(required = false) LocalDateTime to) {
         return ResponseEntity.ok(
-            ledgerService.getPlatformRevenue(
-                from, to));
+                ledgerService.getPlatformRevenue(
+                        from, to));
     }
 
     // ─────────────────────────────────────────────────
@@ -58,79 +55,68 @@ public class AdminController {
 
     // GET /api/admin/users
     @GetMapping("/users")
-    public ResponseEntity<List<AdminUserResponse>>
-            getAllUsers() {
+    public ResponseEntity<List<AdminUserResponse>> getAllUsers() {
         return ResponseEntity.ok(
-            adminService.getAllUsers());
+                adminService.getAllUsers());
     }
 
     // GET /api/admin/users/{id}
     @GetMapping("/users/{id}")
-    public ResponseEntity<AdminUserResponse>
-            getUser(@PathVariable Long id) {
+    public ResponseEntity<AdminUserResponse> getUser(@PathVariable Long id) {
         return ResponseEntity.ok(
-            adminService.getUserById(id));
+                adminService.getUserById(id));
     }
 
     // GET /api/admin/drivers
     @GetMapping("/drivers")
-    public ResponseEntity<List<AdminUserResponse>>
-            getAllDrivers() {
+    public ResponseEntity<List<AdminUserResponse>> getAllDrivers() {
         return ResponseEntity.ok(
-            adminService.getAllDrivers());
+                adminService.getAllDrivers());
     }
 
     // GET /api/admin/drivers/blocked
     @GetMapping("/drivers/blocked")
-    public ResponseEntity<List<AdminUserResponse>>
-            getBlockedDrivers() {
+    public ResponseEntity<List<AdminUserResponse>> getBlockedDrivers() {
         return ResponseEntity.ok(
-            adminService.getBlockedDrivers());
+                adminService.getBlockedDrivers());
     }
 
     // GET /api/admin/merchants
     @GetMapping("/merchants")
-    public ResponseEntity<List<AdminUserResponse>>
-            getAllMerchants() {
+    public ResponseEntity<List<AdminUserResponse>> getAllMerchants() {
         return ResponseEntity.ok(
-            adminService.getUsersByRole(
-                User.Role.MERCHANT));
+                adminService.getUsersByRole(
+                        User.Role.MERCHANT));
     }
 
     // PATCH /api/admin/users/{id}/block
     @PatchMapping("/users/{id}/block")
     public ResponseEntity<?> blockUser(
             @PathVariable Long id) {
-        AdminUserResponse user =
-            adminService.blockUser(id);
+        AdminUserResponse user = adminService.blockUser(id);
         return ResponseEntity.ok(Map.of(
-            "message", "User blocked successfully",
-            "user", user
-        ));
+                "message", "User blocked successfully",
+                "user", user));
     }
 
     // PATCH /api/admin/users/{id}/unblock
     @PatchMapping("/users/{id}/unblock")
     public ResponseEntity<?> unblockUser(
             @PathVariable Long id) {
-        AdminUserResponse user =
-            adminService.unblockUser(id);
+        AdminUserResponse user = adminService.unblockUser(id);
         return ResponseEntity.ok(Map.of(
-            "message", "User unblocked successfully",
-            "user", user
-        ));
+                "message", "User unblocked successfully",
+                "user", user));
     }
 
     // PATCH /api/admin/users/{id}/deactivate
     @PatchMapping("/users/{id}/deactivate")
     public ResponseEntity<?> deactivateUser(
             @PathVariable Long id) {
-        AdminUserResponse user =
-            adminService.deactivateUser(id);
+        AdminUserResponse user = adminService.deactivateUser(id);
         return ResponseEntity.ok(Map.of(
-            "message", "User deactivated successfully",
-            "user", user
-        ));
+                "message", "User deactivated successfully",
+                "user", user));
     }
 
     // ─────────────────────────────────────────────────
@@ -141,23 +127,21 @@ public class AdminController {
     @GetMapping("/orders")
     public ResponseEntity<List<Order>> getAllOrders() {
         return ResponseEntity.ok(
-            adminService.getAllOrders());
+                adminService.getAllOrders());
     }
 
     // GET /api/admin/orders/disputed
     @GetMapping("/orders/disputed")
-    public ResponseEntity<List<Order>>
-            getDisputedOrders() {
+    public ResponseEntity<List<Order>> getDisputedOrders() {
         return ResponseEntity.ok(
-            adminService.getDisputedOrders());
+                adminService.getDisputedOrders());
     }
 
     // GET /api/admin/orders/active
     @GetMapping("/orders/active")
-    public ResponseEntity<List<Order>>
-            getActiveOrders() {
+    public ResponseEntity<List<Order>> getActiveOrders() {
         return ResponseEntity.ok(
-            adminService.getActiveOrders());
+                adminService.getActiveOrders());
     }
 
     // PATCH /api/admin/orders/{id}/resolve
@@ -166,12 +150,11 @@ public class AdminController {
             @PathVariable Long id,
             @RequestParam Order.OrderStatus resolution) {
         Order order = adminService
-            .resolveDispute(id, resolution);
+                .resolveDispute(id, resolution);
         return ResponseEntity.ok(Map.of(
-            "message", "Dispute resolved",
-            "orderId", order.getId(),
-            "newStatus", order.getStatus()
-        ));
+                "message", "Dispute resolved",
+                "orderId", order.getId(),
+                "newStatus", order.getStatus()));
     }
 
     // ─────────────────────────────────────────────────
@@ -180,10 +163,9 @@ public class AdminController {
 
     // GET /api/admin/ledger
     @GetMapping("/ledger")
-    public ResponseEntity<List<LedgerEntry>>
-            getFullLedger() {
+    public ResponseEntity<List<LedgerEntry>> getFullLedger() {
         return ResponseEntity.ok(
-            adminService.getFullLedger());
+                adminService.getFullLedger());
     }
 
     // GET /api/admin/ledger/driver/{id}
@@ -191,12 +173,10 @@ public class AdminController {
     public ResponseEntity<?> getDriverLedger(
             @PathVariable Long id) {
         return ResponseEntity.ok(
-            ledgerService.getDriverLedger(id)
-                .stream()
-                .map(com.faster.backend.dto
-                    .LedgerResponse::from)
-                .collect(java.util.stream
-                    .Collectors.toList()));
+                ledgerService.getDriverLedger(id)
+                        .stream()
+                        .map(com.faster.backend.dto.LedgerResponse::from)
+                        .collect(java.util.stream.Collectors.toList()));
     }
 
     // GET /api/admin/ledger/merchant/{id}
@@ -204,12 +184,10 @@ public class AdminController {
     public ResponseEntity<?> getMerchantLedger(
             @PathVariable Long id) {
         return ResponseEntity.ok(
-            ledgerService.getMerchantLedger(id)
-                .stream()
-                .map(com.faster.backend.dto
-                    .LedgerResponse::from)
-                .collect(java.util.stream
-                    .Collectors.toList()));
+                ledgerService.getMerchantLedger(id)
+                        .stream()
+                        .map(com.faster.backend.dto.LedgerResponse::from)
+                        .collect(java.util.stream.Collectors.toList()));
     }
 
     // GET /api/admin/drivers/{id}/debt
@@ -217,7 +195,7 @@ public class AdminController {
     public ResponseEntity<?> getDriverDebt(
             @PathVariable Long id) {
         return ResponseEntity.ok(
-            ledgerService.getDriverDebtSummary(id));
+                ledgerService.getDriverDebtSummary(id));
     }
 
     // PATCH /api/admin/drivers/{id}/settle
@@ -225,28 +203,26 @@ public class AdminController {
     @PatchMapping("/drivers/{id}/settle")
     public ResponseEntity<?> settleDriverDebt(
             @PathVariable Long id,
-            @Valid @RequestBody
-                DebtSettlementRequest request,
+            @Valid @RequestBody DebtSettlementRequest request,
             Authentication auth) {
 
         Long adminId = getAdminId(auth);
 
         LedgerEntry entry = adminService
-            .settleDriverDebt(
-                id,
-                request.getAmount(),
-                request.getPaymentReference(),
-                adminId);
+                .settleDriverDebt(
+                        id,
+                        request.getAmount(),
+                        request.getPaymentReference(),
+                        adminId);
 
         return ResponseEntity.ok(Map.of(
-            "message",
+                "message",
                 "Driver debt settled successfully. " +
-                "Account reactivated.",
-            "amountPaid", entry.getAmount(),
-            "remainingDebt", entry.getBalanceAfter(),
-            "paymentReference",
-                entry.getPaymentReference()
-        ));
+                        "Account reactivated.",
+                "amountPaid", entry.getAmount(),
+                "remainingDebt", entry.getBalanceAfter(),
+                "paymentReference",
+                entry.getPaymentReference()));
     }
 
     // PATCH /api/admin/merchants/{id}/settle
@@ -254,27 +230,25 @@ public class AdminController {
     @PatchMapping("/merchants/{id}/settle")
     public ResponseEntity<?> settleMerchantCommission(
             @PathVariable Long id,
-            @Valid @RequestBody
-                DebtSettlementRequest request,
+            @Valid @RequestBody DebtSettlementRequest request,
             Authentication auth) {
 
         Long adminId = getAdminId(auth);
 
         LedgerEntry entry = adminService
-            .settleMerchantCommission(
-                id,
-                request.getAmount(),
-                request.getPaymentReference(),
-                adminId);
+                .settleMerchantCommission(
+                        id,
+                        request.getAmount(),
+                        request.getPaymentReference(),
+                        adminId);
 
         return ResponseEntity.ok(Map.of(
-            "message",
+                "message",
                 "Merchant commission settled.",
-            "amountPaid", entry.getAmount(),
-            "remainingBalance", entry.getBalanceAfter(),
-            "paymentReference",
-                entry.getPaymentReference()
-        ));
+                "amountPaid", entry.getAmount(),
+                "remainingBalance", entry.getBalanceAfter(),
+                "paymentReference",
+                entry.getPaymentReference()));
     }
 
     // ─── Helper ───────────────────────────────────────
@@ -282,11 +256,52 @@ public class AdminController {
         String principal = auth.getName();
         User user = userRepository
                 .findByEmail(principal)
-                .orElseGet(() ->
-                    userRepository.findByPhone(principal)
-                        .orElseThrow(() ->
-                            new RuntimeException(
+                .orElseGet(() -> userRepository.findByPhone(principal)
+                        .orElseThrow(() -> new RuntimeException(
                                 "Admin not found")));
         return user.getId();
+    }
+
+    // ─── GET /api/admin/drivers/pending ──────────────────
+    // Admin sees drivers waiting for verification
+    @GetMapping("/drivers/pending")
+    public ResponseEntity<?> getPendingDrivers() {
+        return ResponseEntity.ok(
+                userRepository
+                        .findByRoleAndVerificationStatus(
+                                User.Role.DRIVER,
+                                User.DriverVerificationStatus.SUBMITTED)
+                        .stream()
+                        .map(AdminUserResponse::from)
+                        .collect(java.util.stream.Collectors.toList()));
+    }
+
+    // ─── PATCH /api/admin/drivers/{id}/approve ───────────
+    @PatchMapping("/drivers/{id}/approve")
+    public ResponseEntity<?> approveDriver(
+            @PathVariable Long id) {
+        User driver = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Driver not found"));
+        driver.setVerificationStatus(
+                User.DriverVerificationStatus.APPROVED);
+        userRepository.save(driver);
+        return ResponseEntity.ok(Map.of(
+                "message", "Driver approved successfully",
+                "driverId", id));
+    }
+
+    // ─── PATCH /api/admin/drivers/{id}/reject ────────────
+    @PatchMapping("/drivers/{id}/reject")
+    public ResponseEntity<?> rejectDriver(
+            @PathVariable Long id,
+            @RequestParam String reason) {
+        User driver = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Driver not found"));
+        driver.setVerificationStatus(
+                User.DriverVerificationStatus.REJECTED);
+        userRepository.save(driver);
+        return ResponseEntity.ok(Map.of(
+                "message", "Driver rejected",
+                "reason", reason));
     }
 }

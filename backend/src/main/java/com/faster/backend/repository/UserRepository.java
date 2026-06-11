@@ -42,5 +42,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // ─── Find blocked drivers ─────────────────────────
     List<User> findByRoleAndIsBlockedTrue(
             User.Role role);
+            
+    List<User> findByRoleAndVerificationStatus(
+    User.Role role,
+    User.DriverVerificationStatus status);
 
 }

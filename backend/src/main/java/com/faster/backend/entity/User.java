@@ -2,9 +2,9 @@ package com.faster.backend.entity;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -27,8 +27,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonIgnoreProperties({"hibernateLazyInitializer",
-                       "handler", "password"})
+@JsonIgnoreProperties({ "hibernateLazyInitializer",
+        "handler", "password" })
 public class User {
 
     @Id
@@ -79,6 +79,20 @@ public class User {
     @Builder.Default
     private Boolean isOnline = false;
 
+    // ─── Driver Verification (Phase 2) ──────────────────
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private DriverVerificationStatus verificationStatus = DriverVerificationStatus.PENDING;
+
+    // Vehicle info
+    private String vehicleType; // MOTO / CAR / TOKTOK
+    private String vehiclePlate;
+
+    // Document URLs (uploaded images)
+    private String driverPhotoUrl;
+    private String nationalIdUrl;
+    private String vehiclePaperUrl;
+
     // ─── Timestamps ──────────────────────────────────
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -108,5 +122,12 @@ public class User {
         PEOPLE,
         PACKAGE,
         HYBRID
+    }
+
+    public enum DriverVerificationStatus {
+    PENDING,     // Just registered, docs not submitted
+    SUBMITTED,   // Driver uploaded docs, waiting admin
+    APPROVED,    // Admin approved → can go online
+    REJECTED     // Admin rejected → needs to resubmit
     }
 }

@@ -26,6 +26,9 @@ public class AdminUserResponse {
     private User.DriverMode driverMode;
     private Boolean isOnline;
     private LocalDateTime createdAt;
+    private String verificationStatus;
+    private String vehicleType;
+    private String vehiclePlate;
 
     // ─── Build from User entity ───────────────────────
     public static AdminUserResponse from(User user) {
@@ -42,6 +45,12 @@ public class AdminUserResponse {
                 .driverMode(user.getDriverMode())
                 .isOnline(user.getIsOnline())
                 .createdAt(user.getCreatedAt())
+                .verificationStatus(
+                    user.getVerificationStatus() != null 
+                    ? user.getVerificationStatus().name()
+                    : "PENDING")
+                .vehicleType(user.getVehicleType())
+                .vehiclePlate(user.getVehiclePlate())
                 .build();
     }
 }
