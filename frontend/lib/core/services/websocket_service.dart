@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:stomp_dart_client/stomp_dart_client.dart';
 import '../constants/api_constants.dart';
 import 'storage_service.dart';
@@ -26,8 +27,10 @@ class WebSocketService {
         onWebSocketError: (error) => print('WS error: $error'),
         stompConnectHeaders:
             token != null ? {'Authorization': 'Bearer $token'} : {},
-        webSocketConnectHeaders:
-            token != null ? {'Authorization': 'Bearer $token'} : {},
+        // Browsers block custom WebSocket headers → skip on Web
+        webSocketConnectHeaders: (!kIsWeb && token != null)
+            ? {'Authorization': 'Bearer $token'}
+            : {},
       ),
     );
 

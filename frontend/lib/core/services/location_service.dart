@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geolocator/geolocator.dart';
 
 class LocationService {
@@ -6,6 +7,9 @@ class LocationService {
 
   // ─── Request permission ───────────────────────────
   Future<bool> requestPermission() async {
+    // Web: browser handles permission prompt automatically
+    if (kIsWeb) return true;
+
     LocationPermission permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
@@ -17,6 +21,8 @@ class LocationService {
   }
 
   // ─── Get current position ─────────────────────────
+  // geolocator 10.1.1 — uses desiredAccuracy + timeLimit directly.
+  // (locationSettings param only exists in geolocator ^13+)
   Future<Position?> getCurrentPosition() async {
     final hasPermission = await requestPermission();
     if (!hasPermission) return null;
@@ -31,13 +37,13 @@ class LocationService {
     }
   }
 
-  // ─── Stream live location (for driver) ───────────
+  // ─── Stream live location (for driver) ────────────
+  // getPositionStream uses LocationSettings in both 10.x and 13.x — no change
   Stream<Position> getLiveLocationStream() {
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        // Update every 5 seconds (matches backend)
-        distanceFilter: 10,
+        distanceFilter: 10, // meters — matches backend update interval
       ),
     );
   }

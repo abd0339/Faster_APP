@@ -3,6 +3,7 @@ C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\bac
 C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\backend\entity\ScheduledDiscount.java
 C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\backend\dto\OfferRequest.java
 C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\backend\dto\SnoozeRequest.java
+C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\backend\config\CorsConfig.java
 C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\backend\security\JwtUtil.java
 C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\backend\repository\ItemAddonRepository.java
 C:\Users\Hp\Desktop\App_delivery\Faster_APP\backend\src\main\java\com\faster\backend\entity\Item.java
