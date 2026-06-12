@@ -20,7 +20,9 @@ class ApiService {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        // NOTE: 'Access-Control-Allow-Origin' is a RESPONSE header set by
+        // the server — never a request header. Sending it from the client
+        // causes browsers to block the request with OperationError.
       },
     ));
 

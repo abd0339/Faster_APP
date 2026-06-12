@@ -8,6 +8,7 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
+import 'merchant_categories_screen.dart';
 
 class MerchantDashboardScreen extends StatefulWidget {
   const MerchantDashboardScreen({super.key});
@@ -34,8 +35,10 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     try {
       final ordersRes =
           await ApiService.instance.get(ApiConstants.merchantOrders);
+      final data = ordersRes.data;
       setState(() {
-        _activeOrders = ordersRes.data as List<dynamic>;
+        _activeOrders =
+            data is List ? data : (data as Map?)?['content'] as List? ?? [];
       });
     } catch (_) {}
     setState(() => _isLoading = false);
@@ -217,28 +220,9 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     );
   }
 
-  // ─── MENU TAB (placeholder) ───────────────────────
+  // ─── MENU TAB ─────────────────────────────────────
   Widget _buildMenuTab() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'My Menu',
-              style: AppTextStyles.displayMedium,
-            ),
-            const SizedBox(height: 24),
-            _buildEmptyState(
-              '🍽️',
-              'Menu manager',
-              'Add categories and items\nto your store',
-            ),
-          ],
-        ),
-      ),
-    );
+    return const MerchantCategoriesScreen();
   }
 
   // ─── OFFERS TAB (placeholder) ─────────────────────
