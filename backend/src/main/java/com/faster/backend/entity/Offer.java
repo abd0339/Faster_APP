@@ -2,11 +2,12 @@ package com.faster.backend.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "offers", indexes = {
@@ -22,7 +23,7 @@ public class Offer {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // ─── Which merchant created this offer ──────────
+    // ─── Which merchant ──────────────────────────────
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "merchant_id", nullable = false)
     @JsonIgnore
@@ -35,34 +36,53 @@ public class Offer {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    // ─── Optional banner image ───────────────────────
     private String imageUrl;
 
-    // ─── Discount percentage (e.g. 20 = 20% off) ────
     @Column(precision = 5, scale = 2)
     private BigDecimal discountPercent;
 
-    // ─── Offer type ──────────────────────────────────
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private OfferType offerType = OfferType.PERCENTAGE;
+
+    // ─── Scope: applies to which categories ──────────
+    // Empty list = applies to ALL items in the store
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "offer_categories",
+        joinColumns = @JoinColumn(name = "offer_id"),
+        inverseJoinColumns = @JoinColumn(name = "category_id")
+    )
+    @JsonIgnoreProperties({"items", "merchant",
+        "hibernateLazyInitializer", "handler"})
+    @Builder.Default
+    private List<Category> appliedToCategories = new ArrayList<>();
+
+    // ─── Scope: applies to which specific items ───────
+    // Empty list = not item-specific
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "offer_items",
+        joinColumns = @JoinColumn(name = "offer_id"),
+        inverseJoinColumns = @JoinColumn(name = "item_id")
+    )
+    @JsonIgnoreProperties({"category", "merchant",
+        "hibernateLazyInitializer", "handler"})
+    @Builder.Default
+    private List<Item> appliedToItems = new ArrayList<>();
 
     // ─── Validity window ─────────────────────────────
     private LocalDateTime startDate;
     private LocalDateTime endDate;
 
-    // ─── Is this offer currently live? ──────────────
     @Builder.Default
     private Boolean isActive = true;
 
-    // ─── How many times was this offer used? ────────
     @Builder.Default
     private Integer usageCount = 0;
 
-    // ─── Optional usage limit (null = unlimited) ────
     private Integer usageLimit;
 
-    // ─── Timestamps ──────────────────────────────────
     @Column(updatable = false)
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -78,11 +98,10 @@ public class Offer {
         updatedAt = LocalDateTime.now();
     }
 
-    // ─── Offer Type Enum ─────────────────────────────
     public enum OfferType {
-        PERCENTAGE,      // e.g. 20% off
-        FIXED_AMOUNT,    // e.g. $2 off
-        BUY_X_GET_Y,     // e.g. Buy 2 Get 1 Free
-        FREE_DELIVERY    // Free delivery on this offer
+        PERCENTAGE,
+        FIXED_AMOUNT,
+        BUY_X_GET_Y,
+        FREE_DELIVERY
     }
 }

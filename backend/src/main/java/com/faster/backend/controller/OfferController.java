@@ -26,20 +26,45 @@ public class OfferController {
     // ─── POST /api/merchant/offers ────────────────────
     @PostMapping
     public ResponseEntity<?> createOffer(
-            @Valid @RequestBody OfferRequest request,
+            @Valid @RequestBody OfferRequest req,
             Authentication auth) {
 
         Long merchantId = getMerchantId(auth);
-
         Offer offer = offerService.createOffer(
                 merchantId,
-                request.getTitle(),
-                request.getDescription(),
-                request.getDiscountPercent(),
-                request.getOfferType(),
-                request.getStartDate(),
-                request.getEndDate(),
-                request.getUsageLimit());
+                req.getTitle(),
+                req.getDescription(),
+                req.getDiscountPercent(),
+                req.getOfferType(),
+                req.getStartDate(),
+                req.getEndDate(),
+                req.getUsageLimit(),
+                req.getCategoryIds(),
+                req.getItemIds());
+
+        return ResponseEntity.ok(offer);
+    }
+
+    // ─── PUT /api/merchant/offers/{id} ────────────────
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateOffer(
+            @PathVariable Long id,
+            @Valid @RequestBody OfferRequest req,
+            Authentication auth) {
+
+        Long merchantId = getMerchantId(auth);
+        Offer offer = offerService.updateOffer(
+                merchantId,
+                id,
+                req.getTitle(),
+                req.getDescription(),
+                req.getDiscountPercent(),
+                req.getOfferType(),
+                req.getStartDate(),
+                req.getEndDate(),
+                req.getUsageLimit(),
+                req.getCategoryIds(),
+                req.getItemIds());
 
         return ResponseEntity.ok(offer);
     }
@@ -48,20 +73,16 @@ public class OfferController {
     @GetMapping
     public ResponseEntity<List<Offer>> getAllOffers(
             Authentication auth) {
-
-        Long merchantId = getMerchantId(auth);
         return ResponseEntity.ok(
-            offerService.getAllOffers(merchantId));
+            offerService.getAllOffers(getMerchantId(auth)));
     }
 
     // ─── GET /api/merchant/offers/live ────────────────
     @GetMapping("/live")
     public ResponseEntity<List<Offer>> getLiveOffers(
             Authentication auth) {
-
-        Long merchantId = getMerchantId(auth);
         return ResponseEntity.ok(
-            offerService.getLiveOffers(merchantId));
+            offerService.getLiveOffers(getMerchantId(auth)));
     }
 
     // ─── PATCH /api/merchant/offers/{id}/toggle ───────
@@ -69,11 +90,8 @@ public class OfferController {
     public ResponseEntity<?> toggleOffer(
             @PathVariable Long id,
             Authentication auth) {
-
-        Long merchantId = getMerchantId(auth);
         Offer offer = offerService
-            .toggleOffer(merchantId, id);
-
+            .toggleOffer(getMerchantId(auth), id);
         return ResponseEntity.ok(Map.of(
             "message", "Offer status updated",
             "isActive", offer.getIsActive()
@@ -86,11 +104,8 @@ public class OfferController {
             @PathVariable Long id,
             @RequestParam("image") MultipartFile image,
             Authentication auth) {
-
-        Long merchantId = getMerchantId(auth);
-        Offer offer = offerService.uploadOfferImage(
-            merchantId, id, image);
-
+        Offer offer = offerService
+            .uploadOfferImage(getMerchantId(auth), id, image);
         return ResponseEntity.ok(Map.of(
             "message", "Offer image uploaded",
             "imageUrl", offer.getImageUrl()
@@ -102,25 +117,20 @@ public class OfferController {
     public ResponseEntity<?> deleteOffer(
             @PathVariable Long id,
             Authentication auth) {
-
-        Long merchantId = getMerchantId(auth);
-        offerService.deleteOffer(merchantId, id);
-
-        return ResponseEntity.ok(
-            Map.of("message",
-                   "Offer deleted successfully"));
+        offerService.deleteOffer(getMerchantId(auth), id);
+        return ResponseEntity.ok(Map.of(
+            "message", "Offer deleted successfully"));
     }
 
     // ─── Helper ───────────────────────────────────────
     private Long getMerchantId(Authentication auth) {
         String principal = auth.getName();
-        User user = userRepository
-                .findByEmail(principal)
+        return userRepository.findByEmail(principal)
                 .orElseGet(() ->
                     userRepository.findByPhone(principal)
                         .orElseThrow(() ->
                             new RuntimeException(
-                                "User not found")));
-        return user.getId();
+                                "User not found")))
+                .getId();
     }
 }
