@@ -27,7 +27,7 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
   List<dynamic> _items = [];
   bool _isLoading = true;
   // Track which item is uploading image
-  Set<int> _uploadingImageIds = {};
+  final Set<int> _uploadingImageIds = {};
 
   @override
   void initState() {
@@ -58,17 +58,163 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
   }
 
   // ─── UPLOAD IMAGE ─────────────────────────────────
+  // ─── PICK SOURCE then upload ──────────────────────
   Future<void> _pickAndUploadImage(int itemId) async {
+    // On Web: browser has no camera API via image_picker → go straight to gallery
+    if (kIsWeb) {
+      await _uploadFromSource(itemId, ImageSource.gallery);
+      return;
+    }
+
+    // On Mobile: show Camera / Gallery choice
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.glassBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('Add Photo', style: AppTextStyles.headlineLarge),
+              const SizedBox(height: 20),
+
+              // Camera option
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.glassWhite,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.glassBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt_rounded,
+                          color: AppColors.primary,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Take a Photo',
+                              style: AppTextStyles.headlineSmall),
+                          Text('Use your camera',
+                              style: AppTextStyles.bodyMedium),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Gallery option
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.glassWhite,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.glassBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.photo_library_rounded,
+                          color: AppColors.accent,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Choose from Gallery',
+                              style: AppTextStyles.headlineSmall),
+                          Text('Pick an existing photo',
+                              style: AppTextStyles.bodyMedium),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Cancel
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'Cancel',
+                    style: AppTextStyles.labelLarge
+                        .copyWith(color: AppColors.textHint),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+    await _uploadFromSource(itemId, source);
+  }
+
+// ─── ACTUAL UPLOAD after source is chosen ─────────
+  Future<void> _uploadFromSource(int itemId, ImageSource source) async {
     try {
       final picker = ImagePicker();
       final picked = await picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         maxWidth: 1024,
         maxHeight: 1024,
         imageQuality: 85,
       );
       if (picked == null) return;
 
+      if (!mounted) return;
       setState(() => _uploadingImageIds.add(itemId));
 
       final bytes = await picked.readAsBytes();
