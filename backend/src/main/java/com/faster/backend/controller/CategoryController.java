@@ -21,7 +21,6 @@ public class CategoryController {
 
     private final CategoryService categoryService;
     private final UserRepository userRepository;
-
     // ─── POST /api/merchant/categories ───────────────
     @PostMapping
     public ResponseEntity<?> createCategory(
@@ -63,7 +62,8 @@ public class CategoryController {
                 id,
                 request.getName(),
                 request.getIcon(),
-                request.getDisplayOrder());
+                request.getDisplayOrder(),
+                request.getIsActive());
 
         return ResponseEntity.ok(updated);
     }

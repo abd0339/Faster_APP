@@ -39,6 +39,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     try {
       final res = await ApiService.instance.get(ApiConstants.driverStatus);
       final data = res.data as Map<String, dynamic>;
+      if (!mounted) return;
       setState(() {
         _isOnline = data['isOnline'] ?? false;
         _currentMode = data['mode'] ?? 'PACKAGE';
@@ -52,8 +53,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       final ordersRes =
           await ApiService.instance.get(ApiConstants.driverOrders);
       final debtRes = await ApiService.instance.get(ApiConstants.myDebt);
+      if (!mounted) return;
       setState(() {
-        _orders = ordersRes.data as List<dynamic>;
+        final ordersData = ordersRes.data;
+        _orders = ordersData is List
+            ? ordersData
+            : (ordersData as Map?)?['content'] as List? ?? [];
         _debtInfo = debtRes.data as Map<String, dynamic>;
       });
     } catch (_) {}

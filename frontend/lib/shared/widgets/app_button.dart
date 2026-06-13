@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ─── Primary Button ───────────────────────────────────
 class AppButton extends StatelessWidget {
@@ -35,7 +36,7 @@ class AppButton extends StatelessWidget {
         onPressed: isLoading
             ? null
             : () {
-                HapticFeedback.lightImpact();
+                if (!kIsWeb) HapticFeedback.lightImpact();
                 onPressed?.call();
               },
         style: ElevatedButton.styleFrom(

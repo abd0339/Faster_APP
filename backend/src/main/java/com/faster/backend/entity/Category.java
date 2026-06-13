@@ -26,14 +26,14 @@ import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "categories", indexes = {
-    @Index(name = "idx_category_merchant", columnList = "merchant_id")
+        @Index(name = "idx_category_merchant", columnList = "merchant_id")
 })
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonIgnoreProperties({"hibernateLazyInitializer",
-                       "handler"})
+@JsonIgnoreProperties({ "hibernateLazyInitializer",
+        "handler" })
 public class Category {
 
     @Id
@@ -63,17 +63,16 @@ public class Category {
     private Boolean isActive = true;
 
     // ─── Items inside this category ─────────────────
-    @OneToMany(mappedBy = "category",
-               cascade = CascadeType.ALL,
-               fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "category", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private List<Item> items;
 
     // ─── Timestamps ──────────────────────────────────
+    @Column(updatable = false)
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
 
-    @Column(updatable = false)
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime updatedAt;
 
     @PrePersist
