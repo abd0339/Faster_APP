@@ -10,6 +10,7 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import 'merchant_categories_screen.dart';
 import 'merchant_offers_screen.dart';
+import 'merchant_schedule_screen.dart';
 
 class MerchantDashboardScreen extends StatefulWidget {
   const MerchantDashboardScreen({super.key});
@@ -26,6 +27,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
   bool _isLoading = true;
   bool _menuVisited = false;
   bool _offersVisited = false;
+  bool _scheduleVisited = false;
 
   @override
   void initState() {
@@ -58,6 +60,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
           _buildOrdersTab(),
           _buildMenuTab(),
           _buildOffersTab(),
+          _buildScheduleTab(),
         ],
       ),
       bottomNavigationBar: _buildBottomNav(),
@@ -187,6 +190,15 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildScheduleTab() {
+    if (!_scheduleVisited && _currentIndex == 4) {
+      _scheduleVisited = true;
+    }
+    return _scheduleVisited
+        ? const MerchantScheduleScreen()
+        : const SizedBox.shrink();
   }
 
   // ─── ORDERS TAB ───────────────────────────────────
@@ -678,6 +690,11 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
             icon: Icon(Icons.local_offer_outlined),
             activeIcon: Icon(Icons.local_offer),
             label: 'Offers',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.schedule_outlined),
+            activeIcon: Icon(Icons.schedule),
+            label: 'Hours',
           ),
         ],
       ),
