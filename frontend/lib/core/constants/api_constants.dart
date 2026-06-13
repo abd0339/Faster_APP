@@ -56,6 +56,7 @@ class ApiConstants {
   static String settleDriver(int id) => '/api/admin/drivers/$id/settle';
   static String itemUnsnooze(int id) => '/api/merchant/items/$id/unsnooze';
   static String categoryById(int id) => '/api/merchant/categories/$id';
+  static String offerById(int id) => '/api/merchant/offers/$id';
 
   // ─── WebSocket ────────────────────────────────────
   static const String wsUrl = 'http://localhost:8080/ws';

@@ -9,6 +9,7 @@ import '../../../shared/widgets/status_badge.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import 'merchant_categories_screen.dart';
+import 'merchant_offers_screen.dart';
 
 class MerchantDashboardScreen extends StatefulWidget {
   const MerchantDashboardScreen({super.key});
@@ -24,6 +25,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
   Map<String, dynamic>? _storeStatus;
   bool _isLoading = true;
   bool _menuVisited = false;
+  bool _offersVisited = false;
 
   @override
   void initState() {
@@ -233,26 +235,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
 
   // ─── OFFERS TAB (placeholder) ─────────────────────
   Widget _buildOffersTab() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Offers',
-              style: AppTextStyles.displayMedium,
-            ),
-            const SizedBox(height: 24),
-            _buildEmptyState(
-              '🎉',
-              'No active offers',
-              'Create offers to attract\nmore customers',
-            ),
-          ],
-        ),
-      ),
-    );
+    if (!_offersVisited && _currentIndex == 3) {
+      _offersVisited = true;
+    }
+    return _offersVisited
+        ? const MerchantOffersScreen()
+        : const SizedBox.shrink();
   }
 
   // ─── Order card ───────────────────────────────────
