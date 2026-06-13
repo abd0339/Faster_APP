@@ -6,8 +6,6 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -29,16 +27,16 @@ import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "items", indexes = {
-    @Index(name = "idx_item_merchant",  columnList = "merchant_id"),
-    @Index(name = "idx_item_category",  columnList = "category_id"),
-    @Index(name = "idx_item_name",      columnList = "name")
+        @Index(name = "idx_item_merchant", columnList = "merchant_id"),
+        @Index(name = "idx_item_category", columnList = "category_id"),
+        @Index(name = "idx_item_name", columnList = "name")
 })
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@JsonIgnoreProperties({"hibernateLazyInitializer",
-                       "handler"})
+@JsonIgnoreProperties({ "hibernateLazyInitializer",
+        "handler" })
 public class Item {
 
     @Id
@@ -52,10 +50,10 @@ public class Item {
     private User merchant;
 
     // ─── Category ────────────────────────────────────
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "category_id", nullable = false)
-    @JsonIgnoreProperties({"items", "merchant",
-                            "hibernateLazyInitializer"})
+    @JsonIgnoreProperties({ "items", "merchant",
+            "hibernateLazyInitializer", "handler" })
     private Category category;
 
     // ─── Basic Info ──────────────────────────────────
@@ -110,21 +108,15 @@ public class Item {
     private Integer displayOrder = 0;
 
     // ─── Relations ───────────────────────────────────
-    @OneToMany(mappedBy = "item",
-               cascade = CascadeType.ALL,
-               fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private List<ItemModifierGroup> modifierGroups;
 
-    @OneToMany(mappedBy = "item",
-               cascade = CascadeType.ALL,
-               fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private List<ItemAddon> addons;
 
-    @OneToMany(mappedBy = "item",
-               cascade = CascadeType.ALL,
-               fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnore
     private List<ScheduledDiscount> scheduledDiscounts;
 
