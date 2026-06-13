@@ -22,30 +22,52 @@ public class StoreScheduleController {
     private final StoreScheduleService scheduleService;
     private final UserRepository userRepository;
 
-    // ─── POST /api/merchant/schedule ─────────────────
+    // ─── POST /api/merchant/schedule (single day) ────
     @PostMapping
     public ResponseEntity<?> setSchedule(
             @Valid @RequestBody StoreScheduleRequest req,
             Authentication auth) {
 
         Long merchantId = getMerchantId(auth);
+        StoreSchedule schedule = scheduleService.setSchedule(
+                merchantId,
+                req.getDayOfWeek(),
+                req.getOpenTime(),
+                req.getCloseTime(),
+                req.getIsClosed());
 
-        StoreSchedule schedule = scheduleService
-                .setSchedule(
+        return ResponseEntity.ok(schedule);
+    }
+
+    // ─── POST /api/merchant/schedule/bulk ────────────
+    // Save all 7 days in one call
+    @PostMapping("/bulk")
+    public ResponseEntity<?> setBulkSchedule(
+            @RequestBody List<StoreScheduleRequest> requests,
+            Authentication auth) {
+
+        Long merchantId = getMerchantId(auth);
+
+        for (StoreScheduleRequest req : requests) {
+            if (req.getDayOfWeek() == null) continue;
+            scheduleService.setSchedule(
                     merchantId,
                     req.getDayOfWeek(),
                     req.getOpenTime(),
                     req.getCloseTime(),
                     req.getIsClosed());
+        }
 
-        return ResponseEntity.ok(schedule);
+        return ResponseEntity.ok(Map.of(
+            "message", "Schedule updated successfully",
+            "days", requests.size()
+        ));
     }
 
     // ─── GET /api/merchant/schedule ──────────────────
     @GetMapping
     public ResponseEntity<List<StoreSchedule>> getSchedule(
             Authentication auth) {
-
         Long merchantId = getMerchantId(auth);
         return ResponseEntity.ok(
             scheduleService.getSchedule(merchantId));
@@ -55,11 +77,9 @@ public class StoreScheduleController {
     @GetMapping("/status")
     public ResponseEntity<?> getStoreStatus(
             Authentication auth) {
-
         Long merchantId = getMerchantId(auth);
         boolean isOpen = scheduleService
             .isStoreOpenNow(merchantId);
-
         return ResponseEntity.ok(Map.of(
             "isOpen", isOpen,
             "message", isOpen
@@ -71,13 +91,12 @@ public class StoreScheduleController {
     // ─── Helper ───────────────────────────────────────
     private Long getMerchantId(Authentication auth) {
         String principal = auth.getName();
-        User user = userRepository
-                .findByEmail(principal)
+        return userRepository.findByEmail(principal)
                 .orElseGet(() ->
                     userRepository.findByPhone(principal)
                         .orElseThrow(() ->
                             new RuntimeException(
-                                "User not found")));
-        return user.getId();
+                                "User not found")))
+                .getId();
     }
 }

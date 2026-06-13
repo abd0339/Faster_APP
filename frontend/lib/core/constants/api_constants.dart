@@ -14,6 +14,7 @@ class ApiConstants {
   static const String items = '/api/merchant/items';
   static const String schedule = '/api/merchant/schedule';
   static const String offers = '/api/merchant/offers';
+  static const String scheduleBulk = '/api/merchant/schedule/bulk';
 
   // ─── Driver ───────────────────────────────────────
   static const String driverOnline = '/api/driver/online';
