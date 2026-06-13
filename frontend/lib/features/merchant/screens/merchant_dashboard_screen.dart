@@ -23,6 +23,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
   List<dynamic> _activeOrders = [];
   Map<String, dynamic>? _storeStatus;
   bool _isLoading = true;
+  bool _menuVisited = false;
 
   @override
   void initState() {
@@ -222,7 +223,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
 
   // ─── MENU TAB ─────────────────────────────────────
   Widget _buildMenuTab() {
-    return const MerchantCategoriesScreen();
+    if (!_menuVisited && _currentIndex == 2) {
+      _menuVisited = true;
+    }
+    return _menuVisited
+        ? const MerchantCategoriesScreen()
+        : const SizedBox.shrink();
   }
 
   // ─── OFFERS TAB (placeholder) ─────────────────────

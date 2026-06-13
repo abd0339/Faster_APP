@@ -77,10 +77,6 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           );
         }
-        if (state is AuthSuccess) {
-          // Navigate based on role
-          _navigateByRole(context, state.role);
-        }
       },
       builder: (context, state) {
         return Scaffold(

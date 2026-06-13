@@ -17,57 +17,81 @@ public class CategoryService {
     private final CategoryRepository categoryRepository;
     private final UserRepository userRepository;
 
-    // ─── Create a new category ────────────────────────
+    // ─── Create ───────────────────────────────────────
     @Transactional
     public Category createCategory(Long merchantId,
                                    String name,
                                    String icon,
                                    Integer displayOrder) {
-        // Check duplicate name
+
+        // Check duplicate — ACTIVE rows only
         if (categoryRepository
-                .existsByNameAndMerchantId(name, merchantId)) {
+                .existsByNameAndMerchantIdAndIsActiveTrue(name, merchantId)) {
             throw new RuntimeException(
                 "Category '" + name + "' already exists");
         }
 
-        User merchant = getMerchant(merchantId);
+        // If a soft-deleted row with same name exists → reactivate it
+        Category existing = categoryRepository
+                .findByNameAndMerchantId(name, merchantId)
+                .orElse(null);
 
+        if (existing != null) {
+            existing.setIsActive(true);
+            existing.setIcon(icon != null ? icon : existing.getIcon());
+            existing.setDisplayOrder(
+                displayOrder != null ? displayOrder : existing.getDisplayOrder());
+            return categoryRepository.save(existing);
+        }
+
+        // Brand new row
+        User merchant = getMerchant(merchantId);
         Category category = Category.builder()
                 .merchant(merchant)
                 .name(name)
                 .icon(icon)
-                .displayOrder(
-                    displayOrder != null ? displayOrder : 0)
+                .displayOrder(displayOrder != null ? displayOrder : 0)
                 .isActive(true)
                 .build();
 
         return categoryRepository.save(category);
     }
 
-    // ─── Get all categories for a merchant ───────────
+    // ─── Get all active categories ────────────────────
     public List<Category> getCategories(Long merchantId) {
-        return categoryRepository
-            .findByMerchantIdAndIsActiveTrueOrderByDisplayOrderAsc(
-                merchantId);
-    }
+    return categoryRepository
+        .findByMerchantIdOrderByDisplayOrderAsc(merchantId);
+}
 
-    // ─── Update a category ────────────────────────────
+    // ─── Update (name + icon + isActive) ──────────────
     @Transactional
     public Category updateCategory(Long merchantId,
                                    Long categoryId,
                                    String name,
                                    String icon,
-                                   Integer displayOrder) {
+                                   Integer displayOrder,
+                                   Boolean isActive) {
+
         Category category = categoryRepository
                 .findByIdAndMerchantId(categoryId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
-                    "Category not found"));
+                .orElseThrow(() -> new RuntimeException("Category not found"));
 
         if (name != null && !name.isBlank()) {
+            // Check name clash only against OTHER active categories
+            boolean nameClash = categoryRepository
+                    .existsByNameAndMerchantIdAndIsActiveTrue(name, merchantId)
+                    && !category.getName().equals(name);
+            if (nameClash) {
+                throw new RuntimeException(
+                    "Category '" + name + "' already exists");
+            }
             category.setName(name);
         }
         if (icon != null) {
             category.setIcon(icon);
+        }
+        if (isActive != null) {
+            category.setIsActive(isActive);
         }
         if (displayOrder != null) {
             category.setDisplayOrder(displayOrder);
@@ -76,23 +100,19 @@ public class CategoryService {
         return categoryRepository.save(category);
     }
 
-    // ─── Delete (soft delete) a category ─────────────
+    // ─── Hard delete ──────────────────────────────────
     @Transactional
-    public void deleteCategory(Long merchantId,
-                               Long categoryId) {
+    public void deleteCategory(Long merchantId, Long categoryId) {
         Category category = categoryRepository
                 .findByIdAndMerchantId(categoryId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
-                    "Category not found"));
+                .orElseThrow(() -> new RuntimeException("Category not found"));
 
-        category.setIsActive(false);
-        categoryRepository.save(category);
+        categoryRepository.delete(category);
     }
 
-    // ─── Helper: get merchant user ────────────────────
+    // ─── Helper ───────────────────────────────────────
     private User getMerchant(Long merchantId) {
         return userRepository.findById(merchantId)
-                .orElseThrow(() -> new RuntimeException(
-                    "Merchant not found"));
+                .orElseThrow(() -> new RuntimeException("Merchant not found"));
     }
 }

@@ -17,4 +17,7 @@ public class CategoryRequest {
 
     // Display order in menu (optional, default 0)
     private Integer displayOrder;
+
+     // Active / hidden toggle
+    private Boolean isActive;
 }

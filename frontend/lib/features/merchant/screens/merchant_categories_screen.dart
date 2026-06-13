@@ -8,6 +8,7 @@ import '../../../core/services/api_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import 'merchant_items_screen.dart';
 
 // ─── Emoji data organized by section ──────────────────
 const _emojiSections = [
@@ -347,7 +348,20 @@ class _MerchantCategoriesScreenState extends State<MerchantCategoriesScreen> {
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final cat = _categories[index] as Map<String, dynamic>;
-          return _buildCategoryCard(cat);
+          return GlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MerchantItemsScreen(category: cat),
+                ),
+              ).then((_) => _loadCategories()); // refresh on return
+            },
+            child: Row(
+                // ... rest of the row unchanged
+                ),
+          );
         },
       ),
     );
