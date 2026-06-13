@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../constants/api_constants.dart';
+import 'dart:typed_data';
 import 'storage_service.dart';
 
 class ApiService {
@@ -92,19 +93,27 @@ class ApiService {
   }
 
   // ─── Upload image (multipart) ─────────────────────
-  Future<Response> uploadImage(
+  // ─── Upload image from bytes (Web + Mobile) ───────
+  Future<Response> uploadImageBytes(
     String path,
-    String filePath,
+    Uint8List bytes,
+    String filename,
     String fieldName,
   ) async {
     await init();
     final formData = FormData.fromMap({
-      fieldName: await MultipartFile.fromFile(
-        filePath,
-        filename: filePath.split('/').last,
+      fieldName: MultipartFile.fromBytes(
+        bytes,
+        filename: filename,
       ),
     });
-    return _dio.post(path, data: formData);
+    return _dio.post(
+      path,
+      data: formData,
+      options: Options(
+        headers: {'Content-Type': 'multipart/form-data'},
+      ),
+    );
   }
 
   // ─── Error message helper ─────────────────────────

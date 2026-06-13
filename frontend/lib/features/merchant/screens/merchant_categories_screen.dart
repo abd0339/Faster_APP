@@ -348,20 +348,7 @@ class _MerchantCategoriesScreenState extends State<MerchantCategoriesScreen> {
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final cat = _categories[index] as Map<String, dynamic>;
-          return GlassCard(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MerchantItemsScreen(category: cat),
-                ),
-              ).then((_) => _loadCategories()); // refresh on return
-            },
-            child: Row(
-                // ... rest of the row unchanged
-                ),
-          );
+          return _buildCategoryCard(cat);
         },
       ),
     );
@@ -374,6 +361,14 @@ class _MerchantCategoriesScreenState extends State<MerchantCategoriesScreen> {
 
     return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MerchantItemsScreen(category: cat),
+          ),
+        ).then((_) => _loadCategories());
+      },
       child: Row(
         children: [
           // ─── Emoji icon ────────────────────

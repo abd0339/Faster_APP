@@ -31,19 +31,19 @@ public class ItemService {
     // ─── Create item ──────────────────────────────────
     @Transactional
     public Item createItem(Long merchantId,
-                           Long categoryId,
-                           String name,
-                           String description,
-                           BigDecimal price,
-                           Integer stockQuantity,
-                           Integer prepTimeMinutes,
-                           BigDecimal taxRate,
-                           BigDecimal serviceFee,
-                           Integer displayOrder) {
+            Long categoryId,
+            String name,
+            String description,
+            BigDecimal price,
+            Integer stockQuantity,
+            Integer prepTimeMinutes,
+            BigDecimal taxRate,
+            BigDecimal serviceFee,
+            Integer displayOrder) {
 
         User merchant = getMerchant(merchantId);
         Category category = getCategory(
-            categoryId, merchantId);
+                categoryId, merchantId);
 
         Item item = Item.builder()
                 .merchant(merchant)
@@ -52,18 +52,23 @@ public class ItemService {
                 .description(description)
                 .price(price)
                 .stockQuantity(
-                    stockQuantity != null
-                    ? stockQuantity : -1)
+                        stockQuantity != null
+                                ? stockQuantity
+                                : -1)
                 .prepTimeMinutes(
-                    prepTimeMinutes != null
-                    ? prepTimeMinutes : 15)
+                        prepTimeMinutes != null
+                                ? prepTimeMinutes
+                                : 15)
                 .taxRate(taxRate != null
-                    ? taxRate : BigDecimal.ZERO)
+                        ? taxRate
+                        : BigDecimal.ZERO)
                 .serviceFee(serviceFee != null
-                    ? serviceFee : BigDecimal.ZERO)
+                        ? serviceFee
+                        : BigDecimal.ZERO)
                 .displayOrder(
-                    displayOrder != null
-                    ? displayOrder : 0)
+                        displayOrder != null
+                                ? displayOrder
+                                : 0)
                 .isAvailable(true)
                 .isSnoozed(false)
                 .build();
@@ -79,17 +84,17 @@ public class ItemService {
     // ─── Upload item image ────────────────────────────
     @Transactional
     public Item uploadItemImage(Long merchantId,
-                                Long itemId,
-                                MultipartFile image) {
+            Long itemId,
+            MultipartFile image) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Item not found"));
+                        "Item not found"));
 
         // Delete old image if exists
         if (item.getImageUrl() != null) {
             fileStorageService.deleteImage(
-                item.getImageUrl());
+                    item.getImageUrl());
         }
 
         // Save new image
@@ -105,11 +110,11 @@ public class ItemService {
     // ─── Toggle availability ──────────────────────────
     @Transactional
     public Item toggleAvailability(Long merchantId,
-                                   Long itemId) {
+            Long itemId) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Item not found"));
+                        "Item not found"));
 
         item.setIsAvailable(!item.getIsAvailable());
         Item saved = itemRepository.save(item);
@@ -120,16 +125,16 @@ public class ItemService {
     // ─── Snooze item for X hours ──────────────────────
     @Transactional
     public Item snoozeItem(Long merchantId,
-                           Long itemId,
-                           int hours) {
+            Long itemId,
+            int hours) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Item not found"));
+                        "Item not found"));
 
         item.setIsSnoozed(true);
         item.setSnoozeUntil(
-            LocalDateTime.now().plusHours(hours));
+                LocalDateTime.now().plusHours(hours));
 
         Item saved = itemRepository.save(item);
         menuCacheService.evictMenuCache(merchantId);
@@ -139,11 +144,11 @@ public class ItemService {
     // ─── Unsnooze item manually ───────────────────────
     @Transactional
     public Item unsnoozeItem(Long merchantId,
-                             Long itemId) {
+            Long itemId) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Item not found"));
+                        "Item not found"));
 
         item.setIsSnoozed(false);
         item.setSnoozeUntil(null);
@@ -156,8 +161,7 @@ public class ItemService {
     // ─── Get all items for a merchant ─────────────────
     public List<Item> getMerchantItems(Long merchantId) {
         return itemRepository
-            .findByMerchantIdOrderByDisplayOrderAsc(
-                merchantId);
+                .findByMerchantIdWithCategory(merchantId);
     }
 
     // ─── Get single item ──────────────────────────────
@@ -165,24 +169,24 @@ public class ItemService {
         return itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Item not found"));
+                        "Item not found"));
     }
 
     // ─── Update item ──────────────────────────────────
     @Transactional
     public Item updateItem(Long merchantId,
-                           Long itemId,
-                           String name,
-                           String description,
-                           BigDecimal price,
-                           Integer stockQuantity,
-                           Integer prepTimeMinutes,
-                           Long categoryId) {
+            Long itemId,
+            String name,
+            String description,
+            BigDecimal price,
+            Integer stockQuantity,
+            Integer prepTimeMinutes,
+            Long categoryId) {
 
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Item not found"));
+                        "Item not found"));
 
         if (name != null && !name.isBlank()) {
             item.setName(name);
@@ -201,7 +205,7 @@ public class ItemService {
         }
         if (categoryId != null) {
             Category category = getCategory(
-                categoryId, merchantId);
+                    categoryId, merchantId);
             item.setCategory(category);
         }
 
@@ -213,16 +217,16 @@ public class ItemService {
     // ─── Delete item ──────────────────────────────────
     @Transactional
     public void deleteItem(Long merchantId,
-                           Long itemId) {
+            Long itemId) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Item not found"));
+                        "Item not found"));
 
         // Delete image from disk
         if (item.getImageUrl() != null) {
             fileStorageService.deleteImage(
-                item.getImageUrl());
+                    item.getImageUrl());
         }
 
         itemRepository.delete(item);
@@ -233,7 +237,7 @@ public class ItemService {
     @Transactional
     public boolean decrementStock(Long itemId, int qty) {
         int updated = itemRepository
-            .decrementStock(itemId, qty);
+                .decrementStock(itemId, qty);
         // Returns 0 if not enough stock
         return updated > 0;
     }
@@ -251,7 +255,7 @@ public class ItemService {
         int count = itemRepository.unsnoozeExpiredItems();
         if (count > 0) {
             System.out.println(
-                "Auto-unsnoozed " + count + " items");
+                    "Auto-unsnoozed " + count + " items");
         }
     }
 
@@ -259,16 +263,16 @@ public class ItemService {
     private User getMerchant(Long merchantId) {
         return userRepository.findById(merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Merchant not found"));
+                        "Merchant not found"));
     }
 
     private Category getCategory(Long categoryId,
-                                  Long merchantId) {
+            Long merchantId) {
         return categoryRepository
                 .findByIdAndMerchantId(
-                    categoryId, merchantId)
+                        categoryId, merchantId)
                 .orElseThrow(() -> new RuntimeException(
-                    "Category not found or doesn't " +
-                    "belong to this merchant"));
+                        "Category not found or doesn't " +
+                                "belong to this merchant"));
     }
 }
