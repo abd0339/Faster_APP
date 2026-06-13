@@ -1111,9 +1111,13 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
                                 'usageLimit':
                                     int.tryParse(usageLimitCtrl.text.trim()),
                               if (startDate != null)
-                                'startDate': startDate!.toIso8601String(),
+                                'startDate': startDate!
+                                    .toIso8601String()
+                                    .split('.')
+                                    .first,
                               if (endDate != null)
-                                'endDate': endDate!.toIso8601String(),
+                                'endDate':
+                                    endDate!.toIso8601String().split('.').first,
                               // Scope
                               'categoryIds': scopeMode == 'categories'
                                   ? selectedCatIds.toList()
@@ -1228,10 +1232,18 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
 
   Future<DateTime?> _pickDate(BuildContext ctx, DateTime? initial,
       {DateTime? first}) {
+    final firstDate = first ?? DateTime.now().subtract(const Duration(days: 1));
+
+    // CRITICAL: initialDate must not be before firstDate
+    DateTime safeInitial = initial ?? DateTime.now();
+    if (safeInitial.isBefore(firstDate)) {
+      safeInitial = firstDate;
+    }
+
     return showDatePicker(
       context: ctx,
-      initialDate: initial ?? DateTime.now(),
-      firstDate: first ?? DateTime.now().subtract(const Duration(days: 1)),
+      initialDate: safeInitial,
+      firstDate: firstDate,
       lastDate: DateTime.now().add(const Duration(days: 730)),
       builder: (ctx, child) => Theme(
         data: ThemeData.dark().copyWith(

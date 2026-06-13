@@ -1,7 +1,6 @@
 package com.faster.backend.dto;
 
 import com.faster.backend.entity.Offer;
-import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -22,22 +21,12 @@ public class OfferRequest {
 
     private Offer.OfferType offerType;
 
-    // ─── Fix: tell Jackson how to parse the date ──────
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                timezone = "UTC")
+    // No @JsonFormat — handled globally by JavaTimeModule
     private LocalDateTime startDate;
-
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                timezone = "UTC")
     private LocalDateTime endDate;
 
     private Integer usageLimit;
 
-    // ─── Scope: which categories this offer applies to
-    // null or empty = whole store
     private List<Long> categoryIds;
-
-    // ─── Scope: which specific items this offer applies to
-    // null or empty = not item-specific
     private List<Long> itemIds;
 }
