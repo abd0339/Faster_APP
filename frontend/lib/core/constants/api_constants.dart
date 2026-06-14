@@ -40,6 +40,26 @@ class ApiConstants {
   static const String adminOrders = '/api/admin/orders';
   static const String adminLedger = '/api/admin/ledger';
   static const String adminRevenue = '/api/admin/revenue';
+  static const String adminDriversPending = '/api/admin/drivers/pending';
+  static const String adminDriversBlocked = '/api/admin/drivers/blocked';
+  static const String adminMerchants = '/api/admin/merchants';
+  static const String adminOrdersDisputed = '/api/admin/orders/disputed';
+
+// Admin — dynamic
+  static String adminUserById(int id) => '/api/admin/users/$id';
+  static String adminBlockUser(int id) => '/api/admin/users/$id/block';
+  static String adminUnblockUser(int id) => '/api/admin/users/$id/unblock';
+  static String adminDeactivateUser(int id) =>
+      '/api/admin/users/$id/deactivate';
+  static String adminApproveDriver(int id) => '/api/admin/drivers/$id/approve';
+  static String adminRejectDriver(int id) => '/api/admin/drivers/$id/reject';
+  static String adminDriverDebt(int id) => '/api/admin/drivers/$id/debt';
+  static String adminSettleDriver(int id) => '/api/admin/drivers/$id/settle';
+  static String adminSettleMerchant(int id) =>
+      '/api/admin/merchants/$id/settle';
+  static String adminResolveOrder(int id) => '/api/admin/orders/$id/resolve';
+  static String adminDriverLedger(int id) => '/api/admin/ledger/driver/$id';
+  static String adminMerchantLedger(int id) => '/api/admin/ledger/merchant/$id';
 
   // ─── Public ───────────────────────────────────────
   static String storeMenu(int merchantId) => '/api/store/$merchantId/menu';

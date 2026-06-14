@@ -105,7 +105,7 @@ class AppOutlineButton extends StatelessWidget {
       height: height,
       child: OutlinedButton(
         onPressed: () {
-          HapticFeedback.lightImpact();
+          if (!kIsWeb) HapticFeedback.lightImpact();
           onPressed?.call();
         },
         style: OutlinedButton.styleFrom(
