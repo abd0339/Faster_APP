@@ -84,4 +84,11 @@ class ApiConstants {
   static String orderTopic(int id) => '/topic/order/$id';
   static String driverTopic(int id) => '/topic/driver/$id';
   static String merchantTopic(int id) => '/topic/merchant/$id';
+
+  // ─── Customer ─────────────────────────────────────
+  static const String customerOrders = '/api/orders/customer';
+  static String customerOrderById(int id) => '/api/orders/$id';
+  static String placeOrder(int merchantId) => '/api/orders';
+  static String applyOffer(int orderId, int offerId) =>
+      '/api/orders/$orderId/offer/$offerId';
 }

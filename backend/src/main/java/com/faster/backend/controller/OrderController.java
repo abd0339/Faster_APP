@@ -35,11 +35,11 @@ public class OrderController {
         // ─── O2O Order (merchant creates for offline customer)
         if (Boolean.TRUE.equals(req.getIsO2O())) {
             if (req.getOfflineCustomerPhone() == null
-                || req.getOfflineLandmark() == null) {
+                    || req.getOfflineLandmark() == null) {
                 return ResponseEntity.badRequest().body(
-                    Map.of("message",
-                           "Phone and landmark are " +
-                           "required for O2O orders"));
+                        Map.of("message",
+                                "Phone and landmark are " +
+                                        "required for O2O orders"));
             }
 
             order = orderService.createO2OOrder(
@@ -67,8 +67,8 @@ public class OrderController {
                     req.getDeliveryAddress(),
                     req.getCustomerNotes(),
                     req.getOrderType() != null
-                        ? req.getOrderType()
-                        : Order.OrderType.LOGISTICS);
+                            ? req.getOrderType()
+                            : Order.OrderType.LOGISTICS);
         }
 
         return ResponseEntity.ok(order);
@@ -83,13 +83,12 @@ public class OrderController {
 
         User driver = getUser(auth);
         Order order = orderService.acceptOrder(
-            driver.getId(), id);
+                driver.getId(), id);
 
         return ResponseEntity.ok(Map.of(
-            "message", "Order accepted successfully",
-            "trackingCode", order.getTrackingCode(),
-            "status", order.getStatus()
-        ));
+                "message", "Order accepted successfully",
+                "trackingCode", order.getTrackingCode(),
+                "status", order.getStatus()));
     }
 
     // ─── PATCH /api/orders/{id}/status ────────────────
@@ -105,25 +104,24 @@ public class OrderController {
         // Handle dispute separately
         if (req.getStatus() == Order.OrderStatus.DISPUTED) {
             if (req.getDisputeReason() == null
-                || req.getDisputeReason().isBlank()) {
+                    || req.getDisputeReason().isBlank()) {
                 return ResponseEntity.badRequest().body(
-                    Map.of("message",
-                           "Dispute reason is required"));
+                        Map.of("message",
+                                "Dispute reason is required"));
             }
             Order order = orderService.disputeOrder(
-                id, req.getDisputeReason(), user.getId());
+                    id, req.getDisputeReason(), user.getId());
             return ResponseEntity.ok(order);
         }
 
         Order order = orderService.updateStatus(
-            id, req.getStatus(), user.getId());
+                id, req.getStatus(), user.getId());
 
         return ResponseEntity.ok(Map.of(
-            "message", "Status updated to "
-                       + req.getStatus(),
-            "orderId", order.getId(),
-            "status", order.getStatus()
-        ));
+                "message", "Status updated to "
+                        + req.getStatus(),
+                "orderId", order.getId(),
+                "status", order.getStatus()));
     }
 
     // ─── GET /api/orders/merchant ─────────────────────
@@ -134,7 +132,7 @@ public class OrderController {
 
         User user = getUser(auth);
         return ResponseEntity.ok(
-            orderService.getMerchantOrders(user.getId()));
+                orderService.getMerchantOrders(user.getId()));
     }
 
     // ─── GET /api/orders/driver ───────────────────────
@@ -145,7 +143,16 @@ public class OrderController {
 
         User user = getUser(auth);
         return ResponseEntity.ok(
-            orderService.getDriverOrders(user.getId()));
+                orderService.getDriverOrders(user.getId()));
+    }
+
+    // GET /api/orders/customer — logged-in customer sees their orders
+    @GetMapping("/api/orders/customer")
+    public ResponseEntity<List<Order>> getCustomerOrders(
+            Authentication auth) {
+        Long customerId = getUserId(auth);
+        return ResponseEntity.ok(
+                orderService.getCustomerOrders(customerId));
     }
 
     // ─── GET /api/orders/driver/active ────────────────
@@ -155,8 +162,8 @@ public class OrderController {
 
         User user = getUser(auth);
         return ResponseEntity.ok(
-            orderService.getActiveDriverOrders(
-                user.getId()));
+                orderService.getActiveDriverOrders(
+                        user.getId()));
     }
 
     // ─── GET /tracking/public/{code} ──────────────────
@@ -167,23 +174,24 @@ public class OrderController {
             @PathVariable String trackingCode) {
 
         Order order = orderService
-            .trackOrder(trackingCode);
+                .trackOrder(trackingCode);
 
         // Return safe public view
         // (no merchant/driver personal data)
         return ResponseEntity.ok(Map.of(
-            "trackingCode", order.getTrackingCode(),
-            "status", order.getStatus(),
-            "orderType", order.getOrderType(),
-            "pickupAddress",
+                "trackingCode", order.getTrackingCode(),
+                "status", order.getStatus(),
+                "orderType", order.getOrderType(),
+                "pickupAddress",
                 order.getPickupAddress() != null
-                ? order.getPickupAddress() : "",
-            "deliveryAddress",
+                        ? order.getPickupAddress()
+                        : "",
+                "deliveryAddress",
                 order.getDeliveryAddress() != null
-                ? order.getDeliveryAddress() : "",
-            "createdAt", order.getCreatedAt(),
-            "updatedAt", order.getUpdatedAt()
-        ));
+                        ? order.getDeliveryAddress()
+                        : "",
+                "createdAt", order.getCreatedAt(),
+                "updatedAt", order.getUpdatedAt()));
     }
 
     // ─── Helper ───────────────────────────────────────
@@ -191,10 +199,8 @@ public class OrderController {
         String principal = auth.getName();
         return userRepository
                 .findByEmail(principal)
-                .orElseGet(() ->
-                    userRepository.findByPhone(principal)
-                        .orElseThrow(() ->
-                            new RuntimeException(
+                .orElseGet(() -> userRepository.findByPhone(principal)
+                        .orElseThrow(() -> new RuntimeException(
                                 "User not found")));
     }
 }
