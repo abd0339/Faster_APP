@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/location_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
@@ -22,7 +24,22 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
   final _addressCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   bool _isPlacingOrder = false;
-  double _deliveryFee = 2.00; // Default — can be dynamic
+  bool _isDetectingLocation = false;
+
+  // Delivery fee — merchant sets this, default is $2
+  // Future: calculate from distance
+  double _deliveryFee = 2.00;
+
+  // Customer GPS coordinates
+  double? _deliveryLat;
+  double? _deliveryLng;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-detect location on open
+    _autoDetectLocation();
+  }
 
   @override
   void dispose() {
@@ -31,31 +48,73 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
     super.dispose();
   }
 
+  // ─── Auto-detect GPS on screen open ──────────────
+  Future<void> _autoDetectLocation() async {
+    if (kIsWeb) {
+      // Web geolocation works but needs permission
+      // Don't auto-request — let user tap the button
+      return;
+    }
+    await _detectLocation();
+  }
+
+  Future<void> _detectLocation() async {
+    if (!mounted) return;
+    setState(() => _isDetectingLocation = true);
+    try {
+      final position = await LocationService.instance.getCurrentPosition();
+      if (position == null || !mounted) return;
+
+      setState(() {
+        _deliveryLat = position.latitude;
+        _deliveryLng = position.longitude;
+      });
+
+      // Try reverse geocoding via Nominatim (free, no key)
+      try {
+        final geoRes = await dio.Dio().get(
+          'https://nominatim.openstreetmap.org/reverse',
+          queryParameters: {
+            'format': 'json',
+            'lat': position.latitude.toString(),
+            'lon': position.longitude.toString(),
+          },
+          options: dio.Options(headers: {
+            'Accept-Language': 'en',
+            'User-Agent': 'FasterApp/1.0',
+          }),
+        );
+        final address = geoRes.data?['display_name'];
+        if (address != null && mounted) {
+          _addressCtrl.text = address.toString();
+        }
+      } catch (_) {
+        // Geocoding failed — just show coordinates
+        if (mounted) {
+          _addressCtrl.text = '${position.latitude.toStringAsFixed(6)}, '
+              '${position.longitude.toStringAsFixed(6)}';
+        }
+      }
+    } catch (e) {
+      // Location permission denied — user types manually
+    } finally {
+      if (mounted) setState(() => _isDetectingLocation = false);
+    }
+  }
+
   Future<void> _placeOrder() async {
     if (_addressCtrl.text.trim().isEmpty) {
       _showError('Please enter your delivery address');
       return;
     }
-
     if (CartService.instance.isEmpty) {
       _showError('Your cart is empty');
       return;
     }
-
     if (!mounted) return;
     setState(() => _isPlacingOrder = true);
-
     try {
       final cart = CartService.instance;
-      // Build items list for the order
-      final itemsList = cart.items
-          .map((i) => {
-                'itemId': i.itemId,
-                'quantity': i.quantity,
-                'unitPrice': i.price,
-              })
-          .toList();
-
       final res = await ApiService.instance.post(
         ApiConstants.orders,
         data: {
@@ -63,23 +122,18 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
           'totalPrice': cart.subtotal,
           'deliveryFee': _deliveryFee,
           'deliveryAddress': _addressCtrl.text.trim(),
+          'deliveryLat': _deliveryLat,
+          'deliveryLng': _deliveryLng,
           'customerNotes': _notesCtrl.text.trim(),
           'orderType': 'LOGISTICS',
           'isO2O': false,
-          'items': itemsList,
         },
       );
-
       final orderData = res.data as Map<String, dynamic>;
       final orderId = orderData['id'] as int?;
       final tracking = orderData['trackingCode'] as String? ?? '';
-
-      // Clear cart after successful order
       CartService.instance.clear();
-
       if (!mounted) return;
-
-      // Navigate to tracking screen
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -107,7 +161,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // ─── Header ──────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
               child: Row(children: [
@@ -150,9 +204,6 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                           const SizedBox(height: 16),
                           Text('Cart is empty',
                               style: AppTextStyles.headlineMedium),
-                          const SizedBox(height: 8),
-                          Text('Add items to get started',
-                              style: AppTextStyles.bodyMedium),
                         ],
                       ),
                     )
@@ -161,31 +212,90 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ─── Items list ──────────
+                          // Items
                           ...cart.items.map((item) => _cartItemRow(item)),
 
                           const SizedBox(height: 20),
 
-                          // ─── Delivery address ────
-                          Text('Delivery Address',
-                              style: AppTextStyles.headlineSmall),
+                          // ─── Address ─────────────
+                          Row(children: [
+                            Text('Delivery Address',
+                                style: AppTextStyles.headlineSmall),
+                            const Spacer(),
+                            // GPS detect button
+                            GestureDetector(
+                              onTap: _detectLocation,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      AppColors.primary.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: _isDetectingLocation
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          color: AppColors.primary,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.my_location_rounded,
+                                              color: AppColors.primary,
+                                              size: 14),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'Use GPS',
+                                            style:
+                                                AppTextStyles.caption.copyWith(
+                                              color: AppColors.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ]),
                           const SizedBox(height: 10),
+
+                          // GPS status indicator
+                          if (_deliveryLat != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(children: [
+                                const Icon(Icons.location_on_rounded,
+                                    color: AppColors.accent, size: 14),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'GPS detected — driver will navigate to your location',
+                                  style: AppTextStyles.caption
+                                      .copyWith(color: AppColors.accent),
+                                ),
+                              ]),
+                            ),
+
                           AppInput(
                             controller: _addressCtrl,
-                            hint: 'Enter your full address',
+                            hint: 'Tap "Use GPS" or type your address',
                             label: 'Address',
                             prefixIcon: Icons.location_on_outlined,
                             maxLines: 2,
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) {
-                                return 'Required';
-                              }
-                              return null;
-                            },
                           ),
                           const SizedBox(height: 16),
 
-                          // ─── Notes ───────────────
+                          // Notes
                           AppInput(
                             controller: _notesCtrl,
                             hint: 'Special instructions (optional)',
@@ -194,47 +304,32 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                           ),
                           const SizedBox(height: 24),
 
-                          // ─── Order summary ───────
+                          // ─── Order summary ───────────
                           GlassCard(
                             padding: const EdgeInsets.all(16),
-                            child: Column(
-                              children: [
-                                _summaryRow(
-                                    'Subtotal',
-                                    '\$${subtotal.toStringAsFixed(2)}',
-                                    AppColors.textPrimary),
-                                const SizedBox(height: 8),
-                                _summaryRow(
-                                    'Delivery Fee',
-                                    '\$${_deliveryFee.toStringAsFixed(2)}',
-                                    AppColors.textSecondary),
-                                const Divider(
-                                    color: AppColors.glassBorder, height: 20),
-                                _summaryRow(
-                                    'Total',
-                                    '\$${grandTotal.toStringAsFixed(2)}',
-                                    AppColors.accent,
-                                    isBold: true),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          // ─── Place order ─────────
-                          AppButton(
-                            label:
-                                'Place Order — \$${grandTotal.toStringAsFixed(2)}',
-                            icon: Icons.check_rounded,
-                            isLoading: _isPlacingOrder,
-                            color: AppColors.accent,
-                            textColor: AppColors.background,
-                            onPressed: _placeOrder,
+                            child: Column(children: [
+                              _summaryRow(
+                                  'Items subtotal',
+                                  '\$${subtotal.toStringAsFixed(2)}',
+                                  AppColors.textPrimary),
+                              const SizedBox(height: 8),
+                              _summaryRow(
+                                  'Delivery fee',
+                                  '\$${_deliveryFee.toStringAsFixed(2)}',
+                                  AppColors.textHint),
+                              const Divider(
+                                  color: AppColors.glassBorder, height: 20),
+                              _summaryRow(
+                                  'Total you pay',
+                                  '\$${grandTotal.toStringAsFixed(2)}',
+                                  AppColors.accent,
+                                  isBold: true),
+                            ]),
                           ),
 
                           const SizedBox(height: 12),
 
-                          // ─── Payment note ────────
+                          // ─── Cash on delivery note ───
                           GlassCard(
                             padding: const EdgeInsets.all(14),
                             child: Row(children: [
@@ -243,14 +338,25 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'Payment is cash on delivery. '
-                                  'Driver collects \$${grandTotal.toStringAsFixed(2)} at your door.',
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.warning,
-                                  ),
+                                  'Pay \$${grandTotal.toStringAsFixed(2)} cash to driver at your door.',
+                                  style: AppTextStyles.caption
+                                      .copyWith(color: AppColors.warning),
                                 ),
                               ),
                             ]),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          // ─── Place order button ──────
+                          AppButton(
+                            label:
+                                'Place Order — \$${grandTotal.toStringAsFixed(2)}',
+                            icon: Icons.check_rounded,
+                            isLoading: _isPlacingOrder,
+                            color: AppColors.accent,
+                            textColor: AppColors.background,
+                            onPressed: _placeOrder,
                           ),
                         ],
                       ),
@@ -273,14 +379,12 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(item.name, style: AppTextStyles.headlineSmall),
-                Text('\$${item.price.toStringAsFixed(2)}',
+                Text('\$${item.price.toStringAsFixed(2)} × ${item.quantity}',
                     style: AppTextStyles.caption
-                        .copyWith(color: AppColors.primary)),
+                        .copyWith(color: AppColors.textHint)),
               ],
             ),
           ),
-
-          // Qty control
           Row(children: [
             GestureDetector(
               onTap: () {
@@ -324,13 +428,9 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
               ),
             ),
           ]),
-
           const SizedBox(width: 12),
-          Text(
-            '\$${item.subtotal.toStringAsFixed(2)}',
-            style: AppTextStyles.priceSmall,
-          ),
-
+          Text('\$${item.subtotal.toStringAsFixed(2)}',
+              style: AppTextStyles.priceSmall),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: () {

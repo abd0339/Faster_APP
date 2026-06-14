@@ -23,6 +23,7 @@ public class OrderController {
         private final OrderService orderService;
         private final UserRepository userRepository;
         private final OrderRepository orderRepository;
+        private Long merchantId;
 
         // ─── POST /api/orders ─────────────────────────────
         // Create order (merchant or customer)
@@ -55,10 +56,18 @@ public class OrderController {
                                         req.getPickupAddress());
 
                 } else {
-                        // ─── Standard Order ───────────────────────
+                        // ─── Standard Order / MOBILITY ─────────────────
+                        // For MOBILITY: merchant is the platform itself
+                        // For LOGISTICS: merchant must be specified
+                        Long merchantId = req.getMerchantId() != null
+                                        ? req.getMerchantId()
+                                        : user.getId(); // fallback for MOBILITY
+
+                        Long customerId = user.getId();
+
                         order = orderService.createOrder(
-                                        user.getId(),
-                                        user.getId(),
+                                        merchantId,
+                                        customerId,
                                         req.getTotalPrice(),
                                         req.getDeliveryFee(),
                                         req.getPickupLat(),

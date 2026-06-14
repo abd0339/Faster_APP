@@ -12,6 +12,7 @@ import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
 import 'customer_stores_screen.dart';
 import 'customer_order_tracking_screen.dart';
+import 'customer_ride_screen.dart';
 
 class CustomerDashboardScreen extends StatefulWidget {
   const CustomerDashboardScreen({super.key});
@@ -109,6 +110,42 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             ]),
 
             const SizedBox(height: 28),
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CustomerRideScreen()),
+              ),
+              child: GlassCard(
+                padding: const EdgeInsets.all(18),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.driverColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.directions_car_rounded,
+                        color: AppColors.driverColor, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Request a Ride',
+                            style: AppTextStyles.headlineSmall),
+                        Text(
+                          'Driver picks you up and takes you anywhere',
+                          style: AppTextStyles.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: AppColors.textHint),
+                ]),
+              ),
+            ),
 
             // Info card
             GlassCard(
