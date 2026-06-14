@@ -65,6 +65,9 @@ class ApiConstants {
   static String storeMenu(int merchantId) => '/api/store/$merchantId/menu';
   static String storeStatus(int merchantId) => '/api/store/$merchantId/status';
   static String trackOrder(String code) => '/tracking/public/$code';
+  // ─── Public store list ────────────────────────────
+  static const String allStores = '/api/store/all';
+  static String orderById(int id) => '/api/orders/$id';
 
   // ─── Dynamic ──────────────────────────────────────
   static String orderAccept(int id) => '/api/orders/$id/accept';
