@@ -123,6 +123,7 @@ public class DriverController {
         String mode = locationService.getDriverMode(driverId);
 
         return ResponseEntity.ok(Map.of(
+                "driverId", driverId,
                 "isOnline", isOnline,
                 "mode", mode != null ? mode : "OFFLINE"));
     }
