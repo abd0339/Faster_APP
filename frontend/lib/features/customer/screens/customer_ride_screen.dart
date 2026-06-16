@@ -1,6 +1,7 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart' as dio;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
@@ -28,13 +29,16 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
   bool _isDetecting = false;
   bool _isRequesting = false;
 
-  // Base ride fee — future: calculate by distance
-  double _rideFee = 3.00;
+  // Base ride fee — future: calculate dynamically from distance
+  final double _rideFee = 3.00;
 
   @override
   void initState() {
     super.initState();
-    _detectPickup();
+    // Auto-detect pickup on screen open (mobile only)
+    if (!kIsWeb) {
+      _detectPickup();
+    }
   }
 
   @override
@@ -45,34 +49,62 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
     super.dispose();
   }
 
+  // ─── Detect current GPS location for pickup ───────
   Future<void> _detectPickup() async {
     if (!mounted) return;
     setState(() => _isDetecting = true);
-    setState(() {
-        _deliveryLat = position.latitude;
-        _deliveryLng = position.longitude;
-      });
-    try {
-      final geoRes = await dio.Dio().get(
-    'https://nominatim.openstreetmap.org/reverse',
-    queryParameters: {
-      'format': 'json',
-      'lat': position.latitude.toString(),
-      'lon': position.longitude.toString(),
-    },
-    options: dio.Options(headers: {
-      'Accept-Language': 'en',
-      'User-Agent': 'FasterApp/1.0',
-    }),
-  );
-  final address = geoRes.data?['display_name'];
-  if (address != null && mounted) {
-    _addressCtrl.text = address.toString();
 
-    } catch (_) {}
-    if (mounted) setState(() => _isDetecting = false);
+    try {
+      final position = await LocationService.instance.getCurrentPosition();
+
+      if (position == null || !mounted) {
+        setState(() => _isDetecting = false);
+        return;
+      }
+
+      // Store coordinates for the order request
+      setState(() {
+        _pickupLat = position.latitude;
+        _pickupLng = position.longitude;
+      });
+
+      // Reverse geocode with Nominatim (free, no API key)
+      try {
+        final geoRes = await dio.Dio().get(
+          'https://nominatim.openstreetmap.org/reverse',
+          queryParameters: {
+            'format': 'json',
+            'lat': position.latitude.toString(),
+            'lon': position.longitude.toString(),
+          },
+          options: dio.Options(
+            headers: {
+              'Accept-Language': 'en',
+              'User-Agent': 'FasterApp/1.0',
+            },
+            receiveTimeout: const Duration(seconds: 5),
+          ),
+        );
+        final address = geoRes.data?['display_name'];
+        if (address != null && mounted) {
+          _pickupCtrl.text = address.toString();
+        }
+      } catch (_) {
+        // Geocoding failed — show coordinates as fallback
+        if (mounted) {
+          _pickupCtrl.text = '${position.latitude.toStringAsFixed(5)}, '
+              '${position.longitude.toStringAsFixed(5)}';
+        }
+      }
+    } catch (_) {
+      // Location permission denied or unavailable
+      // User will type manually
+    } finally {
+      if (mounted) setState(() => _isDetecting = false);
+    }
   }
 
+  // ─── Request the ride ─────────────────────────────
   Future<void> _requestRide() async {
     if (_pickupCtrl.text.trim().isEmpty) {
       _showError('Please set your pickup location');
@@ -83,17 +115,16 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
       return;
     }
     if (!mounted) return;
+
     setState(() => _isRequesting = true);
 
     try {
-      // MOBILITY order — finds PEOPLE/HYBRID mode drivers
+      // MOBILITY order — backend notifies PEOPLE + HYBRID drivers
       final res = await ApiService.instance.post(
         ApiConstants.orders,
         data: {
-          // For ride requests, merchant is not applicable
-          // Backend handles MOBILITY without merchantId
-          'totalPrice': 0.00,
-          'deliveryFee': _rideFee,
+          'totalPrice': 0.00, // No products in a ride
+          'deliveryFee': _rideFee, // Ride fare
           'pickupAddress': _pickupCtrl.text.trim(),
           'pickupLat': _pickupLat,
           'pickupLng': _pickupLng,
@@ -101,6 +132,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
           'customerNotes': _notesCtrl.text.trim(),
           'orderType': 'MOBILITY',
           'isO2O': false,
+          // No merchantId for MOBILITY orders
         },
       );
 
@@ -109,6 +141,8 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
       final tracking = orderData['trackingCode'] as String? ?? '';
 
       if (!mounted) return;
+
+      // Navigate to tracking screen
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -125,6 +159,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
     }
   }
 
+  // ─── BUILD ────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -135,7 +170,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
+              // ─── Header ──────────────────────────────
               Row(children: [
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
@@ -163,7 +198,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
 
               const SizedBox(height: 28),
 
-              // Info card
+              // ─── Fare card ───────────────────────────
               GlassCard(
                 padding: const EdgeInsets.all(16),
                 child: Row(children: [
@@ -185,14 +220,21 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                             style: AppTextStyles.caption
                                 .copyWith(color: AppColors.textHint)),
                         Text(
-                          '\$$_rideFee',
+                          '\$${_rideFee.toStringAsFixed(2)}',
                           style: AppTextStyles.price,
                         ),
-                        Text(
-                          'Pay driver cash on arrival',
-                          style: AppTextStyles.caption,
-                        ),
+                        Text('Pay driver cash on arrival',
+                            style: AppTextStyles.caption),
                       ],
+                    ),
+                  ),
+                  // How commission works info
+                  GestureDetector(
+                    onTap: () => _showFareInfo(),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      child: const Icon(Icons.info_outline_rounded,
+                          color: AppColors.textHint, size: 18),
                     ),
                   ),
                 ]),
@@ -200,7 +242,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
 
               const SizedBox(height: 24),
 
-              // Pickup
+              // ─── Pickup location ─────────────────────
               Row(children: [
                 Text('Pickup Location', style: AppTextStyles.headlineSmall),
                 const Spacer(),
@@ -238,9 +280,28 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                 ),
               ]),
               const SizedBox(height: 10),
+
+              // GPS detected indicator
+              if (_pickupLat != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Icon(Icons.location_on_rounded,
+                        color: AppColors.accent, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      'GPS detected',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.accent),
+                    ),
+                  ]),
+                ),
+
               AppInput(
                 controller: _pickupCtrl,
-                hint: 'Your current location',
+                hint: kIsWeb
+                    ? 'Type your pickup location'
+                    : 'Tap "Use GPS" or type your location',
                 label: 'Pickup',
                 prefixIcon: Icons.location_on_rounded,
                 maxLines: 2,
@@ -248,7 +309,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
 
               const SizedBox(height: 20),
 
-              // Dropoff
+              // ─── Destination ─────────────────────────
               Text('Destination', style: AppTextStyles.headlineSmall),
               const SizedBox(height: 10),
               AppInput(
@@ -261,6 +322,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
 
               const SizedBox(height: 16),
 
+              // ─── Notes ───────────────────────────────
               AppInput(
                 controller: _notesCtrl,
                 hint: 'Any notes for the driver? (optional)',
@@ -270,6 +332,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
 
               const SizedBox(height: 32),
 
+              // ─── Request button ───────────────────────
               AppButton(
                 label: 'Request Ride — \$${_rideFee.toStringAsFixed(2)}',
                 icon: Icons.directions_car_rounded,
@@ -278,6 +341,25 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                 textColor: AppColors.background,
                 onPressed: _requestRide,
               ),
+
+              const SizedBox(height: 16),
+
+              // ─── Commission note ──────────────────────
+              GlassCard(
+                padding: const EdgeInsets.all(14),
+                child: Row(children: [
+                  const Icon(Icons.payments_outlined,
+                      color: AppColors.warning, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Pay \$${_rideFee.toStringAsFixed(2)} cash to your driver when they arrive.',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.warning),
+                    ),
+                  ),
+                ]),
+              ),
             ],
           ),
         ),
@@ -285,6 +367,68 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
     );
   }
 
+  // ─── Fare info sheet ──────────────────────────────
+  void _showFareInfo() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.glassBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('How Fares Work', style: AppTextStyles.headlineMedium),
+            const SizedBox(height: 16),
+            _fareRow('Ride Fare', '\$${_rideFee.toStringAsFixed(2)}',
+                AppColors.textPrimary),
+            _fareRow('Driver Keeps (80%)',
+                '\$${(_rideFee * 0.80).toStringAsFixed(2)}', AppColors.accent),
+            _fareRow(
+                'Platform Fee (20%)',
+                '\$${(_rideFee * 0.20).toStringAsFixed(2)}',
+                AppColors.textHint),
+            const SizedBox(height: 16),
+            Text(
+              'You pay the driver in cash. The platform '
+              'collects its 20% commission separately '
+              'at end of day.',
+              style: AppTextStyles.bodyMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fareRow(String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: AppTextStyles.bodyMedium),
+          Text(value, style: AppTextStyles.labelLarge.copyWith(color: color)),
+        ],
+      ),
+    );
+  }
+
+  // ─── Error snackbar ───────────────────────────────
   void _showError(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
