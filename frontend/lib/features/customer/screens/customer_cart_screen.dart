@@ -89,10 +89,9 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
           _addressCtrl.text = address.toString();
         }
       } catch (_) {
-        // Geocoding failed — just show coordinates
         if (mounted) {
-          _addressCtrl.text = '${position.latitude.toStringAsFixed(6)}, '
-              '${position.longitude.toStringAsFixed(6)}';
+          _addressCtrl.text = '${position.latitude.toStringAsFixed(5)}, '
+              '${position.longitude.toStringAsFixed(5)}';
         }
       }
     } catch (e) {

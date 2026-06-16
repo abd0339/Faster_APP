@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
@@ -47,15 +48,27 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
   Future<void> _detectPickup() async {
     if (!mounted) return;
     setState(() => _isDetecting = true);
-    try {
-      final position = await LocationService.instance.getCurrentPosition();
-      if (position == null || !mounted) return;
-      setState(() {
-        _pickupLat = position.latitude;
-        _pickupLng = position.longitude;
-        _pickupCtrl.text = 'Lat: ${position.latitude.toStringAsFixed(5)}, '
-            'Lng: ${position.longitude.toStringAsFixed(5)}';
+    setState(() {
+        _deliveryLat = position.latitude;
+        _deliveryLng = position.longitude;
       });
+    try {
+      final geoRes = await dio.Dio().get(
+    'https://nominatim.openstreetmap.org/reverse',
+    queryParameters: {
+      'format': 'json',
+      'lat': position.latitude.toString(),
+      'lon': position.longitude.toString(),
+    },
+    options: dio.Options(headers: {
+      'Accept-Language': 'en',
+      'User-Agent': 'FasterApp/1.0',
+    }),
+  );
+  final address = geoRes.data?['display_name'];
+  if (address != null && mounted) {
+    _addressCtrl.text = address.toString();
+
     } catch (_) {}
     if (mounted) setState(() => _isDetecting = false);
   }
