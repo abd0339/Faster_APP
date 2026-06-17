@@ -721,23 +721,21 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                           ),
                         ]),
                         const SizedBox(height: 8),
-                        GooglePlacesSearchField(
-                          hint: 'Delivery address...',
-                          label: 'Delivery Address',
-                          apiKey: AppConfig.googlePlacesKey,
-                          onPlaceSelected: (result) {
-                            deliveryCtrl.text = result.address;
-                            // Store coords for driver navigation
-                          },
+                        AppInput(
+                          controller: pickupCtrl,
+                          hint: 'Your store location',
+                          label: 'Pickup Address',
+                          prefixIcon: Icons.store_outlined,
+                          maxLines: 2,
                         ),
                         if (pickupLat != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Row(children: [
-                              const Icon(Icons.location_on_rounded,
+                              const Icon(Icons.gps_fixed_rounded,
                                   color: AppColors.accent, size: 12),
                               const SizedBox(width: 4),
-                              Text('GPS coordinates stored',
+                              Text('GPS coordinates stored for driver',
                                   style: AppTextStyles.caption
                                       .copyWith(color: AppColors.accent)),
                             ]),
@@ -942,23 +940,33 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                                     ),
                             ],
                             const SizedBox(height: 10),
-                            AppInput(
-                              controller: deliveryCtrl,
+                            GooglePlacesSearchField(
                               hint: 'Delivery address (area / landmark)',
                               label: 'Delivery Address',
-                              prefixIcon: Icons.location_on_outlined,
+                              apiKey: AppConfig.googlePlacesKey,
+                              controller: deliveryCtrl,
                               maxLines: 2,
+                              onPlaceSelected: (result) {
+                                setSheet(() {
+                                  deliveryCtrl.text = result.address;
+                                });
+                              },
                             ),
                           ],
 
-                          // ── MANUAL ADDRESS ────────────
+                          // ── MANUAL ADDRESS — with map picker ─
                           if (deliveryMode == 'manual') ...[
-                            AppInput(
-                              controller: deliveryCtrl,
+                            GooglePlacesSearchField(
                               hint: 'Street, building, area...',
                               label: 'Delivery Address',
-                              prefixIcon: Icons.location_on_outlined,
-                              maxLines: 3,
+                              apiKey: AppConfig.googlePlacesKey,
+                              controller: deliveryCtrl,
+                              maxLines: 2,
+                              onPlaceSelected: (result) {
+                                setSheet(() {
+                                  deliveryCtrl.text = result.address;
+                                });
+                              },
                             ),
                           ],
                         ],
