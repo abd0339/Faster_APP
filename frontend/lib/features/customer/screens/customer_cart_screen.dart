@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
+import '../../../core/constants/app_config.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/google_places_search_field.dart';
 import '../services/cart_service.dart';
 import 'customer_order_tracking_screen.dart';
 
@@ -285,12 +287,16 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                               ]),
                             ),
 
-                          AppInput(
-                            controller: _addressCtrl,
-                            hint: 'Tap "Use GPS" or type your address',
+                          GooglePlacesSearchField(
+                            hint: 'Your delivery address',
                             label: 'Address',
-                            prefixIcon: Icons.location_on_outlined,
-                            maxLines: 2,
+                            apiKey: AppConfig.googlePlacesKey,
+                            onPlaceSelected: (result) {
+                              _addressCtrl.text = result.address;
+                              _deliveryLat = result.lat;
+                              _deliveryLng = result.lng;
+                              setState(() {});
+                            },
                           ),
                           const SizedBox(height: 16),
 

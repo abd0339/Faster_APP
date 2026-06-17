@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────
+# FASTER APP — .gitignore
+# ─────────────────────────────────────────────────────
+
+# ─── Environment / Secrets ────────────────────────────
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# ─── Spring Boot local secrets ────────────────────────
+backend/src/main/resources/application-local.properties
+backend/src/main/resources/application-production.properties
+
+# ─── Flutter / Dart ───────────────────────────────────
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/pubspec.lock
+
+# Generated files
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
+
+# ─── Java / Maven ─────────────────────────────────────
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ─── Upload folders ────────────────────────────────────
+backend/uploads/
+uploads/
+
+# ─── IDE ──────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# ─── OS files ─────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Node (tooling) ───────────────────────────────────
+node_modules/
+npm-debug.log
+yarn-error.log

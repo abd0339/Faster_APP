@@ -1,37 +1,76 @@
-HELP.md
-.gradle
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
+# ─────────────────────────────────────────────────────
+# FASTER APP — Backend .gitignore
+# Place this file at: backend/.gitignore
+# ─────────────────────────────────────────────────────
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
+# ─── Maven build output ───────────────────────────────
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
 
-### IntelliJ IDEA ###
-.idea
-*.iws
+# ─── Maven wrapper (optional — keep if you use ./mvnw) ─
+# .mvn/wrapper/maven-wrapper.jar
+
+# ─── Compiled Java ────────────────────────────────────
+*.class
+
+# ─── JAR / WAR / EAR / ZIP artifacts ─────────────────
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# ─── Logs ─────────────────────────────────────────────
+*.log
+logs/
+spring.log
+
+# ─── Environment & Secrets ────────────────────────────
+# NEVER commit these — they contain real passwords/keys
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# ─── Spring Boot local/secret property files ──────────
+src/main/resources/application-local.properties
+src/main/resources/application-production.properties
+src/main/resources/application-staging.properties
+
+# ─── Upload folders (user-generated content) ──────────
+uploads/
+src/main/resources/uploads/
+
+# ─── IDE — IntelliJ IDEA ──────────────────────────────
+.idea/
 *.iml
 *.ipr
+*.iws
 out/
-!**/src/main/**/out/
-!**/src/test/**/out/
 
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-
-### VS Code ###
+# ─── IDE — VS Code ────────────────────────────────────
 .vscode/
+
+# ─── IDE — Eclipse / STS ──────────────────────────────
+.classpath
+.project
+.settings/
+.factorypath
+bin/
+
+# ─── OS files ─────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Docker (if your override file has secrets) ───────
+# docker-compose.override.yml

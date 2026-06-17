@@ -7,11 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
+import '../../../core/constants/app_config.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/google_places_search_field.dart';
 import 'customer_order_tracking_screen.dart';
 
 // ─── Saved destination model ──────────────────────────
@@ -570,12 +572,18 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                 const SizedBox(height: 8),
               ],
 
-              AppInput(
-                  controller: _dropoffCtrl,
-                  hint: 'Where are you going?',
-                  label: 'Destination',
-                  prefixIcon: Icons.flag_rounded,
-                  maxLines: 2),
+              GooglePlacesSearchField(
+                hint: 'Where are you going?',
+                label: 'Destination',
+                prefixIcon: Icons.flag_rounded,
+                apiKey: AppConfig.googlePlacesKey,
+                onPlaceSelected: (result) {
+                  _dropoffCtrl.text = result.address;
+                  _dropoffLat = result.lat;
+                  _dropoffLng = result.lng;
+                  setState(() {});
+                },
+              ),
               const SizedBox(height: 12),
               AppInput(
                   controller: _notesCtrl,

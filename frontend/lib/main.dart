@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/services/api_service.dart';
 import 'core/services/storage_service.dart';
 import 'core/router/app_router.dart';
@@ -12,6 +13,12 @@ import 'core/constants/app_colors.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // .env not found — using defaults
+  }
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

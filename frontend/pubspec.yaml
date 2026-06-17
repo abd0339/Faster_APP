@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  
+  flutter_dotenv: ^5.2.1
 
   # ─── State Management ─────────────────────────────
   flutter_bloc: ^8.1.6
@@ -68,6 +70,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - .env
     - assets/animations/
     - assets/images/
     - assets/icons/

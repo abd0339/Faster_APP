@@ -157,21 +157,24 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   // ─── GPS STREAM ───────────────────────────────────
   void _startLocationStream() {
     _locationSub?.cancel();
-    _locationSub =
-        LocationService.instance.getLiveLocationStream().listen((position) {
+    _locationSub = LocationService.instance
+        .getLiveLocationStream()
+        .listen((position) async {
       // Send GPS via WebSocket (faster) + REST fallback
       WebSocketService.instance.sendDriverLocation(
         position.latitude,
         position.longitude,
       );
       // Also POST via REST every update
-      ApiService.instance.post(
-        ApiConstants.driverLocation,
-        data: {
-          'lat': position.latitude,
-          'lng': position.longitude,
-        },
-      ).catchError((_) {});
+      try {
+        await ApiService.instance.post(
+          ApiConstants.driverLocation,
+          data: {
+            'lat': position.latitude,
+            'lng': position.longitude,
+          },
+        );
+      } catch (_) {}
     });
   }
 

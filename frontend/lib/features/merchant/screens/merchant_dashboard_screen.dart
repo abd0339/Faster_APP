@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart' as dio;
+import 'package:faster_app/core/constants/app_config.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/services/api_service.dart';
@@ -12,6 +14,7 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/google_places_search_field.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import 'merchant_categories_screen.dart';
@@ -718,12 +721,14 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                           ),
                         ]),
                         const SizedBox(height: 8),
-                        AppInput(
-                          controller: pickupCtrl,
-                          hint: 'Your store location',
-                          label: 'Pickup',
-                          prefixIcon: Icons.store_outlined,
-                          maxLines: 2,
+                        GooglePlacesSearchField(
+                          hint: 'Delivery address...',
+                          label: 'Delivery Address',
+                          apiKey: AppConfig.googlePlacesKey,
+                          onPlaceSelected: (result) {
+                            deliveryCtrl.text = result.address;
+                            // Store coords for driver navigation
+                          },
                         ),
                         if (pickupLat != null)
                           Padding(
@@ -968,7 +973,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                             controller: phoneCtrl,
                             hint: '+961 70 000 000',
                             label: 'Customer Phone (WhatsApp)',
-                            prefixIcon: Icons.whatsapp_rounded,
+                            prefixIcon: Icons.chat_rounded,
                             keyboardType: TextInputType.phone,
                           ),
                           const SizedBox(height: 12),
@@ -990,7 +995,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(children: [
-                                  const Icon(Icons.whatsapp_rounded,
+                                  const Icon(Icons.chat_rounded,
                                       color: Color(0xFF25D366), size: 18),
                                   const SizedBox(width: 8),
                                   Text('Does the customer have WhatsApp?',

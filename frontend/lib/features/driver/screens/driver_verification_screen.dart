@@ -12,6 +12,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
+import '../../../core/constants/api_constants.dart';
 import 'driver_dashboard_screen.dart';
 
 class DriverVerificationScreen extends StatefulWidget {
@@ -852,7 +853,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                const Icon(Icons.whatsapp_rounded,
+                const Icon(Icons.chat_rounded,
                     color: Color(0xFF25D366), size: 20),
                 const SizedBox(width: 10),
                 Expanded(
@@ -981,12 +982,14 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                     context,
                     MaterialPageRoute(
                       builder: (_) => const DriverDashboardScreen(),
-                      },
+                    ),
+                  );
+                },
               ),
             ] else if (isRejected) ...[
               AppButton(
                 label: 'Contact Admin on WhatsApp',
-                icon: Icons.whatsapp_rounded,
+                icon: Icons.chat_rounded,
                 color: const Color(0xFF25D366),
                 textColor: AppColors.background,
                 onPressed: () {
@@ -1020,7 +1023,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                 child: Column(
                   children: [
                     Row(children: [
-                      const Icon(Icons.whatsapp_rounded,
+                      const Icon(Icons.chat_rounded,
                           color: Color(0xFF25D366), size: 24),
                       const SizedBox(width: 10),
                       Expanded(
