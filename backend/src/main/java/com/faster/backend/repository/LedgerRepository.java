@@ -1,6 +1,8 @@
 package com.faster.backend.repository;
 
 import com.faster.backend.entity.LedgerEntry;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,15 +31,24 @@ public interface LedgerRepository
             LedgerEntry.EntryType type);
 
     // ─── Get latest balance for a user ───────────────
+    // Uses Pageable instead of LIMIT (LIMIT is not standard JPQL)
     // Returns the most recent balanceAfter value
     @Query("SELECT l.balanceAfter FROM LedgerEntry l " +
            "WHERE l.user.id = :userId " +
-           "ORDER BY l.createdAt DESC " +
-           "LIMIT 1")
-    BigDecimal getLatestBalance(
-            @Param("userId") Long userId);
+           "ORDER BY l.createdAt DESC")
+    List<BigDecimal> findLatestBalancePage(
+            @Param("userId") Long userId,
+            Pageable pageable);
 
-    // ─── Total driver debt (sum of unpaid commissions)
+    // ─── Convenience default method ───────────────────
+    // Call this everywhere instead of findLatestBalancePage directly
+    default BigDecimal getLatestBalance(Long userId) {
+        List<BigDecimal> results = findLatestBalancePage(
+                userId, PageRequest.of(0, 1));
+        return results.isEmpty() ? null : results.get(0);
+    }
+
+    // ─── Total driver commission (sum of all DEBIT entries) ──
     @Query("SELECT COALESCE(SUM(l.amount), 0) " +
            "FROM LedgerEntry l " +
            "WHERE l.user.id = :driverId " +
@@ -56,8 +67,8 @@ public interface LedgerRepository
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to);
 
-    // ─── Merchant daily commission total ──────────────
-    // Returns total merchant_commission for today
+    // ─── Merchant daily sales total ──────────────────
+    // Sums merchantCommission from delivered orders in a day
     @Query("SELECT COALESCE(SUM(o.merchantCommission), 0) " +
            "FROM Order o " +
            "WHERE o.merchant.id = :merchantId " +
@@ -81,12 +92,11 @@ public interface LedgerRepository
             @Param("startOfMonth") LocalDateTime startOfMonth,
             @Param("endOfMonth") LocalDateTime endOfMonth);
 
-    // ─── Platform total revenue (all commissions) ─────
+    // ─── Platform total revenue (all commissions ever) ──
     @Query("SELECT COALESCE(SUM(l.amount), 0) " +
            "FROM LedgerEntry l " +
            "WHERE l.category IN " +
-           "('DRIVER_COMMISSION', " +
-           "'MERCHANT_COMMISSION') " +
+           "('DRIVER_COMMISSION', 'MERCHANT_COMMISSION') " +
            "AND l.type = 'DEBIT'")
     BigDecimal getPlatformTotalRevenue();
 
@@ -94,8 +104,7 @@ public interface LedgerRepository
     @Query("SELECT COALESCE(SUM(l.amount), 0) " +
            "FROM LedgerEntry l " +
            "WHERE l.category IN " +
-           "('DRIVER_COMMISSION', " +
-           "'MERCHANT_COMMISSION') " +
+           "('DRIVER_COMMISSION', 'MERCHANT_COMMISSION') " +
            "AND l.type = 'DEBIT' " +
            "AND l.createdAt BETWEEN :from AND :to")
     BigDecimal getPlatformRevenueInRange(
@@ -108,7 +117,7 @@ public interface LedgerRepository
            "ORDER BY l.createdAt DESC")
     List<LedgerEntry> findAllDriverCommissions();
 
-    // ─── All pending (unsettled) driver debts ─────────
+    // ─── Unsettled commissions for one driver ─────────
     @Query("SELECT l FROM LedgerEntry l " +
            "WHERE l.user.id = :driverId " +
            "AND l.category = 'DRIVER_COMMISSION' " +
@@ -117,7 +126,8 @@ public interface LedgerRepository
     List<LedgerEntry> findUnsettledCommissions(
             @Param("driverId") Long driverId);
 
-    // ─── Check if order already has ledger entry ──────
+    // ─── Check if order already has a ledger entry ────
+    // Used in recordDriverCommission() to prevent double-recording
     boolean existsByOrderIdAndCategory(
             Long orderId,
             LedgerEntry.EntryCategory category);

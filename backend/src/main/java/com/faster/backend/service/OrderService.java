@@ -11,523 +11,523 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
-        private final OrderRepository orderRepository;
-        private final UserRepository userRepository;
-        private final LocationService locationService;
-        private final SimpMessagingTemplate messagingTemplate;
+    private final OrderRepository orderRepository;
+    private final UserRepository userRepository;
+    private final LocationService locationService;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final LedgerService ledgerService;
 
-        // ─── Commission rates ─────────────────────────────
-        // Driver: 20% of delivery fee per order
-        private static final BigDecimal DRIVER_COMMISSION_RATE =
-                        new BigDecimal("0.20");
+    // ─── Commission rates ─────────────────────────────
+    // Driver: 20% of delivery fee per order
+    private static final BigDecimal DRIVER_COMMISSION_RATE =
+            new BigDecimal("0.20");
 
-        // Merchant: 10% of daily sales (per order stored)
-        private static final BigDecimal MERCHANT_COMMISSION_RATE =
-                        new BigDecimal("0.10");
+    // Merchant: 10% of daily sales (per order stored)
+    private static final BigDecimal MERCHANT_COMMISSION_RATE =
+            new BigDecimal("0.10");
 
-        // ─── Search radius ────────────────────────────────
-        private static final double SEARCH_RADIUS_KM = 5.0;
+    // ─── Search radius ────────────────────────────────
+    private static final double SEARCH_RADIUS_KM = 5.0;
 
-        // ─────────────────────────────────────────────────
-        // CREATE STANDARD ORDER (LOGISTICS)
-        // App Customer orders from a Merchant store
-        // ─────────────────────────────────────────────────
-        @Transactional
-        public Order createOrder(Long merchantId,
-                        Long customerId,
-                        BigDecimal totalPrice,
-                        BigDecimal deliveryFee,
-                        Double pickupLat,
-                        Double pickupLng,
-                        String pickupAddress,
-                        Double deliveryLat,
-                        Double deliveryLng,
-                        String deliveryAddress,
-                        String customerNotes,
-                        Order.OrderType orderType) {
+    // ─────────────────────────────────────────────────
+    // CREATE STANDARD ORDER (LOGISTICS)
+    // App Customer orders from a Merchant store
+    // ─────────────────────────────────────────────────
+    @Transactional
+    public Order createOrder(Long merchantId,
+            Long customerId,
+            BigDecimal totalPrice,
+            BigDecimal deliveryFee,
+            Double pickupLat,
+            Double pickupLng,
+            String pickupAddress,
+            Double deliveryLat,
+            Double deliveryLng,
+            String deliveryAddress,
+            String customerNotes,
+            Order.OrderType orderType) {
 
-                User merchant = getUser(merchantId);
-                User customer = getUser(customerId);
+        User merchant = getUser(merchantId);
+        User customer = getUser(customerId);
 
-                BigDecimal actualDeliveryFee = deliveryFee != null
-                                ? deliveryFee.setScale(2, RoundingMode.HALF_UP)
-                                : BigDecimal.ZERO;
+        BigDecimal actualDeliveryFee = deliveryFee != null
+                ? deliveryFee.setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
 
-                // Driver commission = 20% of delivery fee only
-                BigDecimal driverCommission = actualDeliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+        // Driver commission = 20% of delivery fee only
+        BigDecimal driverCommission = actualDeliveryFee
+                .multiply(DRIVER_COMMISSION_RATE)
+                .setScale(2, RoundingMode.HALF_UP);
 
-                // Grand total = product price + delivery fee
-                BigDecimal grandTotal = totalPrice
-                                .add(actualDeliveryFee)
-                                .setScale(2, RoundingMode.HALF_UP);
+        // Grand total = product price + delivery fee
+        BigDecimal grandTotal = totalPrice
+                .add(actualDeliveryFee)
+                .setScale(2, RoundingMode.HALF_UP);
 
-                // Merchant daily commission = 10% of product price
-                BigDecimal merchantCommission = totalPrice
-                                .multiply(MERCHANT_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+        // Merchant daily commission = 10% of product price
+        BigDecimal merchantCommission = totalPrice
+                .multiply(MERCHANT_COMMISSION_RATE)
+                .setScale(2, RoundingMode.HALF_UP);
 
-                Order order = Order.builder()
-                                .trackingCode(generateTrackingCode())
-                                .merchant(merchant)
-                                .customer(customer)
-                                .orderType(Order.OrderType.LOGISTICS)
-                                .status(Order.OrderStatus.PENDING)
-                                .totalPrice(totalPrice)
-                                .deliveryFee(actualDeliveryFee)
-                                .commissionAmount(driverCommission)
-                                .grandTotal(grandTotal)
-                                .driverPaysMerchant(totalPrice)
-                                .merchantCommission(merchantCommission)
-                                .pickupLat(pickupLat)
-                                .pickupLng(pickupLng)
-                                .pickupAddress(pickupAddress)
-                                .deliveryLat(deliveryLat)
-                                .deliveryLng(deliveryLng)
-                                .deliveryAddress(deliveryAddress)
-                                .customerNotes(customerNotes)
-                                .build();
+        Order order = Order.builder()
+                .trackingCode(generateTrackingCode())
+                .merchant(merchant)
+                .customer(customer)
+                .orderType(Order.OrderType.LOGISTICS)
+                .status(Order.OrderStatus.PENDING)
+                .totalPrice(totalPrice)
+                .deliveryFee(actualDeliveryFee)
+                .commissionAmount(driverCommission)
+                .grandTotal(grandTotal)
+                .driverPaysMerchant(totalPrice)
+                .merchantCommission(merchantCommission)
+                .pickupLat(pickupLat)
+                .pickupLng(pickupLng)
+                .pickupAddress(pickupAddress)
+                .deliveryLat(deliveryLat)
+                .deliveryLng(deliveryLng)
+                .deliveryAddress(deliveryAddress)
+                .customerNotes(customerNotes)
+                .build();
 
-                Order saved = orderRepository.save(order);
+        Order saved = orderRepository.save(order);
 
-                notifyNearestDrivers(
-                                saved, pickupLat, pickupLng,
-                                Order.OrderType.LOGISTICS);
+        notifyNearestDrivers(
+                saved, pickupLat, pickupLng,
+                Order.OrderType.LOGISTICS);
 
-                System.out.println(
-                                "📦 LOGISTICS order: " + saved.getTrackingCode() +
-                                " | Merchant: " + merchantId +
-                                " | Total: $" + grandTotal);
+        System.out.println(
+                "📦 LOGISTICS order: " + saved.getTrackingCode() +
+                " | Merchant: " + merchantId +
+                " | Total: $" + grandTotal);
 
-                return saved;
+        return saved;
+    }
+
+    // ─────────────────────────────────────────────────
+    // CREATE MOBILITY ORDER (Uber-style ride)
+    // Customer requests a ride from A to B
+    // No merchant involved — driver IS the service
+    // Notifies PEOPLE and HYBRID mode drivers
+    // ─────────────────────────────────────────────────
+    @Transactional
+    public Order createMobilityOrder(
+            Long customerId,
+            BigDecimal rideFee,
+            Double pickupLat,
+            Double pickupLng,
+            String pickupAddress,
+            Double deliveryLat,
+            Double deliveryLng,
+            String deliveryAddress,
+            String customerNotes) {
+
+        User customer = getUser(customerId);
+
+        BigDecimal actualFee = rideFee != null
+                ? rideFee.setScale(2, RoundingMode.HALF_UP)
+                : new BigDecimal("3.00");
+
+        // Driver commission = 20% of ride fee
+        BigDecimal driverCommission = actualFee
+                .multiply(DRIVER_COMMISSION_RATE)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        // No products — totalPrice = 0
+        // grandTotal = ride fee only (customer pays driver)
+        BigDecimal totalPrice = BigDecimal.ZERO
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal grandTotal = actualFee;
+
+        Order order = Order.builder()
+                .trackingCode(generateTrackingCode())
+                // merchant = null for MOBILITY (no store involved)
+                .merchant(null)
+                .customer(customer)
+                .orderType(Order.OrderType.MOBILITY)
+                .status(Order.OrderStatus.PENDING)
+                .totalPrice(totalPrice)
+                .deliveryFee(actualFee)
+                .commissionAmount(driverCommission)
+                .grandTotal(grandTotal)
+                .driverPaysMerchant(BigDecimal.ZERO)
+                .merchantCommission(BigDecimal.ZERO)
+                .pickupLat(pickupLat)
+                .pickupLng(pickupLng)
+                .pickupAddress(pickupAddress)
+                .deliveryLat(deliveryLat)
+                .deliveryLng(deliveryLng)
+                .deliveryAddress(deliveryAddress)
+                .customerNotes(customerNotes)
+                .build();
+
+        Order saved = orderRepository.save(order);
+
+        // Notify nearest PEOPLE + HYBRID drivers
+        notifyNearestDrivers(
+                saved, pickupLat, pickupLng,
+                Order.OrderType.MOBILITY);
+
+        System.out.println(
+                "🚗 MOBILITY order: " + saved.getTrackingCode() +
+                " | Pickup: " + pickupAddress +
+                " | Fee: $" + actualFee);
+
+        return saved;
+    }
+
+    // ─────────────────────────────────────────────────
+    // CREATE O2O ORDER (Offline Customer by phone)
+    // Merchant creates for customer who called by phone
+    // ─────────────────────────────────────────────────
+    @Transactional
+    public Order createO2OOrder(Long merchantId,
+            String offlinePhone,
+            String offlineLandmark,
+            BigDecimal totalPrice,
+            BigDecimal deliveryFee,
+            Double pickupLat,
+            Double pickupLng,
+            String pickupAddress) {
+
+        User merchant = getUser(merchantId);
+
+        BigDecimal actualDeliveryFee = deliveryFee != null
+                ? deliveryFee.setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        BigDecimal driverCommission = actualDeliveryFee
+                .multiply(DRIVER_COMMISSION_RATE)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal grandTotal = totalPrice
+                .add(actualDeliveryFee)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal merchantCommission = totalPrice
+                .multiply(MERCHANT_COMMISSION_RATE)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        String trackingCode = generateTrackingCode();
+
+        Order order = Order.builder()
+                .trackingCode(trackingCode)
+                .merchant(merchant)
+                .offlineCustomerPhone(offlinePhone)
+                .offlineCustomerLandmark(offlineLandmark)
+                .orderType(Order.OrderType.LOGISTICS)
+                .status(Order.OrderStatus.PENDING)
+                .totalPrice(totalPrice)
+                .deliveryFee(actualDeliveryFee)
+                .commissionAmount(driverCommission)
+                .grandTotal(grandTotal)
+                .driverPaysMerchant(totalPrice)
+                .merchantCommission(merchantCommission)
+                .pickupLat(pickupLat)
+                .pickupLng(pickupLng)
+                .pickupAddress(pickupAddress)
+                .deliveryAddress(offlineLandmark)
+                .build();
+
+        Order saved = orderRepository.save(order);
+
+        notifyNearestDrivers(
+                saved, pickupLat, pickupLng,
+                Order.OrderType.LOGISTICS);
+
+        // Log SMS (production: integrate SMS gateway)
+        System.out.println(
+                "📱 O2O SMS → " + offlinePhone +
+                " | Track: http://localhost:8080/tracking/public/"
+                + trackingCode);
+
+        return saved;
+    }
+
+    // ─────────────────────────────────────────────────
+    // GET CUSTOMER ORDERS
+    // ─────────────────────────────────────────────────
+    public List<Order> getCustomerOrders(Long customerId) {
+        return orderRepository
+                .findByCustomerIdOrderByCreatedAtDesc(customerId);
+    }
+
+    // ─────────────────────────────────────────────────
+    // DRIVER ACCEPTS ORDER
+    // Uses atomic DB update to prevent double-accept race condition
+    // ─────────────────────────────────────────────────
+    @Transactional
+    public Order acceptOrder(Long driverId, Long orderId) {
+
+        User driver = getUser(driverId);
+
+        if (Boolean.TRUE.equals(driver.getIsBlocked())) {
+            throw new RuntimeException(
+                    "Your account is blocked. " +
+                    "Settle your commission debt via OMT or WishMoney, " +
+                    "then contact admin to reactivate.");
         }
 
-        // ─────────────────────────────────────────────────
-        // CREATE MOBILITY ORDER (Uber-style ride)
-        // Customer requests a ride from A to B
-        // No merchant involved — driver IS the service
-        // Notifies PEOPLE and HYBRID mode drivers
-        // ─────────────────────────────────────────────────
-        @Transactional
-        public Order createMobilityOrder(
-                        Long customerId,
-                        BigDecimal rideFee,
-                        Double pickupLat,
-                        Double pickupLng,
-                        String pickupAddress,
-                        Double deliveryLat,
-                        Double deliveryLng,
-                        String deliveryAddress,
-                        String customerNotes) {
+        // Atomic update — only succeeds if order is still PENDING
+        // Prevents two drivers accepting the same order simultaneously
+        int updated = orderRepository.assignDriver(
+                orderId, driverId, LocalDateTime.now());
 
-                User customer = getUser(customerId);
-
-                BigDecimal actualFee = rideFee != null
-                                ? rideFee.setScale(2, RoundingMode.HALF_UP)
-                                : new BigDecimal("3.00");
-
-                // Driver commission = 20% of ride fee
-                BigDecimal driverCommission = actualFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
-
-                // No products — totalPrice = 0
-                // grandTotal = ride fee only (customer pays driver)
-                BigDecimal totalPrice = BigDecimal.ZERO
-                                .setScale(2, RoundingMode.HALF_UP);
-                BigDecimal grandTotal = actualFee;
-
-                Order order = Order.builder()
-                                .trackingCode(generateTrackingCode())
-                                // merchant = null for MOBILITY (no store involved)
-                                .merchant(null)
-                                .customer(customer)
-                                .orderType(Order.OrderType.MOBILITY)
-                                .status(Order.OrderStatus.PENDING)
-                                .totalPrice(totalPrice)
-                                .deliveryFee(actualFee)
-                                .commissionAmount(driverCommission)
-                                .grandTotal(grandTotal)
-                                .driverPaysMerchant(BigDecimal.ZERO)
-                                .merchantCommission(BigDecimal.ZERO)
-                                .pickupLat(pickupLat)
-                                .pickupLng(pickupLng)
-                                .pickupAddress(pickupAddress)
-                                .deliveryLat(deliveryLat)
-                                .deliveryLng(deliveryLng)
-                                .deliveryAddress(deliveryAddress)
-                                .customerNotes(customerNotes)
-                                .build();
-
-                Order saved = orderRepository.save(order);
-
-                // Notify nearest PEOPLE + HYBRID drivers
-                notifyNearestDrivers(
-                                saved, pickupLat, pickupLng,
-                                Order.OrderType.MOBILITY);
-
-                System.out.println(
-                                "🚗 MOBILITY order: " + saved.getTrackingCode() +
-                                " | Pickup: " + pickupAddress +
-                                " | Fee: $" + actualFee);
-
-                return saved;
+        if (updated == 0) {
+            throw new RuntimeException(
+                    "Order is no longer available — " +
+                    "another driver already accepted it.");
         }
 
-        // ─────────────────────────────────────────────────
-        // CREATE O2O ORDER (Offline Customer by phone)
-        // Merchant creates for customer who called by phone
-        // ─────────────────────────────────────────────────
-        @Transactional
-        public Order createO2OOrder(Long merchantId,
-                        String offlinePhone,
-                        String offlineLandmark,
-                        BigDecimal totalPrice,
-                        BigDecimal deliveryFee,
-                        Double pickupLat,
-                        Double pickupLng,
-                        String pickupAddress) {
+        Order saved = orderRepository.findById(orderId)
+                .orElseThrow(() ->
+                        new RuntimeException("Order not found"));
 
-                User merchant = getUser(merchantId);
-
-                BigDecimal actualDeliveryFee = deliveryFee != null
-                                ? deliveryFee.setScale(2, RoundingMode.HALF_UP)
-                                : BigDecimal.ZERO;
-
-                BigDecimal driverCommission = actualDeliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
-
-                BigDecimal grandTotal = totalPrice
-                                .add(actualDeliveryFee)
-                                .setScale(2, RoundingMode.HALF_UP);
-
-                BigDecimal merchantCommission = totalPrice
-                                .multiply(MERCHANT_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
-
-                String trackingCode = generateTrackingCode();
-
-                Order order = Order.builder()
-                                .trackingCode(trackingCode)
-                                .merchant(merchant)
-                                .offlineCustomerPhone(offlinePhone)
-                                .offlineCustomerLandmark(offlineLandmark)
-                                .orderType(Order.OrderType.LOGISTICS)
-                                .status(Order.OrderStatus.PENDING)
-                                .totalPrice(totalPrice)
-                                .deliveryFee(actualDeliveryFee)
-                                .commissionAmount(driverCommission)
-                                .grandTotal(grandTotal)
-                                .driverPaysMerchant(totalPrice)
-                                .merchantCommission(merchantCommission)
-                                .pickupLat(pickupLat)
-                                .pickupLng(pickupLng)
-                                .pickupAddress(pickupAddress)
-                                .deliveryAddress(offlineLandmark)
-                                .build();
-
-                Order saved = orderRepository.save(order);
-
-                notifyNearestDrivers(
-                                saved, pickupLat, pickupLng,
-                                Order.OrderType.LOGISTICS);
-
-                // Log SMS (production: integrate SMS gateway)
-                System.out.println(
-                                "📱 O2O SMS → " + offlinePhone +
-                                " | Track: http://localhost:8080/tracking/public/"
-                                + trackingCode);
-
-                return saved;
+        // Notify merchant (only for LOGISTICS)
+        if (saved.getMerchant() != null) {
+            messagingTemplate.convertAndSend(
+                    "/topic/merchant/" +
+                    saved.getMerchant().getId(),
+                    buildStatusUpdate(saved));
         }
 
-        // ─────────────────────────────────────────────────
-        // GET CUSTOMER ORDERS
-        // ─────────────────────────────────────────────────
-        public List<Order> getCustomerOrders(Long customerId) {
-                return orderRepository
-                                .findByCustomerIdOrderByCreatedAtDesc(customerId);
+        // Notify customer if app user
+        if (saved.getCustomer() != null) {
+            messagingTemplate.convertAndSend(
+                    "/topic/order/" + orderId,
+                    buildStatusUpdate(saved));
         }
 
-        // ─────────────────────────────────────────────────
-        // DRIVER ACCEPTS ORDER
-        // ─────────────────────────────────────────────────
-        @Transactional
-        public Order acceptOrder(Long driverId, Long orderId) {
+        return saved;
+    }
 
-                Order order = orderRepository
-                                .findById(orderId)
-                                .orElseThrow(() ->
-                                                new RuntimeException("Order not found"));
+    // ─────────────────────────────────────────────────
+    // UPDATE ORDER STATUS
+    // PENDING→ACCEPTED→PREPARING→READY→PICKED_UP→DELIVERED
+    // ─────────────────────────────────────────────────
+    @Transactional
+    public Order updateStatus(Long orderId,
+            Order.OrderStatus newStatus,
+            Long requesterId) {
 
-                if (order.getStatus() != Order.OrderStatus.PENDING) {
-                        throw new RuntimeException(
-                                        "Order is no longer available");
-                }
+        Order order = orderRepository
+                .findById(orderId)
+                .orElseThrow(() ->
+                        new RuntimeException("Order not found"));
 
-                User driver = getUser(driverId);
+        boolean isMerchant = order.getMerchant() != null &&
+                order.getMerchant().getId().equals(requesterId);
+        boolean isDriver = order.getDriver() != null &&
+                order.getDriver().getId().equals(requesterId);
 
-                if (Boolean.TRUE.equals(driver.getIsBlocked())) {
-                        throw new RuntimeException(
-                                        "Your account is blocked. " +
-                                        "Settle your commission debt first.");
-                }
-
-                order.setDriver(driver);
-                order.setStatus(Order.OrderStatus.ACCEPTED);
-                order.setAcceptedAt(LocalDateTime.now());
-
-                Order saved = orderRepository.save(order);
-
-                // Notify merchant (only for LOGISTICS)
-                if (saved.getMerchant() != null) {
-                        messagingTemplate.convertAndSend(
-                                        "/topic/merchant/" +
-                                        saved.getMerchant().getId(),
-                                        buildStatusUpdate(saved));
-                }
-
-                // Notify customer if app user
-                if (saved.getCustomer() != null) {
-                        messagingTemplate.convertAndSend(
-                                        "/topic/order/" + orderId,
-                                        buildStatusUpdate(saved));
-                }
-
-                return saved;
+        if (!isMerchant && !isDriver) {
+            throw new RuntimeException(
+                    "Not authorized to update this order");
         }
 
-        // ─────────────────────────────────────────────────
-        // UPDATE ORDER STATUS
-        // PENDING→ACCEPTED→PREPARING→READY→PICKED_UP→DELIVERED
-        // ─────────────────────────────────────────────────
-        @Transactional
-        public Order updateStatus(Long orderId,
-                        Order.OrderStatus newStatus,
-                        Long requesterId) {
-
-                Order order = orderRepository
-                                .findById(orderId)
-                                .orElseThrow(() ->
-                                                new RuntimeException("Order not found"));
-
-                boolean isMerchant = order.getMerchant() != null &&
-                                order.getMerchant().getId().equals(requesterId);
-                boolean isDriver = order.getDriver() != null &&
-                                order.getDriver().getId().equals(requesterId);
-
-                if (!isMerchant && !isDriver) {
-                        throw new RuntimeException(
-                                        "Not authorized to update this order");
-                }
-
-                switch (newStatus) {
-                        case PICKED_UP ->
-                                order.setPickedUpAt(LocalDateTime.now());
-                        case DELIVERED -> {
-                                order.setDeliveredAt(LocalDateTime.now());
-                                addDriverDebt(order);
-                        }
-                        default -> {
-                        }
-                }
-
-                order.setStatus(newStatus);
-                Order saved = orderRepository.save(order);
-
-                // Broadcast to customer via WebSocket
-                messagingTemplate.convertAndSend(
-                                "/topic/order/" + orderId,
-                                buildStatusUpdate(saved));
-
-                // Notify merchant (only LOGISTICS has merchant)
-                if (saved.getMerchant() != null) {
-                        messagingTemplate.convertAndSend(
-                                        "/topic/merchant/" +
-                                        saved.getMerchant().getId(),
-                                        buildStatusUpdate(saved));
-                }
-
-                return saved;
+        switch (newStatus) {
+            case PICKED_UP ->
+                order.setPickedUpAt(LocalDateTime.now());
+            case DELIVERED ->
+                order.setDeliveredAt(LocalDateTime.now());
+            default -> {
+            }
         }
 
-        // ─────────────────────────────────────────────────
-        // DISPUTE ORDER
-        // ─────────────────────────────────────────────────
-        @Transactional
-        public Order disputeOrder(Long orderId,
-                        String reason,
-                        Long requesterId) {
+        order.setStatus(newStatus);
+        Order saved = orderRepository.save(order);
 
-                Order order = orderRepository
-                                .findById(orderId)
-                                .orElseThrow(() ->
-                                                new RuntimeException("Order not found"));
-
-                order.setStatus(Order.OrderStatus.DISPUTED);
-                order.setDisputeReason(reason);
-
-                Order saved = orderRepository.save(order);
-
-                if (saved.getMerchant() != null) {
-                        messagingTemplate.convertAndSend(
-                                        "/topic/merchant/" +
-                                        saved.getMerchant().getId(),
-                                        buildStatusUpdate(saved));
-                }
-
-                messagingTemplate.convertAndSend(
-                                "/topic/admin/disputes",
-                                buildStatusUpdate(saved));
-
-                return saved;
+        // ─── On delivery: record commission in ledger ─
+        // LedgerService is the single source of truth for debt.
+        // It creates the ledger entry AND updates driver.debtAmount.
+        // No auto-block — admin handles blocking manually.
+        if (newStatus == Order.OrderStatus.DELIVERED) {
+            ledgerService.recordDriverCommission(saved);
         }
 
-        // ─────────────────────────────────────────────────
-        // TRACK ORDER (public — O2O SMS link)
-        // ─────────────────────────────────────────────────
-        public Order trackOrder(String trackingCode) {
-                return orderRepository
-                                .findByTrackingCode(trackingCode)
-                                .orElseThrow(() -> new RuntimeException(
-                                                "Order not found. Check your tracking code."));
+        // Broadcast to customer via WebSocket
+        messagingTemplate.convertAndSend(
+                "/topic/order/" + orderId,
+                buildStatusUpdate(saved));
+
+        // Notify merchant (only LOGISTICS has merchant)
+        if (saved.getMerchant() != null) {
+            messagingTemplate.convertAndSend(
+                    "/topic/merchant/" +
+                    saved.getMerchant().getId(),
+                    buildStatusUpdate(saved));
         }
 
-        // ─────────────────────────────────────────────────
-        // GET ORDERS
-        // ─────────────────────────────────────────────────
-        public List<Order> getMerchantOrders(Long merchantId) {
-                return orderRepository
-                                .findByMerchantIdOrderByCreatedAtDesc(merchantId);
+        return saved;
+    }
+
+    // ─────────────────────────────────────────────────
+    // DISPUTE ORDER
+    // Only parties to the order can raise a dispute
+    // ─────────────────────────────────────────────────
+    @Transactional
+    public Order disputeOrder(Long orderId,
+            String reason,
+            Long requesterId) {
+
+        Order order = orderRepository
+                .findById(orderId)
+                .orElseThrow(() ->
+                        new RuntimeException("Order not found"));
+
+        // Authorization: only merchant, driver, or customer
+        // of THIS specific order can dispute it
+        boolean isParty =
+                (order.getMerchant() != null &&
+                        order.getMerchant().getId().equals(requesterId))
+                || (order.getDriver() != null &&
+                        order.getDriver().getId().equals(requesterId))
+                || (order.getCustomer() != null &&
+                        order.getCustomer().getId().equals(requesterId));
+
+        if (!isParty) {
+            throw new RuntimeException(
+                    "Not authorized to dispute this order");
         }
 
-        public List<Order> getDriverOrders(Long driverId) {
-                return orderRepository
-                                .findByDriverIdOrderByCreatedAtDesc(driverId);
+        order.setStatus(Order.OrderStatus.DISPUTED);
+        order.setDisputeReason(reason);
+
+        Order saved = orderRepository.save(order);
+
+        if (saved.getMerchant() != null) {
+            messagingTemplate.convertAndSend(
+                    "/topic/merchant/" +
+                    saved.getMerchant().getId(),
+                    buildStatusUpdate(saved));
         }
 
-        public List<Order> getActiveDriverOrders(Long driverId) {
-                return orderRepository.findActiveOrdersByDriver(driverId);
+        // Alert admin dashboard
+        messagingTemplate.convertAndSend(
+                "/topic/admin/disputes",
+                buildStatusUpdate(saved));
+
+        return saved;
+    }
+
+    // ─────────────────────────────────────────────────
+    // TRACK ORDER (public — O2O SMS link)
+    // ─────────────────────────────────────────────────
+    public Order trackOrder(String trackingCode) {
+        return orderRepository
+                .findByTrackingCode(trackingCode)
+                .orElseThrow(() -> new RuntimeException(
+                        "Order not found. Check your tracking code."));
+    }
+
+    // ─────────────────────────────────────────────────
+    // GET ORDERS
+    // ─────────────────────────────────────────────────
+    public List<Order> getMerchantOrders(Long merchantId) {
+        return orderRepository
+                .findByMerchantIdOrderByCreatedAtDesc(merchantId);
+    }
+
+    public List<Order> getDriverOrders(Long driverId) {
+        return orderRepository
+                .findByDriverIdOrderByCreatedAtDesc(driverId);
+    }
+
+    public List<Order> getActiveDriverOrders(Long driverId) {
+        return orderRepository.findActiveOrdersByDriver(driverId);
+    }
+
+    public List<Order> getActiveMerchantOrders(Long merchantId) {
+        return orderRepository.findActiveOrdersByMerchant(merchantId);
+    }
+
+    // ─────────────────────────────────────────────────
+    // PRIVATE HELPERS
+    // ─────────────────────────────────────────────────
+
+    // Ping nearest drivers via WebSocket
+    private void notifyNearestDrivers(
+            Order order,
+            Double pickupLat,
+            Double pickupLng,
+            Order.OrderType orderType) {
+
+        if (pickupLat == null || pickupLng == null) return;
+
+        List<Long> nearbyDrivers;
+
+        if (orderType == Order.OrderType.MOBILITY) {
+            // MOBILITY → PEOPLE + HYBRID drivers
+            nearbyDrivers = locationService
+                    .findNearestPeopleDrivers(
+                            pickupLat, pickupLng,
+                            SEARCH_RADIUS_KM);
+        } else {
+            // LOGISTICS → PACKAGE + HYBRID drivers
+            nearbyDrivers = locationService
+                    .findNearestPackageDrivers(
+                            pickupLat, pickupLng,
+                            SEARCH_RADIUS_KM);
         }
 
-        public List<Order> getActiveMerchantOrders(Long merchantId) {
-                return orderRepository.findActiveOrdersByMerchant(merchantId);
-        }
+        nearbyDrivers.forEach(driverId ->
+            messagingTemplate.convertAndSend(
+                    "/topic/driver/" + driverId,
+                    buildOrderNotification(order)));
 
-        // ─────────────────────────────────────────────────
-        // PRIVATE HELPERS
-        // ─────────────────────────────────────────────────
+        System.out.println(
+                "📡 Pinged " + nearbyDrivers.size() +
+                " drivers for " + order.getTrackingCode());
+    }
 
-        // Record driver commission debt on delivery
-        private void addDriverDebt(Order order) {
-                if (order.getDriver() == null) return;
+    // Generate FST-YYYYMMDD-XXXX tracking code
+    // Uses SecureRandom to prevent collision under concurrent load
+    private String generateTrackingCode() {
+        String date = LocalDateTime.now()
+                .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String random = String.format("%04X",
+                new SecureRandom().nextInt(0xFFFF));
+        return "FST-" + date + "-" + random;
+    }
 
-                User driver = order.getDriver();
-                BigDecimal newDebt = driver.getDebtAmount()
-                                .add(order.getCommissionAmount())
-                                .setScale(2, RoundingMode.HALF_UP);
+    private Map<String, Object> buildStatusUpdate(Order order) {
+        return Map.of(
+                "type", "STATUS_UPDATE",
+                "orderId", order.getId(),
+                "trackingCode", order.getTrackingCode(),
+                "status", order.getStatus(),
+                "updatedAt", LocalDateTime.now().toString());
+    }
 
-                driver.setDebtAmount(newDebt);
-                userRepository.save(driver);
+    private Map<String, Object> buildOrderNotification(Order order) {
+        return Map.of(
+                "type", "NEW_ORDER",
+                "orderId", order.getId(),
+                "trackingCode", order.getTrackingCode(),
+                "totalPrice", order.getTotalPrice(),
+                "deliveryFee", order.getDeliveryFee(),
+                "commissionIfAccepted", order.getCommissionAmount(),
+                "pickupAddress",
+                order.getPickupAddress() != null
+                        ? order.getPickupAddress() : "",
+                "deliveryAddress",
+                order.getDeliveryAddress() != null
+                        ? order.getDeliveryAddress() : "");
+    }
 
-                messagingTemplate.convertAndSend(
-                                "/topic/driver/" + driver.getId(),
-                                Map.of(
-                                                "type", "COMMISSION_RECORDED",
-                                                "message", "Commission $" +
-                                                        order.getCommissionAmount() +
-                                                        " recorded for " +
-                                                        order.getTrackingCode() +
-                                                        ". Total due: $" + newDebt,
-                                                "commissionAmount",
-                                                order.getCommissionAmount(),
-                                                "totalDebt", newDebt));
-        }
-
-        // Ping nearest drivers via WebSocket
-        private void notifyNearestDrivers(
-                        Order order,
-                        Double pickupLat,
-                        Double pickupLng,
-                        Order.OrderType orderType) {
-
-                if (pickupLat == null || pickupLng == null) return;
-
-                List<Long> nearbyDrivers;
-
-                if (orderType == Order.OrderType.MOBILITY) {
-                        // MOBILITY → PEOPLE + HYBRID drivers
-                        nearbyDrivers = locationService
-                                        .findNearestPeopleDrivers(
-                                                        pickupLat, pickupLng,
-                                                        SEARCH_RADIUS_KM);
-                } else {
-                        // LOGISTICS → PACKAGE + HYBRID drivers
-                        nearbyDrivers = locationService
-                                        .findNearestPackageDrivers(
-                                                        pickupLat, pickupLng,
-                                                        SEARCH_RADIUS_KM);
-                }
-
-                nearbyDrivers.forEach(driverId ->
-                        messagingTemplate.convertAndSend(
-                                        "/topic/driver/" + driverId,
-                                        buildOrderNotification(order)));
-
-                System.out.println(
-                                "📡 Pinged " + nearbyDrivers.size() +
-                                " drivers for " + order.getTrackingCode());
-        }
-
-        // Generate FST-YYYYMMDD-XXXX tracking code
-        private String generateTrackingCode() {
-                String date = LocalDateTime.now()
-                                .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-                String random = String.format("%04X",
-                                new Random().nextInt(0xFFFF));
-                return "FST-" + date + "-" + random;
-        }
-
-        private Map<String, Object> buildStatusUpdate(Order order) {
-                return Map.of(
-                                "type", "STATUS_UPDATE",
-                                "orderId", order.getId(),
-                                "trackingCode", order.getTrackingCode(),
-                                "status", order.getStatus(),
-                                "updatedAt", LocalDateTime.now().toString());
-        }
-
-        private Map<String, Object> buildOrderNotification(Order order) {
-                return Map.of(
-                                "type", "NEW_ORDER",
-                                "orderId", order.getId(),
-                                "trackingCode", order.getTrackingCode(),
-                                "totalPrice", order.getTotalPrice(),
-                                "deliveryFee", order.getDeliveryFee(),
-                                "commissionIfAccepted", order.getCommissionAmount(),
-                                "pickupAddress",
-                                order.getPickupAddress() != null
-                                                ? order.getPickupAddress() : "",
-                                "deliveryAddress",
-                                order.getDeliveryAddress() != null
-                                                ? order.getDeliveryAddress() : "");
-        }
-
-        private User getUser(Long userId) {
-                return userRepository.findById(userId)
-                                .orElseThrow(() ->
-                                                new RuntimeException("User not found"));
-        }
+    private User getUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
+    }
 }

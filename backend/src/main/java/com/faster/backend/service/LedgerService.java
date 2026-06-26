@@ -30,45 +30,56 @@ public class LedgerService {
     private final SimpMessagingTemplate messagingTemplate;
 
     // ─── Commission rates ─────────────────────────────
-    private static final BigDecimal DRIVER_COMMISSION_RATE = new BigDecimal("0.20");
-    private static final BigDecimal MERCHANT_COMMISSION_RATE = new BigDecimal("0.10");
+    private static final BigDecimal DRIVER_COMMISSION_RATE =
+            new BigDecimal("0.20");
+    private static final BigDecimal MERCHANT_COMMISSION_RATE =
+            new BigDecimal("0.10");
 
     // ─────────────────────────────────────────────────
     // DRIVER — Record commission on delivery
-    // Called automatically when order = DELIVERED
+    // Called automatically by OrderService when order = DELIVERED
+    //
+    // BUSINESS RULE:
+    //   - 20% of delivery fee is recorded as DEBIT on the driver
+    //   - Driver debt accumulates with NO automatic blocking
+    //   - Admin reviews debts daily via dashboard
+    //   - Admin manually blocks driver when they decide to collect
+    //   - Admin manually unblocks after payment confirmed
     // ─────────────────────────────────────────────────
     @Transactional
-    public LedgerEntry recordDriverCommission(
-            Order order) {
+    public LedgerEntry recordDriverCommission(Order order) {
 
-        // Prevent double-recording
+        // Prevent double-recording if called twice for same order
         if (ledgerRepository.existsByOrderIdAndCategory(
                 order.getId(),
                 LedgerEntry.EntryCategory.DRIVER_COMMISSION)) {
-            throw new RuntimeException(
-                    "Commission already recorded " +
-                            "for this order");
+            // Already recorded — return silently, do not throw
+            // This is a safety guard, not an error state
+            System.out.println(
+                    "⚠️ Commission already recorded for order "
+                    + order.getTrackingCode() + " — skipping.");
+            return null;
         }
 
         User driver = order.getDriver();
-        if (driver == null)
-            return null;
+        if (driver == null) return null;
 
         // Commission = 20% of delivery fee
         BigDecimal commission = order.getDeliveryFee()
                 .multiply(DRIVER_COMMISSION_RATE)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // New balance = current debt + commission
+        // Current debt from users table (source of truth)
         BigDecimal currentDebt = driver.getDebtAmount() != null
                 ? driver.getDebtAmount()
                 : BigDecimal.ZERO;
 
-        BigDecimal newBalance = currentDebt
+        // New accumulated debt
+        BigDecimal newDebt = currentDebt
                 .add(commission)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // Create ledger entry
+        // ─── Create ledger entry ──────────────────────
         LedgerEntry entry = LedgerEntry.builder()
                 .user(driver)
                 .order(order)
@@ -76,41 +87,61 @@ public class LedgerService {
                 .category(LedgerEntry.EntryCategory.DRIVER_COMMISSION)
                 .deliveryFee(order.getDeliveryFee())
                 .amount(commission)
-                .balanceAfter(newBalance)
+                .balanceAfter(newDebt)
                 .description(
                         "Commission 20% of delivery fee $"
-                                + order.getDeliveryFee()
-                                + " for order "
-                                + order.getTrackingCode())
+                        + order.getDeliveryFee()
+                        + " for order "
+                        + order.getTrackingCode())
                 .build();
 
-        LedgerEntry saved = ledgerRepository.save(entry);
+        ledgerRepository.save(entry);
 
-        // Update driver debt in users table
-        driver.setDebtAmount(newBalance);
-
-        // Auto-block if debt >= $20
-        if (newBalance.compareTo(
-                new BigDecimal("20.00")) >= 0) {
-            // Notify driver of commission recorded
-            messagingTemplate.convertAndSend(
-                    "/topic/driver/" + driver.getId(),
-                    Map.of(
-                            "type", "COMMISSION_RECORDED",
-                            "message", "Commission $" + commission
-                                    + " added. Total debt: $" + newBalance,
-                            "commissionAmount", commission,
-                            "totalDebt", newBalance));
-        }
-
+        // ─── Update driver debt in users table ────────
+        driver.setDebtAmount(newDebt);
         userRepository.save(driver);
-        return saved;
+
+        // ─── Notify driver of commission recorded ─────
+        // No blocking — just informational notification
+        messagingTemplate.convertAndSend(
+                "/topic/driver/" + driver.getId(),
+                Map.of(
+                        "type", "COMMISSION_RECORDED",
+                        "message", "Commission $" + commission
+                                + " recorded for order "
+                                + order.getTrackingCode()
+                                + ". Total due: $" + newDebt,
+                        "commissionAmount", commission,
+                        "totalDebt", newDebt,
+                        "orderTrackingCode", order.getTrackingCode()));
+
+        // ─── Notify admin dashboard of new debt ───────
+        // Admin reviews this and decides when to collect
+        messagingTemplate.convertAndSend(
+                "/topic/admin/driver-debts",
+                Map.of(
+                        "type", "DRIVER_COMMISSION_RECORDED",
+                        "driverId", driver.getId(),
+                        "driverName", driver.getFullName(),
+                        "orderTrackingCode", order.getTrackingCode(),
+                        "commissionAmount", commission,
+                        "totalDebt", newDebt,
+                        "message", "Driver " + driver.getFullName()
+                                + " now owes $" + newDebt));
+
+        System.out.println(
+                "💰 Commission $" + commission
+                + " recorded for driver " + driver.getFullName()
+                + " | Total debt: $" + newDebt
+                + " | Order: " + order.getTrackingCode());
+
+        return entry;
     }
 
     // ─────────────────────────────────────────────────
     // DRIVER — Admin settles driver debt manually
     // Admin confirms payment received via OMT/WishMoney
-    // Future: auto via WishMoney webhook
+    // Then calls this to reset debt and unblock driver
     // ─────────────────────────────────────────────────
     @Transactional
     public LedgerEntry settleDriverDebt(
@@ -125,18 +156,18 @@ public class LedgerService {
                         "Driver not found"));
 
         if (driver.getRole() != User.Role.DRIVER) {
+            throw new RuntimeException("User is not a driver");
+        }
+
+        if (amountPaid == null ||
+                amountPaid.compareTo(BigDecimal.ZERO) <= 0) {
             throw new RuntimeException(
-                    "User is not a driver");
+                    "Payment amount must be greater than 0");
         }
 
         BigDecimal currentDebt = driver.getDebtAmount() != null
                 ? driver.getDebtAmount()
                 : BigDecimal.ZERO;
-
-        if (amountPaid.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException(
-                    "Payment amount must be greater than 0");
-        }
 
         // New balance after payment
         BigDecimal newBalance = currentDebt
@@ -148,7 +179,7 @@ public class LedgerService {
             newBalance = BigDecimal.ZERO;
         }
 
-        // Create credit ledger entry
+        // ─── Create credit ledger entry ───────────────
         LedgerEntry entry = LedgerEntry.builder()
                 .user(driver)
                 .type(LedgerEntry.EntryType.CREDIT)
@@ -156,33 +187,46 @@ public class LedgerService {
                 .amount(amountPaid)
                 .balanceAfter(newBalance)
                 .description(
-                        "Debt settlement payment of $"
-                                + amountPaid
-                                + " received via OMT/WishMoney")
+                        "Debt settlement: $"
+                        + amountPaid
+                        + " received via OMT/WishMoney")
                 .paymentReference(paymentReference)
                 .processedBy(adminId)
                 .build();
 
         LedgerEntry saved = ledgerRepository.save(entry);
 
-        // Update driver — reset debt + unblock
+        // ─── Update driver: reset debt + unblock ──────
         driver.setDebtAmount(newBalance);
         driver.setIsBlocked(false);
         userRepository.save(driver);
 
-        // Notify driver account is active again
+        // ─── Notify driver account is active again ────
         messagingTemplate.convertAndSend(
                 "/topic/driver/" + driverId,
                 Map.of(
                         "type", "ACCOUNT_REACTIVATED",
                         "message",
-                        "Your account is active again. " +
-                                "Remaining balance: $" + newBalance,
+                        "Payment of $" + amountPaid
+                        + " received. Your account is active. "
+                        + "Remaining balance: $" + newBalance,
+                        "amountPaid", amountPaid,
                         "remainingDebt", newBalance));
+
+        System.out.println(
+                "✅ Driver " + driver.getFullName()
+                + " settled $" + amountPaid
+                + " | Remaining debt: $" + newBalance
+                + " | Ref: " + paymentReference);
 
         return saved;
     }
 
+    // ─────────────────────────────────────────────────
+    // DAILY JOB — Send admin a summary of all driver debts
+    // Runs every day at midnight Beirut time
+    // Admin uses this to decide who to collect from / block
+    // ─────────────────────────────────────────────────
     @Scheduled(cron = "0 0 0 * * *", zone = "Asia/Beirut")
     @Transactional
     public void recordDailyDriverCommissionSummary() {
@@ -195,16 +239,27 @@ public class LedgerService {
                     : BigDecimal.ZERO;
 
             if (debt.compareTo(BigDecimal.ZERO) > 0) {
-                // Notify admin of driver outstanding debt
+                // Push to admin dashboard for review
                 messagingTemplate.convertAndSend(
                         "/topic/admin/driver-debts",
                         Map.of(
+                                "type", "DAILY_DEBT_SUMMARY",
                                 "driverId", driver.getId(),
                                 "driverName", driver.getFullName(),
                                 "totalDebt", debt,
-                                "date", LocalDate.now().toString()));
+                                "isBlocked",
+                                Boolean.TRUE.equals(
+                                        driver.getIsBlocked()),
+                                "date", LocalDate.now().toString(),
+                                "message", "Driver "
+                                        + driver.getFullName()
+                                        + " has outstanding debt of $"
+                                        + debt));
             }
         }
+
+        System.out.println(
+                "📊 Daily driver debt summary sent to admin dashboard");
     }
 
     // ─────────────────────────────────────────────────
@@ -223,8 +278,7 @@ public class LedgerService {
 
         // Get all active merchants
         List<User> merchants = userRepository
-                .findByRoleAndIsActiveTrue(
-                        User.Role.MERCHANT);
+                .findByRoleAndIsActiveTrue(User.Role.MERCHANT);
 
         for (User merchant : merchants) {
             try {
@@ -232,22 +286,20 @@ public class LedgerService {
                         merchant, startOfDay, endOfDay);
             } catch (Exception e) {
                 System.err.println(
-                        "Failed to record commission " +
-                                "for merchant " +
-                                merchant.getId() + ": " +
-                                e.getMessage());
+                        "Failed to record commission for merchant "
+                        + merchant.getId() + ": " + e.getMessage());
             }
         }
     }
 
-    // ─── Record commission for one merchant one day ───
+    // ─── Record commission for one merchant for one day ──
     @Transactional
     public LedgerEntry recordMerchantDailyCommission(
             User merchant,
             LocalDateTime startOfDay,
             LocalDateTime endOfDay) {
 
-        // Get total sales for that day
+        // Get total delivered sales for that day
         BigDecimal dailySales = ledgerRepository
                 .getMerchantDailyCommission(
                         merchant.getId(),
@@ -256,7 +308,7 @@ public class LedgerService {
 
         if (dailySales == null ||
                 dailySales.compareTo(BigDecimal.ZERO) == 0) {
-            return null; // No sales that day
+            return null; // No sales that day — nothing to record
         }
 
         // Commission = 10% of daily sales
@@ -264,9 +316,9 @@ public class LedgerService {
                 .multiply(MERCHANT_COMMISSION_RATE)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // Get current merchant balance
-        BigDecimal currentBalance = ledgerRepository.getLatestBalance(
-                merchant.getId());
+        // Get current merchant ledger balance
+        BigDecimal currentBalance = ledgerRepository
+                .getLatestBalance(merchant.getId());
         if (currentBalance == null) {
             currentBalance = BigDecimal.ZERO;
         }
@@ -283,23 +335,30 @@ public class LedgerService {
                 .balanceAfter(newBalance)
                 .description(
                         "Daily commission 10% of $"
-                                + dailySales
-                                + " sales on "
-                                + startOfDay.toLocalDate())
+                        + dailySales + " sales on "
+                        + startOfDay.toLocalDate())
                 .build();
 
         LedgerEntry saved = ledgerRepository.save(entry);
 
-        // Notify admin of new merchant commission
+        // Notify admin dashboard
         messagingTemplate.convertAndSend(
                 "/topic/admin/merchant-commissions",
                 Map.of(
+                        "type", "MERCHANT_COMMISSION_RECORDED",
                         "merchantId", merchant.getId(),
                         "merchantName", merchant.getFullName(),
                         "dailySales", dailySales,
                         "commission", commission,
-                        "date", startOfDay.toLocalDate()
-                                .toString()));
+                        "date", startOfDay.toLocalDate().toString(),
+                        "message", "Merchant " + merchant.getFullName()
+                                + " owes $" + commission
+                                + " (10% of $" + dailySales + ")"));
+
+        System.out.println(
+                "🏪 Merchant " + merchant.getFullName()
+                + " commission: $" + commission
+                + " (10% of $" + dailySales + " sales)");
 
         return saved;
     }
@@ -319,8 +378,14 @@ public class LedgerService {
                 .orElseThrow(() -> new RuntimeException(
                         "Merchant not found"));
 
-        BigDecimal currentBalance = ledgerRepository.getLatestBalance(
-                merchantId);
+        if (amountPaid == null ||
+                amountPaid.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException(
+                    "Payment amount must be greater than 0");
+        }
+
+        BigDecimal currentBalance = ledgerRepository
+                .getLatestBalance(merchantId);
         if (currentBalance == null) {
             currentBalance = BigDecimal.ZERO;
         }
@@ -341,7 +406,7 @@ public class LedgerService {
                 .balanceAfter(newBalance)
                 .description(
                         "Merchant commission payment $"
-                                + amountPaid + " received")
+                        + amountPaid + " received")
                 .paymentReference(paymentReference)
                 .processedBy(adminId)
                 .build();
@@ -352,8 +417,7 @@ public class LedgerService {
     // ─────────────────────────────────────────────────
     // GET LEDGER — Driver sees own history
     // ─────────────────────────────────────────────────
-    public List<LedgerEntry> getDriverLedger(
-            Long driverId) {
+    public List<LedgerEntry> getDriverLedger(Long driverId) {
         return ledgerRepository
                 .findByUserIdOrderByCreatedAtDesc(driverId);
     }
@@ -361,8 +425,7 @@ public class LedgerService {
     // ─────────────────────────────────────────────────
     // GET LEDGER — Merchant sees own history
     // ─────────────────────────────────────────────────
-    public List<LedgerEntry> getMerchantLedger(
-            Long merchantId) {
+    public List<LedgerEntry> getMerchantLedger(Long merchantId) {
         return ledgerRepository
                 .findByUserIdOrderByCreatedAtDesc(merchantId);
     }
@@ -372,22 +435,27 @@ public class LedgerService {
     // ─────────────────────────────────────────────────
     public Map<String, Object> getDriverDebtSummary(Long driverId) {
         User driver = userRepository.findById(driverId)
-                .orElseThrow(() -> new RuntimeException("Driver not found"));
+                .orElseThrow(() ->
+                        new RuntimeException("Driver not found"));
 
         BigDecimal debt = driver.getDebtAmount() != null
                 ? driver.getDebtAmount()
                 : BigDecimal.ZERO;
 
+        boolean isBlocked = Boolean.TRUE.equals(driver.getIsBlocked());
+
         return Map.of(
                 "driverId", driverId,
                 "currentDebt", debt,
-                "isBlocked", Boolean.TRUE.equals(driver.getIsBlocked()),
+                "isBlocked", isBlocked,
                 "currency", "USD",
                 "paymentMethods", List.of("OMT", "WishMoney"),
-                "message", Boolean.TRUE.equals(driver.getIsBlocked())
+                "message", isBlocked
                         ? "Account paused by admin. Pay $" + debt
-                                + " via OMT or WishMoney then contact admin."
-                        : "Active. Accumulated commission: $" + debt);
+                                + " via OMT or WishMoney, "
+                                + "then contact admin to reactivate."
+                        : "Account active. Accumulated commission: $"
+                                + debt);
     }
 
     // ─────────────────────────────────────────────────
@@ -398,10 +466,8 @@ public class LedgerService {
             LocalDateTime to) {
 
         BigDecimal totalRevenue = from != null && to != null
-                ? ledgerRepository
-                        .getPlatformRevenueInRange(from, to)
-                : ledgerRepository
-                        .getPlatformTotalRevenue();
+                ? ledgerRepository.getPlatformRevenueInRange(from, to)
+                : ledgerRepository.getPlatformTotalRevenue();
 
         return Map.of(
                 "totalRevenue",
@@ -409,11 +475,7 @@ public class LedgerService {
                         ? totalRevenue
                         : BigDecimal.ZERO,
                 "currency", "USD",
-                "from", from != null
-                        ? from.toString()
-                        : "all time",
-                "to", to != null
-                        ? to.toString()
-                        : "now");
+                "from", from != null ? from.toString() : "all time",
+                "to", to != null ? to.toString() : "now");
     }
 }
