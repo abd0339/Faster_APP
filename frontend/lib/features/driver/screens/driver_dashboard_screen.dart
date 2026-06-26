@@ -34,6 +34,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   bool _isTogglingStatus = false;
   bool _isUpdatingOrder = false;
 
+  // ─── Critical flags to prevent race conditions ────
+  // Prevents GPS stream and WS callbacks from firing
+  // while logout or status toggle is in progress
+  bool _isLoggingOut = false;
+  bool _disposed = false;
+
   // WebSocket + GPS
   StreamSubscription? _locationSub;
   int? _driverId;
@@ -45,72 +51,70 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _loadDriverId();
-    _loadData();
-    _checkStatus();
+    // Single init — fetch driverId then load everything
+    _initDriver();
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    // Stop GPS stream first (prevents more API calls)
     _locationSub?.cancel();
+    _locationSub = null;
+    // Then disconnect WebSocket
     WebSocketService.instance.disconnect();
     super.dispose();
   }
 
-  // ─── Get driver ID from auth state ────────────────
-  void _loadDriverId() {
-    final state = context.read<AuthBloc>().state;
-    if (state is AuthSuccess) {
-      // We store email, not ID — fetch from status endpoint
-      _fetchDriverId();
-    }
-  }
-
-  Future<void> _fetchDriverId() async {
+  // ─── INIT — single entry point ────────────────────
+  // Fetches driverId from status, then loads data,
+  // and reconnects WS if session was already online
+  Future<void> _initDriver() async {
     try {
       final res = await ApiService.instance.get(ApiConstants.driverStatus);
       final data = res.data as Map<String, dynamic>?;
-      if (data != null && mounted) {
-        setState(() => _driverId = data['driverId'] as int?);
-        // If already online from previous session, connect WS
-        if (data['isOnline'] == true) {
-          _connectWebSocket();
-          _startLocationStream();
-        }
+      if (data == null || _disposed) return;
+
+      final id = data['driverId'] as int?;
+      final wasOnline = data['isOnline'] as bool? ?? false;
+      final mode = data['mode'] as String? ?? 'PACKAGE';
+
+      if (mounted) {
+        setState(() {
+          _driverId = id;
+          _isOnline = wasOnline;
+          _currentMode = mode == 'OFFLINE' ? 'PACKAGE' : mode;
+        });
+      }
+
+      // Reconnect if session was already online (e.g. page refresh)
+      if (wasOnline && id != null) {
+        _connectWebSocket();
+        _startLocationStream();
       }
     } catch (_) {}
-  }
 
-  // ─── CHECK STATUS ─────────────────────────────────
-  Future<void> _checkStatus() async {
-    try {
-      final res = await ApiService.instance.get(ApiConstants.driverStatus);
-      final data = res.data as Map<String, dynamic>;
-      if (!mounted) return;
-      setState(() {
-        _isOnline = data['isOnline'] ?? false;
-        _currentMode = data['mode'] ?? 'PACKAGE';
-      });
-    } catch (_) {}
+    // Load orders and debt in parallel
+    await _loadData();
   }
 
   // ─── LOAD DATA ────────────────────────────────────
   Future<void> _loadData() async {
-    if (!mounted) return;
+    if (_disposed || !mounted) return;
     setState(() => _isLoading = true);
     try {
       final results = await Future.wait([
         ApiService.instance.get(ApiConstants.driverOrders),
         ApiService.instance.get(ApiConstants.myDebt),
       ]);
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
+
       final ordersData = results[0].data;
       setState(() {
         _orders = ordersData is List
             ? ordersData
             : (ordersData as Map?)?['content'] as List? ?? [];
         _debtInfo = results[1].data as Map<String, dynamic>?;
-        // Find active order (ACCEPTED or PICKED_UP)
         _activeOrder = _orders.cast<Map<String, dynamic>?>().firstWhere(
               (o) =>
                   o?['status'] == 'ACCEPTED' ||
@@ -121,13 +125,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             );
       });
     } catch (_) {}
-    if (mounted) setState(() => _isLoading = false);
+    if (mounted && !_disposed) setState(() => _isLoading = false);
   }
 
   // ─── WEBSOCKET ────────────────────────────────────
   void _connectWebSocket() async {
     await WebSocketService.instance.connect();
-    if (_driverId != null) {
+    if (_driverId != null && !_disposed) {
       WebSocketService.instance.subscribeToDriver(
         _driverId!,
         _onDriverMessage,
@@ -136,20 +140,22 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   void _onDriverMessage(Map<String, dynamic> data) {
-    final type = data['type'] as String?;
+    // Critical: ignore all messages during logout or after dispose
+    if (_isLoggingOut || _disposed || !mounted) return;
 
-    if (type == 'NEW_ORDER' && mounted) {
-      // New order ping — show incoming card
+    final type = data['type'] as String?;
+    if (type == 'NEW_ORDER') {
       setState(() {
         _incomingOrder = data['order'] as Map<String, dynamic>? ?? data;
         _showIncomingOrder = true;
       });
       if (!kIsWeb) HapticFeedback.heavyImpact();
-    } else if (type == 'BLOCKED' && mounted) {
-      // Admin blocked this driver
+    } else if (type == 'BLOCKED') {
       setState(() => _isOnline = false);
+      _stopLocationStream();
+      WebSocketService.instance.disconnect();
       _showError('Account paused. Pay your balance to continue.');
-    } else if (type == 'ORDER_UPDATE' && mounted) {
+    } else if (type == 'ORDER_UPDATE') {
       _loadData();
     }
   }
@@ -160,12 +166,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     _locationSub = LocationService.instance
         .getLiveLocationStream()
         .listen((position) async {
-      // Send GPS via WebSocket (faster) + REST fallback
+      // Guard: don't send GPS if logging out or disposed
+      if (_isLoggingOut || _disposed) return;
+
+      // WebSocket is faster (no auth header needed on each packet)
       WebSocketService.instance.sendDriverLocation(
         position.latitude,
         position.longitude,
       );
-      // Also POST via REST every update
+
+      // REST fallback every update
       try {
         await ApiService.instance.post(
           ApiConstants.driverLocation,
@@ -174,7 +184,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             'lng': position.longitude,
           },
         );
-      } catch (_) {}
+      } catch (_) {
+        // Silently ignore — WS already sent it
+      }
     });
   }
 
@@ -183,23 +195,42 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     _locationSub = null;
   }
 
-  // ─── TOGGLE ONLINE ────────────────────────────────
+  // ─── TOGGLE ONLINE / OFFLINE ──────────────────────
+  // Correct order of operations:
+  // GOING OFFLINE: stop GPS → call API → disconnect WS → update UI
+  // GOING ONLINE:  call API → connect WS → start GPS → update UI
   Future<void> _toggleOnlineStatus() async {
-    if (!mounted) return;
+    if (_isTogglingStatus || _isLoggingOut || !mounted) return;
+
     setState(() => _isTogglingStatus = true);
     if (!kIsWeb) HapticFeedback.heavyImpact();
 
     try {
       if (_isOnline) {
-        // Go offline
-        await ApiService.instance.post(ApiConstants.driverOffline);
+        // ── GOING OFFLINE ───────────────────────────
+        // Step 1: Stop GPS immediately (no more location updates)
         _stopLocationStream();
+
+        // Step 2: Tell backend driver is offline
+        await ApiService.instance.post(ApiConstants.driverOffline);
+
+        // Step 3: Disconnect WebSocket
         WebSocketService.instance.disconnect();
-        if (!mounted) return;
-        setState(() => _isOnline = false);
+
+        // Step 4: Update UI
+        if (mounted && !_disposed) {
+          setState(() {
+            _isOnline = false;
+            _showIncomingOrder = false;
+            _incomingOrder = null;
+          });
+        }
       } else {
-        // Get location
+        // ── GOING ONLINE ────────────────────────────
+        // Step 1: Get GPS location
         final position = await LocationService.instance.getCurrentPosition();
+
+        // Step 2: Tell backend driver is online
         await ApiService.instance.post(
           ApiConstants.driverOnline,
           data: {
@@ -208,21 +239,80 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
             'lng': position?.longitude ?? 35.5018,
           },
         );
+
+        // Step 3: Connect WebSocket
         _connectWebSocket();
+
+        // Step 4: Start GPS stream
         _startLocationStream();
-        if (!mounted) return;
-        setState(() => _isOnline = true);
+
+        // Step 5: Update UI
+        if (mounted && !_disposed) {
+          setState(() => _isOnline = true);
+        }
       }
     } catch (e) {
-      if (mounted) _showError(ApiService.getErrorMessage(e));
+      // On error: ensure consistent state
+      _stopLocationStream();
+      if (mounted && !_disposed) {
+        _showError(ApiService.getErrorMessage(e));
+      }
     } finally {
-      if (mounted) setState(() => _isTogglingStatus = false);
+      if (mounted && !_disposed) {
+        setState(() => _isTogglingStatus = false);
+      }
     }
+  }
+
+  // ─── SAFE LOGOUT ──────────────────────────────────
+  // Goes offline first, then clears session
+  Future<void> _handleLogout() async {
+    if (_isLoggingOut) return;
+    _isLoggingOut = true;
+
+    // Step 1: Stop GPS immediately
+    _stopLocationStream();
+
+    // Step 2: Go offline in backend (best effort — don't await failure)
+    if (_isOnline) {
+      try {
+        await ApiService.instance
+            .post(ApiConstants.driverOffline)
+            .timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+
+    // Step 3: Disconnect WebSocket
+    WebSocketService.instance.disconnect();
+
+    // Step 4: Clear UI state
+    if (mounted && !_disposed) {
+      setState(() {
+        _isOnline = false;
+        _showIncomingOrder = false;
+        _incomingOrder = null;
+      });
+    }
+
+    // Step 5: Clear auth session → AppRouter navigates to Login
+    if (mounted && !_disposed) {
+      context.read<AuthBloc>().add(LogoutRequested());
+    }
+  }
+
+  // ─── SWITCH MODE ──────────────────────────────────
+  Future<void> _switchMode(String newMode) async {
+    if (_isOnline) {
+      // Can't switch mode while online — go offline first
+      _showError('Go offline first to change your mode');
+      return;
+    }
+    setState(() => _currentMode = newMode);
   }
 
   // ─── ACCEPT ORDER ─────────────────────────────────
   Future<void> _acceptOrder(int orderId) async {
-    if (!mounted) return;
+    if (_disposed || !mounted) return;
     setState(() {
       _showIncomingOrder = false;
       _incomingOrder = null;
@@ -238,7 +328,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   // ─── UPDATE ORDER STATUS ──────────────────────────
   Future<void> _updateOrderStatus(int orderId, String status) async {
-    if (!mounted) return;
+    if (_disposed || !mounted) return;
     setState(() => _isUpdatingOrder = true);
     try {
       await ApiService.instance.patch(
@@ -246,18 +336,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         data: {'status': status},
       );
       await _loadData();
-      if (mounted) {
-        _showSuccess(_statusLabel(status));
-      }
+      if (mounted) _showSuccess(_statusSuccessMsg(status));
     } catch (e) {
       if (mounted) _showError(ApiService.getErrorMessage(e));
     } finally {
-      if (mounted) setState(() => _isUpdatingOrder = false);
+      if (mounted && !_disposed) setState(() => _isUpdatingOrder = false);
     }
   }
 
-  String _statusLabel(String status) {
-    switch (status) {
+  String _statusSuccessMsg(String s) {
+    switch (s) {
       case 'PREPARING':
         return 'Merchant is preparing!';
       case 'READY_FOR_PICKUP':
@@ -271,7 +359,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     }
   }
 
-  // ─── NEXT STATUS after current ────────────────────
   String? _nextStatus(String current) {
     switch (current) {
       case 'ACCEPTED':
@@ -290,13 +377,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   String _nextStatusLabel(String current) {
     switch (current) {
       case 'ACCEPTED':
-        return 'Merchant is Preparing';
+        return 'Merchant Preparing';
       case 'PREPARING':
         return 'Ready for Pickup';
       case 'READY_FOR_PICKUP':
         return 'Picked Up';
       case 'PICKED_UP':
-        return 'Mark Delivered';
+        return '✅ Mark Delivered';
       default:
         return 'Update';
     }
@@ -322,200 +409,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          // Main content
-          IndexedStack(
-            index: _currentIndex,
-            children: [
-              _buildHomeTab(),
-              _buildOrdersTab(),
-              _buildEarningsTab(),
-            ],
-          ),
-          // Incoming order overlay
-          if (_showIncomingOrder && _incomingOrder != null)
-            _buildIncomingOrderOverlay(),
-        ],
-      ),
+      body: Stack(children: [
+        IndexedStack(
+          index: _currentIndex,
+          children: [
+            _buildHomeTab(),
+            _buildOrdersTab(),
+            _buildEarningsTab(),
+          ],
+        ),
+        if (_showIncomingOrder && _incomingOrder != null)
+          _buildIncomingOrderOverlay(),
+      ]),
       bottomNavigationBar: _buildBottomNav(),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════
-  // INCOMING ORDER OVERLAY
-  // ═══════════════════════════════════════════════════
-  Widget _buildIncomingOrderOverlay() {
-    final order = _incomingOrder!;
-    final orderId = order['id'] as int? ?? 0;
-    final total = order['grandTotal'] ?? order['totalPrice'] ?? 0;
-    final fee = order['deliveryFee'] ?? 0;
-    final address = order['deliveryAddress'] ??
-        order['offlineCustomerLandmark'] ??
-        'No address';
-    final pickup = order['pickupAddress'] ?? 'Store location';
-    final tracking = order['trackingCode'] ?? '';
-
-    return GestureDetector(
-      onTap: () {}, // Block tap-through
-      child: Container(
-        color: AppColors.background.withValues(alpha: 0.92),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // ─── Pulsing indicator ──────────
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.8, end: 1.0),
-                  duration: const Duration(milliseconds: 600),
-                  curve: Curves.easeInOut,
-                  builder: (_, v, child) =>
-                      Transform.scale(scale: v, child: child),
-                  child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.accent.withValues(alpha: 0.15),
-                      border: Border.all(color: AppColors.accent, width: 2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.accent.withValues(alpha: 0.4),
-                          blurRadius: 24,
-                          spreadRadius: 4,
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.delivery_dining,
-                          color: AppColors.accent, size: 40),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-                Text('New Order!',
-                    style: AppTextStyles.displayMedium
-                        .copyWith(color: AppColors.accent)),
-                const SizedBox(height: 4),
-                Text(tracking,
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: AppColors.primary)),
-                const SizedBox(height: 24),
-
-                // ─── Order details ──────────────
-                GlassCard(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      _orderDetailRow(
-                        Icons.store_outlined,
-                        'Pickup',
-                        pickup.toString(),
-                        AppColors.primary,
-                      ),
-                      const SizedBox(height: 12),
-                      _orderDetailRow(
-                        Icons.location_on_outlined,
-                        'Delivery',
-                        address.toString(),
-                        AppColors.accent,
-                      ),
-                      const Divider(color: AppColors.glassBorder, height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Collect from customer',
-                                  style: AppTextStyles.caption),
-                              Text('\$$total', style: AppTextStyles.price),
-                            ],
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text('Your delivery fee',
-                                  style: AppTextStyles.caption),
-                              Text('\$$fee',
-                                  style: AppTextStyles.price
-                                      .copyWith(color: AppColors.primary)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // ─── Accept button ──────────────
-                AppButton(
-                  label: 'Accept Order',
-                  icon: Icons.check_rounded,
-                  color: AppColors.accent,
-                  textColor: AppColors.background,
-                  onPressed: () => _acceptOrder(orderId),
-                ),
-
-                const SizedBox(height: 12),
-
-                // ─── Decline ────────────────────
-                GestureDetector(
-                  onTap: () => setState(() {
-                    _showIncomingOrder = false;
-                    _incomingOrder = null;
-                  }),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    alignment: Alignment.center,
-                    child: Text(
-                      'Skip this order',
-                      style: AppTextStyles.labelLarge
-                          .copyWith(color: AppColors.textHint),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _orderDetailRow(
-      IconData icon, String label, String value, Color color) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: AppTextStyles.caption),
-              Text(value,
-                  style: AppTextStyles.bodyMedium,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -536,14 +442,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
+              // ─── Header ──────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Mission Control', style: AppTextStyles.displayMedium),
+                  // Logout — now uses safe _handleLogout
                   GestureDetector(
-                    onTap: () =>
-                        context.read<AuthBloc>().add(LogoutRequested()),
+                    onTap: _handleLogout,
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
@@ -562,13 +468,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
               // Blocked banner
               if (isBlocked)
-                GlassCard(
-                  color: AppColors.error,
-                  padding: const EdgeInsets.all(16),
+                Container(
                   margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.4)),
+                  ),
                   child: Row(children: [
                     const Icon(Icons.block_rounded,
-                        color: AppColors.error, size: 28),
+                        color: AppColors.error, size: 24),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -586,13 +497,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   ]),
                 ),
 
-              // Active order card — shown when has active order
+              // Active order card
               if (_activeOrder != null) ...[
                 _buildActiveOrderCard(_activeOrder!),
                 const SizedBox(height: 20),
               ],
 
-              // Online toggle card
+              // ─── Online/Offline toggle ────────────
               GlassCard(
                 padding: const EdgeInsets.all(20),
                 child: Column(children: [
@@ -616,8 +527,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       ),
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 500),
-                        width: 56,
-                        height: 56,
+                        width: 52,
+                        height: 52,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color:
@@ -638,7 +549,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                               ? Icons.wifi_rounded
                               : Icons.wifi_off_rounded,
                           color: AppColors.background,
-                          size: 28,
+                          size: 26,
                         ),
                       ),
                     ],
@@ -646,14 +557,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Mode selector (only when offline)
+                  // Mode selector (offline only)
                   if (!_isOnline)
                     Row(
                       children: ['PACKAGE', 'PEOPLE', 'HYBRID'].map((mode) {
                         final isSel = _currentMode == mode;
+                        final icon = mode == 'PACKAGE'
+                            ? '📦'
+                            : mode == 'PEOPLE'
+                                ? '👥'
+                                : '⚡';
                         return Expanded(
                           child: GestureDetector(
-                            onTap: () => setState(() => _currentMode = mode),
+                            onTap: () => _switchMode(mode),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
                               margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -669,15 +585,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                                       : AppColors.glassBorder,
                                 ),
                               ),
-                              child: Text(
-                                mode == 'PACKAGE'
-                                    ? '📦'
-                                    : mode == 'PEOPLE'
-                                        ? '👥'
-                                        : '⚡',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(fontSize: 18),
-                              ),
+                              child: Column(children: [
+                                Text(icon,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(fontSize: 18)),
+                                const SizedBox(height: 2),
+                                Text(mode,
+                                    textAlign: TextAlign.center,
+                                    style: AppTextStyles.caption.copyWith(
+                                        color: isSel
+                                            ? AppColors.primary
+                                            : AppColors.textHint,
+                                        fontSize: 9)),
+                              ]),
                             ),
                           ),
                         );
@@ -686,36 +606,74 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
                   const SizedBox(height: 16),
 
-                  AppButton(
-                    label:
-                        _isOnline ? 'Go Offline' : 'Go Online — $_currentMode',
-                    isLoading: _isTogglingStatus,
-                    color: _isOnline ? AppColors.error : AppColors.accent,
-                    textColor: AppColors.background,
-                    onPressed: isBlocked ? null : _toggleOnlineStatus,
-                  ),
+                  // The toggle button
+                  _isTogglingStatus
+                      ? Container(
+                          width: double.infinity,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color:
+                                (_isOnline ? AppColors.error : AppColors.accent)
+                                    .withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      : SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton.icon(
+                            onPressed: isBlocked ? null : _toggleOnlineStatus,
+                            icon: Icon(_isOnline
+                                ? Icons.wifi_off_rounded
+                                : Icons.wifi_rounded),
+                            label: Text(
+                              _isOnline
+                                  ? 'Go Offline'
+                                  : 'Go Online — $_currentMode',
+                              style: AppTextStyles.labelLarge,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _isOnline
+                                  ? AppColors.error
+                                  : AppColors.accent,
+                              foregroundColor: AppColors.background,
+                              disabledBackgroundColor: AppColors.textHint,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
                 ]),
               ),
 
               const SizedBox(height: 20),
 
-              // Debt card
+              // Commission debt card
               GlassCard(
                 padding: const EdgeInsets.all(16),
-                color: debt > 0 ? AppColors.warning : AppColors.primary,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Commission Due', style: AppTextStyles.bodyMedium),
-                        Text('\$$debt', style: AppTextStyles.price),
-                      ],
-                    ),
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Commission Due',
+                              style: AppTextStyles.bodyMedium),
+                          Text('\$$debt', style: AppTextStyles.price),
+                        ]),
                     SizedBox(
-                      width: 48,
-                      height: 48,
+                      width: 44,
+                      height: 44,
                       child: CircularProgressIndicator(
                         value: (debt / 20.0).clamp(0.0, 1.0),
                         backgroundColor: AppColors.glassWhite,
@@ -734,18 +692,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
               if (_isLoading)
                 const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                )
+                    child: CircularProgressIndicator(color: AppColors.primary))
               else if (_orders.isEmpty)
                 Center(
-                  child: Column(children: [
-                    const Text('🛵', style: TextStyle(fontSize: 48)),
-                    const SizedBox(height: 12),
-                    Text('No orders yet', style: AppTextStyles.headlineMedium),
-                    Text('Go online to receive orders',
-                        style: AppTextStyles.bodyMedium),
-                  ]),
-                )
+                    child: Column(children: [
+                  const Text('🛵', style: TextStyle(fontSize: 48)),
+                  const SizedBox(height: 12),
+                  Text('No orders yet', style: AppTextStyles.headlineMedium),
+                  Text('Go online to receive orders',
+                      style: AppTextStyles.bodyMedium),
+                ]))
               else
                 ListView.separated(
                   shrinkWrap: true,
@@ -761,11 +717,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                order['trackingCode'] ?? '',
-                                style: AppTextStyles.labelLarge
-                                    .copyWith(color: AppColors.primary),
-                              ),
+                              Text(order['trackingCode'] ?? '',
+                                  style: AppTextStyles.labelLarge
+                                      .copyWith(color: AppColors.primary)),
                               const SizedBox(height: 4),
                               Text(
                                 order['deliveryAddress'] ??
@@ -779,16 +733,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                           ),
                         ),
                         Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            StatusBadge(status: order['status'] ?? ''),
-                            const SizedBox(height: 4),
-                            Text(
-                              '\$${order['grandTotal'] ?? 0}',
-                              style: AppTextStyles.priceSmall,
-                            ),
-                          ],
-                        ),
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              StatusBadge(status: order['status'] ?? ''),
+                              const SizedBox(height: 4),
+                              Text('\$${order['grandTotal'] ?? 0}',
+                                  style: AppTextStyles.priceSmall),
+                            ]),
                       ]),
                     );
                   },
@@ -817,94 +768,57 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     return GlassCard(
       borderColor: AppColors.accent.withValues(alpha: 0.5),
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text('ACTIVE ORDER',
-                  style: AppTextStyles.caption.copyWith(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('ACTIVE ORDER',
+                style: AppTextStyles.caption.copyWith(
                     color: AppColors.accent,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 1,
-                  )),
-            ),
-            const Spacer(),
-            StatusBadge(status: status),
+                    letterSpacing: 1)),
+          ),
+          const Spacer(),
+          StatusBadge(status: status),
+        ]),
+        const SizedBox(height: 12),
+        Text(tracking,
+            style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
+        const SizedBox(height: 4),
+        Text(address.toString(),
+            style: AppTextStyles.bodyMedium,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 12),
+        Row(children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Collect', style: AppTextStyles.caption),
+            Text('\$$total', style: AppTextStyles.price),
           ]),
-
-          const SizedBox(height: 12),
-
-          Text(tracking,
-              style:
-                  AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
-          const SizedBox(height: 4),
-          Text(address.toString(),
-              style: AppTextStyles.bodyMedium,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
-
-          const SizedBox(height: 12),
-
-          Row(children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Collect', style: AppTextStyles.caption),
-                Text('\$$total', style: AppTextStyles.price),
-              ],
-            ),
-            const SizedBox(width: 24),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Your fee', style: AppTextStyles.caption),
-                Text('\$$fee',
-                    style:
-                        AppTextStyles.price.copyWith(color: AppColors.primary)),
-              ],
-            ),
+          const SizedBox(width: 24),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Your fee', style: AppTextStyles.caption),
+            Text('\$$fee',
+                style: AppTextStyles.price.copyWith(color: AppColors.primary)),
           ]),
-
-          const SizedBox(height: 16),
-
-          // Status progress bar
-          _buildStatusProgress(status),
-
-          const SizedBox(height: 16),
-
-          // Action button
-          if (nextStatus != null)
-            AppButton(
-              label: _nextStatusLabel(status),
-              icon: _nextStatusIcon(status),
-              color:
-                  status == 'PICKED_UP' ? AppColors.accent : AppColors.primary,
-              textColor: AppColors.background,
-              isLoading: _isUpdatingOrder,
-              onPressed: () => _updateOrderStatus(orderId, nextStatus),
-            ),
-
-          if (status == 'DELIVERED')
-            GlassCard(
-              color: AppColors.accent,
-              padding: const EdgeInsets.all(12),
-              child: Row(children: [
-                const Icon(Icons.check_circle,
-                    color: AppColors.accent, size: 20),
-                const SizedBox(width: 8),
-                Text('Delivered! Commission recorded.',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: AppColors.accent)),
-              ]),
-            ),
-        ],
-      ),
+        ]),
+        const SizedBox(height: 16),
+        _buildStatusProgress(status),
+        const SizedBox(height: 16),
+        if (nextStatus != null)
+          AppButton(
+            label: _nextStatusLabel(status),
+            icon: _nextStatusIcon(status),
+            color: status == 'PICKED_UP' ? AppColors.accent : AppColors.primary,
+            textColor: AppColors.background,
+            isLoading: _isUpdatingOrder,
+            onPressed: () => _updateOrderStatus(orderId, nextStatus),
+          ),
+      ]),
     );
   }
 
@@ -914,7 +828,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       'PREPARING',
       'READY_FOR_PICKUP',
       'PICKED_UP',
-      'DELIVERED',
+      'DELIVERED'
     ];
     final labels = ['Accepted', 'Prep', 'Ready', 'Picked', 'Done'];
     final currentIdx = steps.indexOf(current);
@@ -926,56 +840,182 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         return Expanded(
           child: Row(children: [
             Expanded(
-              child: Column(children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
+                child: Column(children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: done ? AppColors.accent : AppColors.glassWhite,
                     border: Border.all(
-                      color: done ? AppColors.accent : AppColors.glassBorder,
-                      width: isCurrent ? 2 : 1,
-                    ),
+                        color: done ? AppColors.accent : AppColors.glassBorder,
+                        width: isCurrent ? 2 : 1),
                     boxShadow: isCurrent
                         ? [
                             BoxShadow(
-                              color: AppColors.accent.withValues(alpha: 0.4),
-                              blurRadius: 8,
-                            ),
+                                color: AppColors.accent.withValues(alpha: 0.4),
+                                blurRadius: 8)
                           ]
-                        : null,
-                  ),
-                  child: done
-                      ? const Icon(Icons.check_rounded,
-                          color: AppColors.background, size: 14)
-                      : null,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  labels[i],
+                        : null),
+                child: done
+                    ? const Icon(Icons.check_rounded,
+                        color: AppColors.background, size: 13)
+                    : null,
+              ),
+              const SizedBox(height: 4),
+              Text(labels[i],
                   style: AppTextStyles.caption.copyWith(
-                    color: done ? AppColors.accent : AppColors.textHint,
-                    fontSize: 8,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ]),
-            ),
+                      color: done ? AppColors.accent : AppColors.textHint,
+                      fontSize: 8),
+                  textAlign: TextAlign.center),
+            ])),
             if (i < steps.length - 1)
               Expanded(
-                child: Container(
-                  height: 2,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  color:
-                      i < currentIdx ? AppColors.accent : AppColors.glassBorder,
-                ),
-              ),
+                  child: Container(
+                      height: 2,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      color: i < currentIdx
+                          ? AppColors.accent
+                          : AppColors.glassBorder)),
           ]),
         );
       }),
     );
+  }
+
+  // ═══════════════════════════════════════════════════
+  // INCOMING ORDER OVERLAY
+  // ═══════════════════════════════════════════════════
+  Widget _buildIncomingOrderOverlay() {
+    final order = _incomingOrder!;
+    final orderId = order['id'] as int? ?? 0;
+    final total = order['grandTotal'] ?? order['totalPrice'] ?? 0;
+    final fee = order['deliveryFee'] ?? 0;
+    final address = order['deliveryAddress'] ??
+        order['offlineCustomerLandmark'] ??
+        'No address';
+    final pickup = order['pickupAddress'] ?? 'Store location';
+    final tracking = order['trackingCode'] ?? '';
+
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        color: AppColors.background.withValues(alpha: 0.95),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.accent.withValues(alpha: 0.15),
+                    border: Border.all(color: AppColors.accent, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                          color: AppColors.accent.withValues(alpha: 0.4),
+                          blurRadius: 24,
+                          spreadRadius: 4)
+                    ],
+                  ),
+                  child: const Icon(Icons.delivery_dining,
+                      color: AppColors.accent, size: 40),
+                ),
+                const SizedBox(height: 20),
+                Text('New Order!',
+                    style: AppTextStyles.displayMedium
+                        .copyWith(color: AppColors.accent)),
+                const SizedBox(height: 4),
+                Text(tracking.toString(),
+                    style: AppTextStyles.bodyMedium
+                        .copyWith(color: AppColors.primary)),
+                const SizedBox(height: 24),
+                GlassCard(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(children: [
+                    _orderDetailRow(Icons.store_outlined, 'Pickup',
+                        pickup.toString(), AppColors.primary),
+                    const SizedBox(height: 12),
+                    _orderDetailRow(Icons.location_on_outlined, 'Delivery',
+                        address.toString(), AppColors.accent),
+                    const Divider(color: AppColors.glassBorder, height: 24),
+                    Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Collect from customer',
+                                    style: AppTextStyles.caption),
+                                Text('\$$total', style: AppTextStyles.price),
+                              ]),
+                          Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('Your fee', style: AppTextStyles.caption),
+                                Text('\$$fee',
+                                    style: AppTextStyles.price
+                                        .copyWith(color: AppColors.primary)),
+                              ]),
+                        ]),
+                  ]),
+                ),
+                const SizedBox(height: 24),
+                AppButton(
+                  label: 'Accept Order',
+                  icon: Icons.check_rounded,
+                  color: AppColors.accent,
+                  textColor: AppColors.background,
+                  onPressed: () => _acceptOrder(orderId),
+                ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _showIncomingOrder = false;
+                    _incomingOrder = null;
+                  }),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    alignment: Alignment.center,
+                    child: Text('Skip this order',
+                        style: AppTextStyles.labelLarge
+                            .copyWith(color: AppColors.textHint)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _orderDetailRow(
+      IconData icon, String label, String value, Color color) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8)),
+        child: Icon(icon, color: color, size: 16),
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: AppTextStyles.caption),
+        Text(value,
+            style: AppTextStyles.bodyMedium,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis),
+      ])),
+    ]);
   }
 
   // ═══════════════════════════════════════════════════
@@ -985,17 +1025,32 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
             Text('My Orders', style: AppTextStyles.displayMedium),
-            const SizedBox(height: 24),
-            Expanded(
-              child: _orders.isEmpty
-                  ? const Center(
-                      child: Text('No orders yet',
-                          style: AppTextStyles.bodyMedium))
-                  : ListView.separated(
+            const Spacer(),
+            GestureDetector(
+              onTap: _loadData,
+              child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: AppColors.glassWhite,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.glassBorder)),
+                  child: const Icon(Icons.refresh_rounded,
+                      color: AppColors.textPrimary, size: 20)),
+            ),
+          ]),
+          const SizedBox(height: 24),
+          Expanded(
+            child: _orders.isEmpty
+                ? const Center(
+                    child:
+                        Text('No orders yet', style: AppTextStyles.bodyMedium))
+                : RefreshIndicator(
+                    onRefresh: _loadData,
+                    color: AppColors.primary,
+                    child: ListView.separated(
                       itemCount: _orders.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (_, i) {
@@ -1006,50 +1061,46 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    order['trackingCode'] ?? '',
-                                    style: AppTextStyles.labelLarge
-                                        .copyWith(color: AppColors.primary),
-                                  ),
-                                  StatusBadge(status: order['status'] ?? ''),
-                                ],
-                              ),
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(order['trackingCode'] ?? '',
+                                        style: AppTextStyles.labelLarge
+                                            .copyWith(
+                                                color: AppColors.primary)),
+                                    StatusBadge(status: order['status'] ?? ''),
+                                  ]),
                               const SizedBox(height: 8),
+                              Text('Pickup: ${order['pickupAddress'] ?? 'N/A'}',
+                                  style: AppTextStyles.bodyMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
                               Text(
-                                'Pickup: ${order['pickupAddress'] ?? 'N/A'}',
-                                style: AppTextStyles.bodyMedium,
-                              ),
-                              Text(
-                                'Delivery: ${order['deliveryAddress'] ?? order['offlineCustomerLandmark'] ?? 'N/A'}',
-                                style: AppTextStyles.bodyMedium,
-                              ),
+                                  'Delivery: ${order['deliveryAddress'] ?? 'N/A'}',
+                                  style: AppTextStyles.bodyMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
                               const SizedBox(height: 8),
                               Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Collect: \$${order['grandTotal'] ?? 0}',
-                                    style: AppTextStyles.price,
-                                  ),
-                                  Text(
-                                    'Fee: \$${order['commissionAmount'] ?? 0}',
-                                    style: AppTextStyles.bodyMedium
-                                        .copyWith(color: AppColors.error),
-                                  ),
-                                ],
-                              ),
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                        'Collect: \$${order['grandTotal'] ?? 0}',
+                                        style: AppTextStyles.price),
+                                    Text(
+                                        'Fee: \$${order['commissionAmount'] ?? 0}',
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(color: AppColors.error)),
+                                  ]),
                             ],
                           ),
                         );
                       },
                     ),
-            ),
-          ],
-        ),
+                  ),
+          ),
+        ]),
       ),
     );
   }
@@ -1063,24 +1114,20 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
         _orders.where((o) => o['status'] == 'DELIVERED').length;
     final totalEarned = _orders
         .where((o) => o['status'] == 'DELIVERED')
-        .fold<double>(0,
-            (sum, o) => sum + ((o['deliveryFee'] as num?)?.toDouble() ?? 0.0));
+        .fold<double>(
+            0, (s, o) => s + ((o['deliveryFee'] as num?)?.toDouble() ?? 0.0));
 
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('My Earnings', style: AppTextStyles.displayMedium),
-            const SizedBox(height: 24),
-
-            // Stats row
-            Row(children: [
-              Expanded(
-                child: GlassCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('My Earnings', style: AppTextStyles.displayMedium),
+          const SizedBox(height: 24),
+          Row(children: [
+            Expanded(
+              child: GlassCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Icon(Icons.check_circle_outline,
@@ -1089,16 +1136,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       Text('$totalDeliveries',
                           style: AppTextStyles.headlineLarge
                               .copyWith(color: AppColors.accent)),
-                      Text('Deliveries', style: AppTextStyles.bodySmall),
-                    ],
-                  ),
-                ),
+                      Text('Deliveries', style: AppTextStyles.bodyMedium),
+                    ]),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GlassCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GlassCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Icon(Icons.attach_money_rounded,
@@ -1107,57 +1153,45 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       Text('\$$totalEarned',
                           style: AppTextStyles.headlineLarge
                               .copyWith(color: AppColors.primary)),
-                      Text('Total Earned', style: AppTextStyles.bodySmall),
-                    ],
-                  ),
+                      Text('Fees Collected', style: AppTextStyles.bodyMedium),
+                    ]),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 20),
+          GlassCard(
+            padding: const EdgeInsets.all(20),
+            child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('Commission Due', style: AppTextStyles.headlineSmall),
+                Text('\$$debt',
+                    style: AppTextStyles.price.copyWith(
+                        color: debt > 15 ? AppColors.error : AppColors.accent)),
+              ]),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: (debt / 20.0).clamp(0.0, 1.0),
+                  backgroundColor: AppColors.glassWhite,
+                  color: debt > 15 ? AppColors.error : AppColors.accent,
+                  minHeight: 8,
                 ),
               ),
-            ]),
-
-            const SizedBox(height: 20),
-
-            // Debt card
-            GlassCard(
-              padding: const EdgeInsets.all(20),
-              color: debt > 15 ? AppColors.error : AppColors.primary,
-              child: Column(children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Commission Due', style: AppTextStyles.bodyLarge),
-                    Text('\$$debt',
-                        style: AppTextStyles.price.copyWith(
-                          color: debt > 15 ? AppColors.error : AppColors.accent,
-                        )),
-                  ],
-                ),
+              const SizedBox(height: 8),
+              Text('\$$debt accumulated', style: AppTextStyles.bodyMedium),
+              if (debt > 0) ...[
                 const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: (debt / 20.0).clamp(0.0, 1.0),
-                    backgroundColor: AppColors.glassWhite,
-                    color: debt > 15 ? AppColors.error : AppColors.accent,
-                    minHeight: 8,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('\$$debt of \$20.00 limit',
-                    style: AppTextStyles.bodyMedium),
-                if (debt > 0) ...[
-                  const SizedBox(height: 12),
-                  const Divider(color: AppColors.glassBorder),
-                  const SizedBox(height: 12),
-                  Text(
+                const Divider(color: AppColors.glassBorder),
+                const SizedBox(height: 12),
+                Text(
                     'Pay via OMT or WishMoney,\nthen contact admin to reactivate.',
                     style: AppTextStyles.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ]),
-            ),
-          ],
-        ),
+                    textAlign: TextAlign.center),
+              ],
+            ]),
+          ),
+        ]),
       ),
     );
   }
@@ -1166,30 +1200,24 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Widget _buildBottomNav() {
     return Container(
       decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(
-          top: BorderSide(color: AppColors.glassBorder),
-        ),
-      ),
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.glassBorder))),
       child: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (i) => setState(() => _currentIndex = i),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Home'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.receipt_long_outlined),
-            activeIcon: Icon(Icons.receipt_long),
-            label: 'Orders',
-          ),
+              icon: Icon(Icons.receipt_long_outlined),
+              activeIcon: Icon(Icons.receipt_long),
+              label: 'Orders'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            activeIcon: Icon(Icons.account_balance_wallet),
-            label: 'Earnings',
-          ),
+              icon: Icon(Icons.account_balance_wallet_outlined),
+              activeIcon: Icon(Icons.account_balance_wallet),
+              label: 'Earnings'),
         ],
       ),
     );
@@ -1199,20 +1227,20 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   void _showSuccess(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.success,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+        content: Text(msg),
+        backgroundColor: AppColors.success,
+        behavior: SnackBarBehavior.floating,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
   }
 
   void _showError(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
   }
 }
