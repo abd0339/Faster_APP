@@ -17,15 +17,13 @@ public interface OrderRepository
         extends JpaRepository<Order, Long> {
 
     // ─── Find order by tracking code ─────────────────
-    // Used for O2O tracking link
-    Optional<Order> findByTrackingCode(
-            String trackingCode);
+    // Used for O2O tracking link (public endpoint)
+    Optional<Order> findByTrackingCode(String trackingCode);
 
     // ─── All orders for a merchant ────────────────────
-    List<Order> findByMerchantIdOrderByCreatedAtDesc(
-            Long merchantId);
+    List<Order> findByMerchantIdOrderByCreatedAtDesc(Long merchantId);
 
-    // ─── Active orders for a merchant ────────────────
+    // ─── Active orders for a merchant ─────────────────
     @Query("SELECT o FROM Order o " +
            "WHERE o.merchant.id = :merchantId " +
            "AND o.status NOT IN " +
@@ -35,10 +33,9 @@ public interface OrderRepository
             @Param("merchantId") Long merchantId);
 
     // ─── All orders for a driver ──────────────────────
-    List<Order> findByDriverIdOrderByCreatedAtDesc(
-            Long driverId);
+    List<Order> findByDriverIdOrderByCreatedAtDesc(Long driverId);
 
-    // ─── Active orders for a driver ──────────────────
+    // ─── Active orders for a driver ───────────────────
     @Query("SELECT o FROM Order o " +
            "WHERE o.driver.id = :driverId " +
            "AND o.status NOT IN " +
@@ -47,10 +44,20 @@ public interface OrderRepository
             @Param("driverId") Long driverId);
 
     // ─── All orders for a customer ────────────────────
-    List<Order> findByCustomerIdOrderByCreatedAtDesc(
-            Long customerId);
+    List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
 
-    // ─── Find pending orders (waiting for driver) ─────
+    // ─── Find by single status ordered ────────────────
+    List<Order> findByStatusOrderByCreatedAtDesc(
+            Order.OrderStatus status);
+
+    // ─── Find by multiple statuses ordered ────────────
+    // Used by AdminService.getActiveOrders() to return all
+    // in-progress orders: PENDING + ACCEPTED + PREPARING
+    //                   + READY_FOR_PICKUP + PICKED_UP
+    List<Order> findByStatusInOrderByCreatedAtDesc(
+            List<Order.OrderStatus> statuses);
+
+    // ─── Find pending orders for a merchant ───────────
     @Query("SELECT o FROM Order o " +
            "WHERE o.status = 'PENDING' " +
            "AND o.merchant.id = :merchantId " +
@@ -68,7 +75,9 @@ public interface OrderRepository
             @Param("status") Order.OrderStatus status,
             @Param("now") LocalDateTime now);
 
-    // ─── Assign driver to order ───────────────────────
+    // ─── Assign driver to order (atomic) ─────────────
+    // Only succeeds if order is still PENDING
+    // Prevents two drivers accepting the same order
     @Modifying
     @Query("UPDATE Order o SET o.driver.id = :driverId, " +
            "o.status = 'ACCEPTED', " +
@@ -81,7 +90,7 @@ public interface OrderRepository
             @Param("driverId") Long driverId,
             @Param("now") LocalDateTime now);
 
-    // ─── Count orders by status for merchant ─────────
+    // ─── Count orders by status for merchant ──────────
     @Query("SELECT COUNT(o) FROM Order o " +
            "WHERE o.merchant.id = :merchantId " +
            "AND o.status = :status")
@@ -94,29 +103,24 @@ public interface OrderRepository
            "WHERE o.driver.id = :driverId " +
            "AND o.status = 'DELIVERED' " +
            "AND o.deliveredAt >= :from")
-    java.math.BigDecimal sumDriverCommission(
+    BigDecimal sumDriverCommission(
             @Param("driverId") Long driverId,
             @Param("from") LocalDateTime from);
 
-        // ─── Count by status ──────────────────────────────
+    // ─── Count by status ──────────────────────────────
     long countByStatus(Order.OrderStatus status);
 
-    // ─── Find by status ordered ───────────────────────
-    List<Order> findByStatusOrderByCreatedAtDesc(
-            Order.OrderStatus status);
-
-    // ─── Count orders created today ───────────────────
+    // ─── Count orders created in a time range ─────────
     long countByCreatedAtBetween(
-            LocalDateTime from,
-            LocalDateTime to);
+            LocalDateTime from, LocalDateTime to);
 
-    // ─── Count delivered orders today ────────────────
+    // ─── Count delivered orders in a time range ───────
     long countByStatusAndDeliveredAtBetween(
             Order.OrderStatus status,
             LocalDateTime from,
             LocalDateTime to);
 
-    // ─── Merchant daily sales total ──────────────────
+    // ─── Merchant daily sales total ───────────────────
     @Query("SELECT COALESCE(SUM(o.totalPrice), 0) " +
            "FROM Order o " +
            "WHERE o.merchant.id = :merchantId " +

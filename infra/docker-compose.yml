@@ -2,27 +2,41 @@ version: '3.8'
 
 services:
 
-  # ─── PostgreSQL Database ───────────────────────────
+  # ─── PostgreSQL Database ─────────────────────────────
   postgres:
     image: postgres:16
     container_name: faster_postgres
     restart: always
     environment:
       POSTGRES_DB: faster_db
-      POSTGRES_USER: faster_user
-      POSTGRES_PASSWORD: faster_pass
+      POSTGRES_USER: ${DB_USERNAME:-faster_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-faster_pass}
     ports:
-      - "5433:5432"
+      # Bind to localhost only — not exposed to internet
+      - "127.0.0.1:5433:5432"
     volumes:
+      # Data persists across container restarts
       - postgres_data:/var/lib/postgresql/data
 
-  # ─── Redis (Live GPS Storage) ──────────────────────
+  # ─── Redis (Live GPS + Menu Cache) ──────────────────
   redis:
     image: redis:alpine
     container_name: faster_redis
     restart: always
+    # Password required — reads from .env REDIS_PASSWORD
+    # AOF persistence: survives container restart
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-fasterRedis2026!}
+      --appendonly yes
+      --appendfsync everysec
     ports:
-      - "6379:6379"
+      # Bind to localhost only — not exposed to internet
+      - "127.0.0.1:6379:6379"
+    volumes:
+      # Persist GPS data and cache across restarts
+      - redis_data:/data
 
 volumes:
   postgres_data:
+  redis_data:

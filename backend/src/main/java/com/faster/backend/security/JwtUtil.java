@@ -10,26 +10,29 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
-    // ─── Pulled from application.properties ─────────
+    // ─── Pulled from application.properties ──────────
     @Value("${app.jwt.secret}")
     private String jwtSecret;
 
     @Value("${app.jwt.expiration-ms}")
     private long jwtExpirationMs;
 
-    // ─── Generate a token for a logged-in user ───────
-    public String generateToken(String phone, String role) {
+    // ─── Generate a token for a logged-in user ────────
+    // Subject = user's EMAIL (used as unique identifier)
+    public String generateToken(String email, String role) {
         return Jwts.builder()
-                .setSubject(phone)
+                .setSubject(email)
                 .claim("role", role)
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + jwtExpirationMs))
+                .setExpiration(new Date(
+                        System.currentTimeMillis() + jwtExpirationMs))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    // ─── Extract the phone number from a token ───────
-    public String getPhoneFromToken(String token) {
+    // ─── Extract email from token ─────────────────────
+    // The token subject is always the user's email
+    public String getEmailFromToken(String token) {
         return parseClaims(token).getSubject();
     }
 

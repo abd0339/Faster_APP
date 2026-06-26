@@ -23,12 +23,14 @@ public class AuthService {
 
         // Check phone is not already used
         if (userRepository.existsByPhone(request.getPhone())) {
-            throw new RuntimeException("Phone number is already registered");
+            throw new RuntimeException(
+                    "Phone number is already registered");
         }
 
         // Check email is not already used
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email address is already registered");
+            throw new RuntimeException(
+                    "Email address is already registered");
         }
 
         // Build and save the new user
@@ -36,17 +38,18 @@ public class AuthService {
                 .fullName(request.getFullName())
                 .phone(request.getPhone())
                 .email(request.getEmail().toLowerCase())
-                .password(passwordEncoder.encode(request.getPassword()))
-                .role(User.Role.valueOf(request.getRole().toUpperCase()))
+                .password(passwordEncoder.encode(
+                        request.getPassword()))
+                .role(User.Role.valueOf(
+                        request.getRole().toUpperCase()))
                 .build();
 
         userRepository.save(user);
 
-        // Generate JWT token
+        // Generate JWT — subject is EMAIL
         String token = jwtUtil.generateToken(
                 user.getEmail(),
-                user.getRole().name()
-        );
+                user.getRole().name());
 
         return AuthResponse.builder()
                 .token(token)
@@ -64,48 +67,60 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
 
         // Must provide email or phone
-        if (request.getEmail() == null && request.getPhone() == null) {
-            throw new RuntimeException("Please provide your email or phone number");
+        if (request.getEmail() == null &&
+                request.getPhone() == null) {
+            throw new RuntimeException(
+                    "Please provide your email or phone number");
         }
 
         // Find the user by email or phone
         User user;
 
-        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+        if (request.getEmail() != null &&
+                !request.getEmail().isBlank()) {
             // Login with email
-            user = userRepository.findByEmail(request.getEmail().toLowerCase())
-                    .orElseThrow(() ->
-                        new RuntimeException("No account found with this email address"));
+            user = userRepository
+                    .findByEmail(request.getEmail().toLowerCase())
+                    .orElseThrow(() -> new RuntimeException(
+                            "No account found with this email address"));
         } else {
             // Login with phone
-            user = userRepository.findByPhone(request.getPhone())
-                    .orElseThrow(() ->
-                        new RuntimeException("No account found with this phone number"));
+            user = userRepository
+                    .findByPhone(request.getPhone())
+                    .orElseThrow(() -> new RuntimeException(
+                            "No account found with this phone number"));
         }
 
         // Check password is correct
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Incorrect password. Please try again");
+        if (!passwordEncoder.matches(
+                request.getPassword(), user.getPassword())) {
+            throw new RuntimeException(
+                    "Incorrect password. Please try again");
         }
 
         // Check if account is active
         if (Boolean.FALSE.equals(user.getIsActive())) {
-            throw new RuntimeException("This account has been deactivated. Contact support");
+            throw new RuntimeException(
+                    "This account has been deactivated. " +
+                    "Contact support");
         }
 
-        // Check if driver is blocked due to debt
+        // Check if account is blocked by admin
+        // Note: blocking is MANUAL by admin only.
+        // There is no auto-block. Admin blocks when they
+        // decide to collect outstanding commission.
         if (Boolean.TRUE.equals(user.getIsBlocked())) {
             throw new RuntimeException(
-                "Your account is paused. You have reached the $20 debt limit. " +
-                "Please settle your balance via OMT or WishMoney to continue"
-            );
+                    "Your account has been paused by admin. " +
+                    "Please settle your outstanding commission " +
+                    "via OMT or WishMoney, then contact admin " +
+                    "to reactivate your account.");
         }
 
-        // Generate JWT token
+        // Generate JWT — subject is EMAIL
         String token = jwtUtil.generateToken(
                 user.getEmail(),
-                user.getRole().name()
-        );
+                user.getRole().name());
 
         return AuthResponse.builder()
                 .token(token)

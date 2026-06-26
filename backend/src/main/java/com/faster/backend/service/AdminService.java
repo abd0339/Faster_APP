@@ -9,6 +9,7 @@ import com.faster.backend.repository.LedgerRepository;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,68 +34,54 @@ public class AdminService {
     // ─────────────────────────────────────────────────
     public AdminStatsResponse getPlatformStats() {
 
-        // Today range
+        // Today range (Asia/Beirut handled by app timezone)
         LocalDateTime startOfDay =
-            LocalDate.now().atStartOfDay();
+                LocalDate.now().atStartOfDay();
         LocalDateTime endOfDay =
-            LocalDate.now().atTime(LocalTime.MAX);
+                LocalDate.now().atTime(LocalTime.MAX);
 
-        // User counts
-        long totalUsers =
-            userRepository.count();
-        long totalMerchants =
-            userRepository.countByRole(
-                User.Role.MERCHANT);
-        long totalDrivers =
-            userRepository.countByRole(
-                User.Role.DRIVER);
-        long totalCustomers =
-            userRepository.countByRole(
-                User.Role.CUSTOMER);
-        long blockedDrivers =
-            userRepository.countByIsBlockedTrue();
-        long activeDrivers =
-            userRepository.countByIsOnlineTrue();
+        // ─── User counts ──────────────────────────────
+        long totalUsers    = userRepository.count();
+        long totalMerchants = userRepository.countByRole(User.Role.MERCHANT);
+        long totalDrivers  = userRepository.countByRole(User.Role.DRIVER);
+        long totalCustomers = userRepository.countByRole(User.Role.CUSTOMER);
+        long blockedDrivers = userRepository.countByIsBlockedTrue();
+        long activeDrivers  = userRepository.countByIsOnlineTrue();
 
-        // Order counts
-        long totalOrders =
-            orderRepository.count();
-        long pendingOrders =
-            orderRepository.countByStatus(
+        // ─── Order counts ─────────────────────────────
+        long totalOrders   = orderRepository.count();
+        long pendingOrders = orderRepository.countByStatus(
                 Order.OrderStatus.PENDING);
+
+        // Active = all in-progress statuses
+        // (not just PENDING — that is waiting for driver)
         long activeOrders =
-            orderRepository.countByStatus(
-                Order.OrderStatus.ACCEPTED)
-            + orderRepository.countByStatus(
-                Order.OrderStatus.PREPARING)
-            + orderRepository.countByStatus(
-                Order.OrderStatus.PICKED_UP);
-        long deliveredOrders =
-            orderRepository.countByStatus(
+                orderRepository.countByStatus(Order.OrderStatus.ACCEPTED)
+                + orderRepository.countByStatus(Order.OrderStatus.PREPARING)
+                + orderRepository.countByStatus(Order.OrderStatus.READY_FOR_PICKUP)
+                + orderRepository.countByStatus(Order.OrderStatus.PICKED_UP);
+
+        long deliveredOrders = orderRepository.countByStatus(
                 Order.OrderStatus.DELIVERED);
-        long disputedOrders =
-            orderRepository.countByStatus(
+        long disputedOrders  = orderRepository.countByStatus(
                 Order.OrderStatus.DISPUTED);
-        long cancelledOrders =
-            orderRepository.countByStatus(
+        long cancelledOrders = orderRepository.countByStatus(
                 Order.OrderStatus.CANCELLED);
 
-        // Today's orders
-        long todayOrders =
-            orderRepository.countByCreatedAtBetween(
+        // ─── Today's activity ─────────────────────────
+        long todayOrders = orderRepository.countByCreatedAtBetween(
                 startOfDay, endOfDay);
-        long todayDeliveries =
-            orderRepository
+        long todayDeliveries = orderRepository
                 .countByStatusAndDeliveredAtBetween(
-                    Order.OrderStatus.DELIVERED,
-                    startOfDay, endOfDay);
+                        Order.OrderStatus.DELIVERED,
+                        startOfDay, endOfDay);
 
-        // Financial
+        // ─── Financial ────────────────────────────────
         BigDecimal totalRevenue =
-            ledgerRepository.getPlatformTotalRevenue();
+                ledgerRepository.getPlatformTotalRevenue();
         BigDecimal todayRevenue =
-            ledgerRepository.getPlatformRevenueInRange(
-                startOfDay, endOfDay);
+                ledgerRepository.getPlatformRevenueInRange(
+                        startOfDay, endOfDay);
 
         return AdminStatsResponse.builder()
                 .totalUsers(totalUsers)
@@ -110,13 +97,11 @@ public class AdminService {
                 .disputedOrders(disputedOrders)
                 .cancelledOrders(cancelledOrders)
                 .totalPlatformRevenue(
-                    totalRevenue != null
-                    ? totalRevenue
-                    : BigDecimal.ZERO)
+                        totalRevenue != null
+                        ? totalRevenue : BigDecimal.ZERO)
                 .todayRevenue(
-                    todayRevenue != null
-                    ? todayRevenue
-                    : BigDecimal.ZERO)
+                        todayRevenue != null
+                        ? todayRevenue : BigDecimal.ZERO)
                 .todayOrders(todayOrders)
                 .todayDeliveries(todayDeliveries)
                 .build();
@@ -133,8 +118,7 @@ public class AdminService {
                 .collect(Collectors.toList());
     }
 
-    public List<AdminUserResponse> getUsersByRole(
-            User.Role role) {
+    public List<AdminUserResponse> getUsersByRole(User.Role role) {
         return userRepository.findByRole(role)
                 .stream()
                 .map(AdminUserResponse::from)
@@ -142,8 +126,7 @@ public class AdminService {
     }
 
     public List<AdminUserResponse> getAllDrivers() {
-        return userRepository
-                .findByRole(User.Role.DRIVER)
+        return userRepository.findByRole(User.Role.DRIVER)
                 .stream()
                 .map(AdminUserResponse::from)
                 .collect(Collectors.toList());
@@ -151,8 +134,7 @@ public class AdminService {
 
     public List<AdminUserResponse> getBlockedDrivers() {
         return userRepository
-                .findByRoleAndIsBlockedTrue(
-                    User.Role.DRIVER)
+                .findByRoleAndIsBlockedTrue(User.Role.DRIVER)
                 .stream()
                 .map(AdminUserResponse::from)
                 .collect(Collectors.toList());
@@ -160,19 +142,16 @@ public class AdminService {
 
     public AdminUserResponse getUserById(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                    new RuntimeException(
-                        "User not found"));
+                .orElseThrow(() -> new RuntimeException("User not found"));
         return AdminUserResponse.from(user);
     }
 
     // ─── Block user manually ──────────────────────────
+    // Admin decides when to block — no auto-block in this system
     @Transactional
     public AdminUserResponse blockUser(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                    new RuntimeException(
-                        "User not found"));
+                .orElseThrow(() -> new RuntimeException("User not found"));
         user.setIsBlocked(true);
         userRepository.save(user);
         return AdminUserResponse.from(user);
@@ -182,9 +161,7 @@ public class AdminService {
     @Transactional
     public AdminUserResponse unblockUser(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                    new RuntimeException(
-                        "User not found"));
+                .orElseThrow(() -> new RuntimeException("User not found"));
         user.setIsBlocked(false);
         userRepository.save(user);
         return AdminUserResponse.from(user);
@@ -192,12 +169,9 @@ public class AdminService {
 
     // ─── Deactivate user account ──────────────────────
     @Transactional
-    public AdminUserResponse deactivateUser(
-            Long userId) {
+    public AdminUserResponse deactivateUser(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                    new RuntimeException(
-                        "User not found"));
+                .orElseThrow(() -> new RuntimeException("User not found"));
         user.setIsActive(false);
         userRepository.save(user);
         return AdminUserResponse.from(user);
@@ -208,41 +182,40 @@ public class AdminService {
     // ─────────────────────────────────────────────────
 
     public List<Order> getAllOrders() {
-        return orderRepository
-            .findAll(
-                org.springframework.data.domain
-                    .Sort.by(
-                        org.springframework.data
-                            .domain.Sort.Direction.DESC,
-                        "createdAt"));
+        return orderRepository.findAll(
+                Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 
     public List<Order> getDisputedOrders() {
-        return orderRepository
-            .findByStatusOrderByCreatedAtDesc(
+        return orderRepository.findByStatusOrderByCreatedAtDesc(
                 Order.OrderStatus.DISPUTED);
     }
 
+    // ─── All in-progress orders ───────────────────────
+    // Returns PENDING + ACCEPTED + PREPARING +
+    //         READY_FOR_PICKUP + PICKED_UP
+    // These are all orders that are not yet completed/cancelled
     public List<Order> getActiveOrders() {
-        return orderRepository
-            .findByStatusOrderByCreatedAtDesc(
-                Order.OrderStatus.PENDING);
+        return orderRepository.findByStatusInOrderByCreatedAtDesc(
+                List.of(
+                        Order.OrderStatus.PENDING,
+                        Order.OrderStatus.ACCEPTED,
+                        Order.OrderStatus.PREPARING,
+                        Order.OrderStatus.READY_FOR_PICKUP,
+                        Order.OrderStatus.PICKED_UP));
     }
 
     // ─── Resolve dispute ──────────────────────────────
     @Transactional
     public Order resolveDispute(Long orderId,
                                 Order.OrderStatus resolution) {
-        Order order = orderRepository
-                .findById(orderId)
-                .orElseThrow(() ->
-                    new RuntimeException(
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException(
                         "Order not found"));
 
-        if (order.getStatus() !=
-                Order.OrderStatus.DISPUTED) {
+        if (order.getStatus() != Order.OrderStatus.DISPUTED) {
             throw new RuntimeException(
-                "Order is not in disputed state");
+                    "Order is not in disputed state");
         }
 
         order.setStatus(resolution);
@@ -261,8 +234,7 @@ public class AdminService {
             String paymentReference,
             Long adminId) {
         return ledgerService.settleDriverDebt(
-            driverId, amount,
-            paymentReference, adminId);
+                driverId, amount, paymentReference, adminId);
     }
 
     // ─── Settle merchant commission ───────────────────
@@ -273,17 +245,13 @@ public class AdminService {
             String paymentReference,
             Long adminId) {
         return ledgerService.settleMerchantCommission(
-            merchantId, amount,
-            paymentReference, adminId);
+                merchantId, amount, paymentReference, adminId);
     }
 
     // ─── Get driver debt details ──────────────────────
-    public AdminUserResponse getDriverDebtDetails(
-            Long driverId) {
-        User driver = userRepository
-                .findById(driverId)
-                .orElseThrow(() ->
-                    new RuntimeException(
+    public AdminUserResponse getDriverDebtDetails(Long driverId) {
+        User driver = userRepository.findById(driverId)
+                .orElseThrow(() -> new RuntimeException(
                         "Driver not found"));
         return AdminUserResponse.from(driver);
     }
@@ -291,16 +259,11 @@ public class AdminService {
     // ─── Get full platform ledger ─────────────────────
     public List<LedgerEntry> getFullLedger() {
         return ledgerRepository.findAll(
-            org.springframework.data.domain
-                .Sort.by(
-                    org.springframework.data
-                        .domain.Sort.Direction.DESC,
-                    "createdAt"));
+                Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 
     // ─── Get all driver commission entries ────────────
     public List<LedgerEntry> getAllDriverCommissions() {
-        return ledgerRepository
-            .findAllDriverCommissions();
+        return ledgerRepository.findAllDriverCommissions();
     }
 }
