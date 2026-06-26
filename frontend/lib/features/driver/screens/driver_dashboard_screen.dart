@@ -169,23 +169,27 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       // Guard: don't send GPS if logging out or disposed
       if (_isLoggingOut || _disposed) return;
 
-      // WebSocket is faster (no auth header needed on each packet)
-      WebSocketService.instance.sendDriverLocation(
-        position.latitude,
-        position.longitude,
-      );
-
-      // REST fallback every update
-      try {
-        await ApiService.instance.post(
-          ApiConstants.driverLocation,
-          data: {
-            'lat': position.latitude,
-            'lng': position.longitude,
-          },
+      // PRIMARY: Send GPS via WebSocket (no auth overhead per packet)
+      // This is the main channel — fast, lightweight, real-time.
+      if (WebSocketService.instance.isConnected) {
+        WebSocketService.instance.sendDriverLocation(
+          position.latitude,
+          position.longitude,
         );
-      } catch (_) {
-        // Silently ignore — WS already sent it
+      } else {
+        // FALLBACK: Only use REST if WebSocket is disconnected
+        // e.g. during reconnect window after network drop
+        try {
+          await ApiService.instance.post(
+            ApiConstants.driverLocation,
+            data: {
+              'lat': position.latitude,
+              'lng': position.longitude,
+            },
+          );
+        } catch (_) {
+          // Silently ignore — location will resume when WS reconnects
+        }
       }
     });
   }

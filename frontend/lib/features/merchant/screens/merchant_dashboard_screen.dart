@@ -471,29 +471,21 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
           Future<void> lookupCustomer() async {
             final phone = phoneCtrl.text.trim();
             if (phone.isEmpty) return;
+ 
             setSheet(() {
               isLookingUpPhone = true;
               foundCustomer = null;
             });
-            try {
-              final res = await ApiService.instance.get(
-                '/api/admin/users',
-              );
-              final users = res.data is List ? res.data as List : [];
-              final match = users
-                  .cast<Map<String, dynamic>>()
-                  .where(
-                      (u) => (u['phone'] as String?)?.contains(phone) == true)
-                  .toList();
-              if (match.isNotEmpty) {
-                setSheet(() => foundCustomer = match.first);
-              } else {
-                setSheet(() => foundCustomer = {});
-              }
-            } catch (_) {
-              setSheet(() => foundCustomer = {});
-            }
-            setSheet(() => isLookingUpPhone = false);
+ 
+            // For O2O orders, the customer is offline (called by phone).
+            // They don't need to be registered — just store their phone.
+            // Set foundCustomer to a minimal map so the UI shows "ready".
+            await Future.delayed(const Duration(milliseconds: 300));
+ 
+            setSheet(() {
+              foundCustomer = {'phone': phone, 'fullName': 'Offline Customer'};
+              isLookingUpPhone = false;
+            });
           }
 
           // ─── Create the order ────────────────────

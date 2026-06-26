@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
-import '../constants/api_constants.dart';
 import 'dart:typed_data';
+import '../constants/api_constants.dart';
+import '../constants/app_config.dart';
 import 'storage_service.dart';
 
 class ApiService {
@@ -10,20 +11,19 @@ class ApiService {
   late final Dio _dio;
   bool _initialized = false;
 
-  // ─── Initialize once ──────────────────────────────
+  // ─── Initialize once on app start ─────────────────
+  // Uses AppConfig.backendUrl which reads from .env
+  // Falls back to localhost:8080 if .env not loaded
   Future<void> init() async {
     if (_initialized) return;
 
     _dio = Dio(BaseOptions(
-      baseUrl: ApiConstants.baseUrl,
+      baseUrl: AppConfig.backendUrl,
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        // NOTE: 'Access-Control-Allow-Origin' is a RESPONSE header set by
-        // the server — never a request header. Sending it from the client
-        // causes browsers to block the request with OperationError.
       },
     ));
 
@@ -38,7 +38,7 @@ class ApiService {
           handler.next(options);
         },
         onError: (error, handler) {
-          // 401 = token expired → trigger logout
+          // 401 = token expired → clear session
           if (error.response?.statusCode == 401) {
             StorageService.instance.clearAll();
           }
@@ -92,8 +92,7 @@ class ApiService {
     return _dio.delete(path);
   }
 
-  // ─── Upload image (multipart) ─────────────────────
-  // ─── Upload image from bytes (Web + Mobile) ───────
+  // ─── Upload image (multipart — web + mobile) ──────
   Future<Response> uploadImageBytes(
     String path,
     Uint8List bytes,

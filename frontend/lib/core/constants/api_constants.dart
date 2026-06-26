@@ -1,9 +1,17 @@
+import '../constants/app_config.dart';
+
 class ApiConstants {
   ApiConstants._();
 
   // ─── Base URL ─────────────────────────────────────
-  // Change to your server IP when deploying
-  static const String baseUrl = 'http://localhost:8080';
+  // Read from .env via AppConfig — set in frontend/.env
+  // Dev:  BACKEND_URL=http://localhost:8080
+  // Prod: BACKEND_URL=https://your-domain.com
+  static String get baseUrl => AppConfig.backendUrl;
+
+  // ─── WebSocket URL ────────────────────────────────
+  // Same host as REST API, /ws path
+  static String get wsUrl => '${AppConfig.backendUrl}/ws';
 
   // ─── Auth ─────────────────────────────────────────
   static const String register = '/api/auth/register';
@@ -28,6 +36,7 @@ class ApiConstants {
   static const String merchantOrders = '/api/orders/merchant';
   static const String driverOrders = '/api/orders/driver';
   static const String activeOrders = '/api/orders/driver/active';
+  static const String customerOrders = '/api/orders/customer';
 
   // ─── Ledger ───────────────────────────────────────
   static const String myLedger = '/api/ledger/my';
@@ -44,8 +53,9 @@ class ApiConstants {
   static const String adminDriversBlocked = '/api/admin/drivers/blocked';
   static const String adminMerchants = '/api/admin/merchants';
   static const String adminOrdersDisputed = '/api/admin/orders/disputed';
+  static const String allStores = '/api/store/all';
 
-// Admin — dynamic
+  // ─── Admin — dynamic ──────────────────────────────
   static String adminUserById(int id) => '/api/admin/users/$id';
   static String adminBlockUser(int id) => '/api/admin/users/$id/block';
   static String adminUnblockUser(int id) => '/api/admin/users/$id/unblock';
@@ -65,8 +75,6 @@ class ApiConstants {
   static String storeMenu(int merchantId) => '/api/store/$merchantId/menu';
   static String storeStatus(int merchantId) => '/api/store/$merchantId/status';
   static String trackOrder(String code) => '/tracking/public/$code';
-  // ─── Public store list ────────────────────────────
-  static const String allStores = '/api/store/all';
   static String orderById(int id) => '/api/orders/$id';
 
   // ─── Dynamic ──────────────────────────────────────
@@ -74,24 +82,20 @@ class ApiConstants {
   static String orderStatus(int id) => '/api/orders/$id/status';
   static String itemToggle(int id) => '/api/merchant/items/$id/toggle';
   static String itemSnooze(int id) => '/api/merchant/items/$id/snooze';
+  static String itemUnsnooze(int id) => '/api/merchant/items/$id/unsnooze';
   static String itemImage(int id) => '/api/merchant/items/$id/image';
+  static String categoryById(int id) => '/api/merchant/categories/$id';
+  static String offerById(int id) => '/api/merchant/offers/$id';
   static String blockUser(int id) => '/api/admin/users/$id/block';
   static String unblockUser(int id) => '/api/admin/users/$id/unblock';
   static String settleDriver(int id) => '/api/admin/drivers/$id/settle';
-  static String itemUnsnooze(int id) => '/api/merchant/items/$id/unsnooze';
-  static String categoryById(int id) => '/api/merchant/categories/$id';
-  static String offerById(int id) => '/api/merchant/offers/$id';
-
-  // ─── WebSocket ────────────────────────────────────
-  static const String wsUrl = 'http://localhost:8080/ws';
-  static String orderTopic(int id) => '/topic/order/$id';
-  static String driverTopic(int id) => '/topic/driver/$id';
-  static String merchantTopic(int id) => '/topic/merchant/$id';
-
-  // ─── Customer ─────────────────────────────────────
-  static const String customerOrders = '/api/orders/customer';
-  static String customerOrderById(int id) => '/api/orders/$id';
   static String placeOrder(int merchantId) => '/api/orders';
   static String applyOffer(int orderId, int offerId) =>
       '/api/orders/$orderId/offer/$offerId';
+  static String customerOrderById(int id) => '/api/orders/$id';
+
+  // ─── WebSocket topics ─────────────────────────────
+  static String orderTopic(int id) => '/topic/order/$id';
+  static String driverTopic(int id) => '/topic/driver/$id';
+  static String merchantTopic(int id) => '/topic/merchant/$id';
 }
