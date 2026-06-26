@@ -14,20 +14,21 @@ public class CorsConfig {
     @Bean
     public CorsFilter corsFilter() {
 
-        CorsConfiguration config =
-            new CorsConfiguration();
+        CorsConfiguration config = new CorsConfiguration();
 
-        // ─── Allow Flutter web + mobile ───────────
-        config.setAllowedOriginPatterns(
-            List.of("*"));
+        // ─── Dev: allow localhost Flutter web + Android emulator ───
+        // ─── Prod: replace with your actual domain ─────────────────
+        config.setAllowedOriginPatterns(List.of(
+            "http://localhost:*",
+            "http://10.0.2.*",
+            "http://192.168.*.*"
+        ));
 
-        // ─── Allow all HTTP methods ───────────────
         config.setAllowedMethods(List.of(
             "GET", "POST", "PUT",
             "PATCH", "DELETE", "OPTIONS"
         ));
 
-        // ─── Allow all headers ────────────────────
         config.setAllowedHeaders(List.of(
             "Authorization",
             "Content-Type",
@@ -36,18 +37,12 @@ public class CorsConfig {
             "X-Requested-With"
         ));
 
-        // ─── Allow credentials (JWT token) ────────
         config.setAllowCredentials(true);
-
-        // ─── Cache preflight for 1 hour ───────────
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source =
             new UrlBasedCorsConfigurationSource();
-
-        // Apply to ALL routes
-        source.registerCorsConfiguration(
-            "/**", config);
+        source.registerCorsConfiguration("/**", config);
 
         return new CorsFilter(source);
     }

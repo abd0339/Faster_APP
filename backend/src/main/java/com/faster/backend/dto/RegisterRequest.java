@@ -16,10 +16,7 @@ public class RegisterRequest {
 
     // ─── Phone ───────────────────────────────────────
     @NotBlank(message = "Phone number is required")
-    @Pattern(
-        regexp = "^\\+?[0-9]{7,15}$",
-        message = "Phone number must be valid (e.g. +96170123456)"
-    )
+    @Pattern(regexp = "^\\+?[0-9]{7,15}$", message = "Phone number must be valid (e.g. +96170123456)")
     private String phone;
 
     // ─── Email ───────────────────────────────────────
@@ -30,18 +27,11 @@ public class RegisterRequest {
     // ─── Password ────────────────────────────────────
     @NotBlank(message = "Password is required")
     @Size(min = 8, message = "Password must be at least 8 characters")
-    @Pattern(
-        regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$",
-        message = "Password must contain at least one uppercase letter, one lowercase letter, and one number"
-    )
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).*$", message = "Password must contain at least one uppercase letter, one lowercase letter, and one number")
     private String password;
 
     // ─── Role ────────────────────────────────────────
-    // ─── Role ────────────────────────────────────────
     @NotBlank(message = "Role is required")
-    @Pattern(
-        regexp = "^(MERCHANT|DRIVER|CUSTOMER|ADMIN)$",
-         message = "Role must be MERCHANT, DRIVER, CUSTOMER, or ADMIN"
-    )
+    @Pattern(regexp = "^(MERCHANT|DRIVER|CUSTOMER)$", message = "Role must be MERCHANT, DRIVER, or CUSTOMER")
     private String role;
 }
