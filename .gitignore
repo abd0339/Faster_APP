@@ -7,6 +7,7 @@
 .env.local
 .env.production
 .env.staging
+.env.example
 *.env
 
 # ─── Spring Boot local secrets ────────────────────────
