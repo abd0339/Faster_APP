@@ -10,7 +10,7 @@ services:
     environment:
       POSTGRES_DB: faster_db
       POSTGRES_USER: faster_user
-      POSTGRES_PASSWORD: ***REMOVED***
+      POSTGRES_PASSWORD: faster_pass
     ports:
       - "5433:5432"
     volumes:
