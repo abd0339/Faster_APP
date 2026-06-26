@@ -23,6 +23,8 @@ class ApiConstants {
   static const String schedule = '/api/merchant/schedule';
   static const String offers = '/api/merchant/offers';
   static const String scheduleBulk = '/api/merchant/schedule/bulk';
+  static String customerLookup(String phone) =>
+      '/api/merchant/customer/lookup?phone=${Uri.encodeComponent(phone)}';
 
   // ─── Driver ───────────────────────────────────────
   static const String driverOnline = '/api/driver/online';
