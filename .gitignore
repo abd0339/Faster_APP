@@ -66,3 +66,4 @@ secrets.txt
 bfg.jar
 backend/target/
 backend/uploads/
+backend/gradle/
