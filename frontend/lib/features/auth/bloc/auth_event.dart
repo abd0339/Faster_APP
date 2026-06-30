@@ -28,6 +28,26 @@ class RegisterRequested extends AuthEvent {
   });
 }
 
+// ─── OTP Events ───────────────────────────────────────
+
+/// User submits the 6-digit code
+class VerifyOtpRequested extends AuthEvent {
+  final String phone;
+  final String code;
+
+  VerifyOtpRequested({
+    required this.phone,
+    required this.code,
+  });
+}
+
+/// User requests a new OTP (expired / not received)
+class ResendOtpRequested extends AuthEvent {
+  final String phone;
+  ResendOtpRequested({required this.phone});
+}
+
+// ─── Session Events ───────────────────────────────────
 class LogoutRequested extends AuthEvent {}
 
 class CheckAuthStatus extends AuthEvent {}

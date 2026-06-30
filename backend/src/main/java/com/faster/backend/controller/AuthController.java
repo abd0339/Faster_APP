@@ -5,6 +5,9 @@ import com.faster.backend.dto.LoginRequest;
 import com.faster.backend.dto.RegisterRequest;
 import com.faster.backend.service.AuthService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,21 +19,65 @@ public class AuthController {
 
     private final AuthService authService;
 
-    // ─── POST /api/auth/register ─────────────────────
+    // ─── POST /api/auth/register ──────────────────────
+    // Returns requiresOtp=true, no token
+    // Flutter shows OTP screen next
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(
             @Valid @RequestBody RegisterRequest request) {
-
-        AuthResponse response = authService.register(request);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(authService.register(request));
     }
 
-    // ─── POST /api/auth/login ────────────────────────
+    // ─── POST /api/auth/login ─────────────────────────
+    // Returns requiresOtp=true if phone not verified
+    // Returns token if fully verified
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(
             @Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.ok(authService.login(request));
+    }
 
-        AuthResponse response = authService.login(request);
-        return ResponseEntity.ok(response);
+    // ─── POST /api/auth/verify-otp ───────────────────
+    // User submits the 6-digit code they received
+    // On success: returns JWT token + requiresOtp=false
+    //
+    // Body: { "phone": "+96170000001", "code": "482917" }
+    @PostMapping("/verify-otp")
+    public ResponseEntity<AuthResponse> verifyOtp(
+            @Valid @RequestBody OtpRequest request) {
+        return ResponseEntity.ok(
+            authService.verifyOtp(request.getPhone(),
+                                  request.getCode()));
+    }
+
+    // ─── POST /api/auth/resend-otp ────────────────────
+    // User requests a fresh OTP (expired or not received)
+    //
+    // Body: { "phone": "+96170000001" }
+    @PostMapping("/resend-otp")
+    public ResponseEntity<AuthResponse> resendOtp(
+            @Valid @RequestBody ResendOtpRequest request) {
+        return ResponseEntity.ok(
+            authService.resendOtp(request.getPhone()));
+    }
+
+    // ─── Inner DTOs ───────────────────────────────────
+    @Data
+    public static class OtpRequest {
+
+        @NotBlank(message = "Phone is required")
+        private String phone;
+
+        @NotBlank(message = "Code is required")
+        @Pattern(regexp = "^[0-9]{6}$",
+                 message = "Code must be exactly 6 digits")
+        private String code;
+    }
+
+    @Data
+    public static class ResendOtpRequest {
+
+        @NotBlank(message = "Phone is required")
+        private String phone;
     }
 }

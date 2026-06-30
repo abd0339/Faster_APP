@@ -23,47 +23,48 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // ─── Disable CSRF (we use JWT not sessions) ──
-            .csrf(AbstractHttpConfigurer::disable)
+                // ─── Disable CSRF (we use JWT not sessions) ──
+                .csrf(AbstractHttpConfigurer::disable)
 
-            // ─── Enable CORS ──────────────────────────────
-            .cors(cors -> {} )
+                // ─── Enable CORS ──────────────────────────────
+                .cors(cors -> {
+                })
 
-            // ─── Stateless sessions (JWT only) ───────────
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // ─── Stateless sessions (JWT only) ───────────
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-            // ─── Route Permissions ───────────────────────
-            .authorizeHttpRequests(auth -> auth
+                // ─── Route Permissions ───────────────────────
+                .authorizeHttpRequests(auth -> auth
 
-                // PUBLIC — anyone can hit these
-                .requestMatchers(
-                    "/api/auth/register",
-                    "/api/auth/login",
-                    "/api/health",
-                    "/tracking/public/**",
-                    "/api/store/**",
-                    "/uploads/**",
-                    "/ws/**"
-                ).permitAll()
+                        // PUBLIC — anyone can hit these
+                        .requestMatchers(
+                                "/api/auth/register",
+                                "/api/auth/login",
+                                "/api/auth/verify-otp",
+                                "/api/auth/resend-otp",
+                                "/api/health",
+                                "/tracking/public/**",
+                                "/api/store/**",
+                                "/uploads/**",
+                                "/ws/**")
+                        .permitAll()
 
-                // MERCHANT only routes
-                .requestMatchers("/api/merchant/**")
-                    .hasRole("MERCHANT")
-                //DRIVER only routes
-                .requestMatchers("/api/driver/**")
-                    .hasRole("DRIVER")
-                //Admin only routes 
-                .requestMatchers("/api/admin/**")
-                    .hasRole("ADMIN")
+                        // MERCHANT only routes
+                        .requestMatchers("/api/merchant/**")
+                        .hasRole("MERCHANT")
+                        // DRIVER only routes
+                        .requestMatchers("/api/driver/**")
+                        .hasRole("DRIVER")
+                        // Admin only routes
+                        .requestMatchers("/api/admin/**")
+                        .hasRole("ADMIN")
 
-                // Everything else needs a valid token
-                .anyRequest().authenticated()
-            )
+                        // Everything else needs a valid token
+                        .anyRequest().authenticated())
 
-            // ─── Add JWT filter before default filter ────
-            .addFilterBefore(jwtAuthFilter,
-                UsernamePasswordAuthenticationFilter.class);
+                // ─── Add JWT filter before default filter ────
+                .addFilterBefore(jwtAuthFilter,
+                        UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

@@ -186,6 +186,20 @@ public class CommunicationService {
         );
     }
 
+    // ── 5. Send OTP for phone verification ───────────
+    // Called by AuthService during register/login
+    // when user needs to verify their phone number
+    public void sendOtpMessage(String phone, String messageBody) {
+        if (phone == null || phone.isBlank()) return;
+        sendMessage(
+            phone,
+            messageBody,
+            MessageLog.MessageType.OTP_VERIFICATION,
+            null,
+            null
+        );
+    }
+
     // ─────────────────────────────────────────────────
     // CORE SEND — Routes to the correct provider
     // ─────────────────────────────────────────────────
