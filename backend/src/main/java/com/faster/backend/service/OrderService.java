@@ -26,22 +26,16 @@ public class OrderService {
     private final LocationService locationService;
     private final SimpMessagingTemplate messagingTemplate;
     private final LedgerService ledgerService;
+    private final CommunicationService communicationService;
 
-    // ─── Commission rates ─────────────────────────────
-    // Driver: 20% of delivery fee per order
     private static final BigDecimal DRIVER_COMMISSION_RATE =
             new BigDecimal("0.20");
-
-    // Merchant: 10% of daily sales (per order stored)
     private static final BigDecimal MERCHANT_COMMISSION_RATE =
             new BigDecimal("0.10");
-
-    // ─── Search radius ────────────────────────────────
     private static final double SEARCH_RADIUS_KM = 5.0;
 
     // ─────────────────────────────────────────────────
     // CREATE STANDARD ORDER (LOGISTICS)
-    // App Customer orders from a Merchant store
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createOrder(Long merchantId,
@@ -64,17 +58,14 @@ public class OrderService {
                 ? deliveryFee.setScale(2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
-        // Driver commission = 20% of delivery fee only
         BigDecimal driverCommission = actualDeliveryFee
                 .multiply(DRIVER_COMMISSION_RATE)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // Grand total = product price + delivery fee
         BigDecimal grandTotal = totalPrice
                 .add(actualDeliveryFee)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // Merchant daily commission = 10% of product price
         BigDecimal merchantCommission = totalPrice
                 .multiply(MERCHANT_COMMISSION_RATE)
                 .setScale(2, RoundingMode.HALF_UP);
@@ -116,9 +107,6 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // CREATE MOBILITY ORDER (Uber-style ride)
-    // Customer requests a ride from A to B
-    // No merchant involved — driver IS the service
-    // Notifies PEOPLE and HYBRID mode drivers
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createMobilityOrder(
@@ -138,20 +126,16 @@ public class OrderService {
                 ? rideFee.setScale(2, RoundingMode.HALF_UP)
                 : new BigDecimal("3.00");
 
-        // Driver commission = 20% of ride fee
         BigDecimal driverCommission = actualFee
                 .multiply(DRIVER_COMMISSION_RATE)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // No products — totalPrice = 0
-        // grandTotal = ride fee only (customer pays driver)
         BigDecimal totalPrice = BigDecimal.ZERO
                 .setScale(2, RoundingMode.HALF_UP);
         BigDecimal grandTotal = actualFee;
 
         Order order = Order.builder()
                 .trackingCode(generateTrackingCode())
-                // merchant = null for MOBILITY (no store involved)
                 .merchant(null)
                 .customer(customer)
                 .orderType(Order.OrderType.MOBILITY)
@@ -173,7 +157,6 @@ public class OrderService {
 
         Order saved = orderRepository.save(order);
 
-        // Notify nearest PEOPLE + HYBRID drivers
         notifyNearestDrivers(
                 saved, pickupLat, pickupLng,
                 Order.OrderType.MOBILITY);
@@ -189,6 +172,7 @@ public class OrderService {
     // ─────────────────────────────────────────────────
     // CREATE O2O ORDER (Offline Customer by phone)
     // Merchant creates for customer who called by phone
+    // After save: sends WhatsApp/SMS via CommunicationService
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createO2OOrder(Long merchantId,
@@ -245,11 +229,10 @@ public class OrderService {
                 saved, pickupLat, pickupLng,
                 Order.OrderType.LOGISTICS);
 
-        // Log SMS (production: integrate SMS gateway)
-        System.out.println(
-                "📱 O2O SMS → " + offlinePhone +
-                " | Track: http://localhost:8080/tracking/public/"
-                + trackingCode);
+        // Send WhatsApp/SMS tracking link to offline customer
+        // CommunicationService handles Twilio/Vonage routing
+        // Never blocks order creation — failures are logged only
+        communicationService.sendO2OTrackingLink(saved);
 
         return saved;
     }
@@ -264,7 +247,8 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // DRIVER ACCEPTS ORDER
-    // Uses atomic DB update to prevent double-accept race condition
+    // Atomic update prevents double-accept race condition
+    // For O2O: sends driver-assigned SMS to offline customer
     // ─────────────────────────────────────────────────
     @Transactional
     public Order acceptOrder(Long driverId, Long orderId) {
@@ -278,8 +262,6 @@ public class OrderService {
                     "then contact admin to reactivate.");
         }
 
-        // Atomic update — only succeeds if order is still PENDING
-        // Prevents two drivers accepting the same order simultaneously
         int updated = orderRepository.assignDriver(
                 orderId, driverId, LocalDateTime.now());
 
@@ -308,12 +290,16 @@ public class OrderService {
                     buildStatusUpdate(saved));
         }
 
+        // For O2O: SMS the offline customer that driver is coming
+        if (saved.getOfflineCustomerPhone() != null) {
+            communicationService.sendDriverAssignedNotification(saved);
+        }
+
         return saved;
     }
 
     // ─────────────────────────────────────────────────
     // UPDATE ORDER STATUS
-    // PENDING→ACCEPTED→PREPARING→READY→PICKED_UP→DELIVERED
     // ─────────────────────────────────────────────────
     @Transactional
     public Order updateStatus(Long orderId,
@@ -347,20 +333,14 @@ public class OrderService {
         order.setStatus(newStatus);
         Order saved = orderRepository.save(order);
 
-        // ─── On delivery: record commission in ledger ─
-        // LedgerService is the single source of truth for debt.
-        // It creates the ledger entry AND updates driver.debtAmount.
-        // No auto-block — admin handles blocking manually.
         if (newStatus == Order.OrderStatus.DELIVERED) {
             ledgerService.recordDriverCommission(saved);
         }
 
-        // Broadcast to customer via WebSocket
         messagingTemplate.convertAndSend(
                 "/topic/order/" + orderId,
                 buildStatusUpdate(saved));
 
-        // Notify merchant (only LOGISTICS has merchant)
         if (saved.getMerchant() != null) {
             messagingTemplate.convertAndSend(
                     "/topic/merchant/" +
@@ -373,7 +353,6 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // DISPUTE ORDER
-    // Only parties to the order can raise a dispute
     // ─────────────────────────────────────────────────
     @Transactional
     public Order disputeOrder(Long orderId,
@@ -385,8 +364,6 @@ public class OrderService {
                 .orElseThrow(() ->
                         new RuntimeException("Order not found"));
 
-        // Authorization: only merchant, driver, or customer
-        // of THIS specific order can dispute it
         boolean isParty =
                 (order.getMerchant() != null &&
                         order.getMerchant().getId().equals(requesterId))
@@ -412,7 +389,6 @@ public class OrderService {
                     buildStatusUpdate(saved));
         }
 
-        // Alert admin dashboard
         messagingTemplate.convertAndSend(
                 "/topic/admin/disputes",
                 buildStatusUpdate(saved));
@@ -430,9 +406,6 @@ public class OrderService {
                         "Order not found. Check your tracking code."));
     }
 
-    // ─────────────────────────────────────────────────
-    // GET ORDERS
-    // ─────────────────────────────────────────────────
     public List<Order> getMerchantOrders(Long merchantId) {
         return orderRepository
                 .findByMerchantIdOrderByCreatedAtDesc(merchantId);
@@ -454,8 +427,6 @@ public class OrderService {
     // ─────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ─────────────────────────────────────────────────
-
-    // Ping nearest drivers via WebSocket
     private void notifyNearestDrivers(
             Order order,
             Double pickupLat,
@@ -467,13 +438,11 @@ public class OrderService {
         List<Long> nearbyDrivers;
 
         if (orderType == Order.OrderType.MOBILITY) {
-            // MOBILITY → PEOPLE + HYBRID drivers
             nearbyDrivers = locationService
                     .findNearestPeopleDrivers(
                             pickupLat, pickupLng,
                             SEARCH_RADIUS_KM);
         } else {
-            // LOGISTICS → PACKAGE + HYBRID drivers
             nearbyDrivers = locationService
                     .findNearestPackageDrivers(
                             pickupLat, pickupLng,
@@ -490,8 +459,6 @@ public class OrderService {
                 " drivers for " + order.getTrackingCode());
     }
 
-    // Generate FST-YYYYMMDD-XXXX tracking code
-    // Uses SecureRandom to prevent collision under concurrent load
     private String generateTrackingCode() {
         String date = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
