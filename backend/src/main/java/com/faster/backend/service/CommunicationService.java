@@ -372,8 +372,10 @@ public class CommunicationService {
 
         // Vonage status "0" = success
         if (!"0".equals(status)) {
-            String error = first.getOrDefault(
-                "error-text", "Unknown error").toString();
+            Object errorObj = first.get("error-text");
+            String error = errorObj != null
+                    ? errorObj.toString()
+                    : "Unknown error";
             throw new RuntimeException(
                 "Vonage error: " + error + " (status=" + status + ")");
         }
