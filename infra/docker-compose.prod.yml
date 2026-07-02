@@ -9,8 +9,6 @@
 # All secrets come from .env — never hardcoded here
 # ─────────────────────────────────────────────────────
 
-version: '3.8'
-
 services:
 
   # ── PostgreSQL ──────────────────────────────────────
