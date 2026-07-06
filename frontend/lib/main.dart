@@ -1,3 +1,4 @@
+import 'package:faster_app/dev/dev_launcher.DART';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,16 @@ import 'features/auth/bloc/auth_bloc.dart';
 import 'features/auth/bloc/auth_event.dart';
 import 'shared/theme/app_theme.dart';
 import 'core/constants/app_colors.dart';
+import 'dev/dev_launcher.DART';
+
+// ─── DEV MODE FLAG ────────────────────────────────────
+// Set with: flutter run --dart-define=DEV_MODE=true
+// In production: DEV_MODE is always false (default)
+// NEVER ship with DEV_MODE=true
+const bool kDevMode = bool.fromEnvironment(
+  'DEV_MODE',
+  defaultValue: false,
+);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,7 +90,9 @@ class FasterApp extends StatelessWidget {
         title: 'Faster',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const AppRouter(),
+        // DEV_MODE=true → show dev launcher (no login needed)
+        // DEV_MODE=false (default) → normal app flow
+        home: kDevMode ? DevLauncher() : const AppRouter(),
       ),
     );
   }

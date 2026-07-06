@@ -63,6 +63,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
   final _pickupCtrl = TextEditingController();
   final _dropoffCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  bool _isLocating = false;
 
   double? _pickupLat, _pickupLng, _dropoffLat, _dropoffLng;
   bool _isDetecting = false, _isRequesting = false;
@@ -115,37 +116,37 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
   }
 
   Future<void> _detectPickup() async {
-    if (!mounted) return;
-    setState(() => _isDetecting = true);
+    setState(() => _isLocating = true);
     try {
       final pos = await LocationService.instance.getCurrentPosition();
-      if (pos == null || !mounted) return;
-      setState(() {
-        _pickupLat = pos.latitude;
-        _pickupLng = pos.longitude;
-      });
+      if (pos == null) return;
+
+      // Update coordinates
+      _pickupLat = pos.latitude;
+      _pickupLng = pos.longitude;
+
       try {
+        // Use Nominatim to get the address name
         final r = await dio.Dio().get(
           'https://nominatim.openstreetmap.org/reverse',
           queryParameters: {
             'format': 'json',
             'lat': pos.latitude.toString(),
-            'lon': pos.longitude.toString()
+            'lon': pos.longitude.toString(),
           },
           options: dio.Options(
-              headers: {'Accept-Language': 'en', 'User-Agent': 'FasterApp/1.0'},
-              receiveTimeout: const Duration(seconds: 5)),
+            headers: {'Accept-Language': 'en', 'User-Agent': 'FasterApp/1.0'},
+            receiveTimeout: const Duration(seconds: 5),
+          ),
         );
-        if (mounted)
-          setState(() =>
-              _pickupCtrl.text = r.data?['display_name']?.toString() ?? '');
+        setState(
+            () => _pickupCtrl.text = r.data?['display_name']?.toString() ?? '');
       } catch (_) {
-        if (mounted)
-          setState(() => _pickupCtrl.text =
-              '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}');
+        setState(() => _pickupCtrl.text =
+            '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}');
       }
     } catch (_) {}
-    if (mounted) setState(() => _isDetecting = false);
+    setState(() => _isLocating = false);
   }
 
   void _useDestination(SavedDestination d) {
@@ -443,36 +444,36 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
 
               // Pickup
               Row(children: [
-                Text('Pickup', style: AppTextStyles.headlineSmall),
+                Text('Pickup Location', style: AppTextStyles.headlineSmall),
                 const Spacer(),
-                if (!kIsWeb)
-                  GestureDetector(
-                    onTap: _detectPickup,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.3))),
-                      child: _isDetecting
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                  color: AppColors.primary, strokeWidth: 2))
-                          : Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Icon(Icons.my_location_rounded,
-                                  color: AppColors.primary, size: 14),
-                              const SizedBox(width: 4),
-                              Text('GPS',
-                                  style: AppTextStyles.caption.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600)),
-                            ]),
+                GestureDetector(
+                  onTap: _detectPickup,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.3)),
                     ),
+                    child: _isLocating
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                                color: AppColors.primary, strokeWidth: 2))
+                        : Row(mainAxisSize: MainAxisSize.min, children: [
+                            const Icon(Icons.my_location_rounded,
+                                color: AppColors.primary, size: 14),
+                            const SizedBox(width: 4),
+                            Text('My GPS',
+                                style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600)),
+                          ]),
                   ),
+                ),
               ]),
               const SizedBox(height: 8),
               AppInput(
