@@ -76,7 +76,7 @@ services:
       # Upload path inside container
       APP_UPLOAD_DIR: /app/uploads
       # CORS — your actual domain
-      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     volumes:
       # Persist user-uploaded images outside the container
       - uploads_data:/app/uploads
