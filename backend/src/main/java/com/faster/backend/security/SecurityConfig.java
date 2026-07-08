@@ -1,7 +1,9 @@
 package com.faster.backend.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -11,6 +13,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import java.time.LocalDateTime;
+import java.util.Map;
+
 import lombok.RequiredArgsConstructor;
 
 @Configuration
@@ -19,24 +24,59 @@ import lombok.RequiredArgsConstructor;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .findAndRegisterModules();
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // ─── Disable CSRF (we use JWT not sessions) ──
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // ─── Enable CORS ──────────────────────────────
                 .cors(cors -> {
                 })
 
-                // ─── Stateless sessions (JWT only) ───────────
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // ─── Route Permissions ───────────────────────
+                // ─── Consistent JSON error bodies ────────────
+                // FIX: previously there was no entry point / access
+                // denied handler, so an unauthenticated or forbidden
+                // request returned an EMPTY body. That's why testing
+                // /api/orders/quote without a token printed nothing —
+                // it wasn't a bug in the endpoint, but it meant every
+                // protected route gave a blank response instead of a
+                // JSON message the Flutter app could actually show.
+                .exceptionHandling(handling -> handling
+                        // No token / invalid token → 401
+                        .authenticationEntryPoint((request, response, ex) -> {
+                            response.setStatus(401);
+                            response.setContentType(
+                                    MediaType.APPLICATION_JSON_VALUE);
+                            response.getWriter().write(
+                                    objectMapper.writeValueAsString(Map.of(
+                                            "status", "error",
+                                            "message",
+                                            "Authentication required. "
+                                            + "Please log in.",
+                                            "timestamp",
+                                            LocalDateTime.now().toString())));
+                        })
+                        // Valid token, wrong role → 403
+                        .accessDeniedHandler((request, response, ex) -> {
+                            response.setStatus(403);
+                            response.setContentType(
+                                    MediaType.APPLICATION_JSON_VALUE);
+                            response.getWriter().write(
+                                    objectMapper.writeValueAsString(Map.of(
+                                            "status", "error",
+                                            "message",
+                                            "You don't have permission "
+                                            + "to access this.",
+                                            "timestamp",
+                                            LocalDateTime.now().toString())));
+                        }))
+
                 .authorizeHttpRequests(auth -> auth
 
-                        // PUBLIC — anyone can hit these
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",
@@ -49,27 +89,21 @@ public class SecurityConfig {
                                 "/ws/**")
                         .permitAll()
 
-                        // MERCHANT only routes
                         .requestMatchers("/api/merchant/**")
                         .hasRole("MERCHANT")
-                        // DRIVER only routes
                         .requestMatchers("/api/driver/**")
                         .hasRole("DRIVER")
-                        // Admin only routes
                         .requestMatchers("/api/admin/**")
                         .hasRole("ADMIN")
 
-                        // Everything else needs a valid token
                         .anyRequest().authenticated())
 
-                // ─── Add JWT filter before default filter ────
                 .addFilterBefore(jwtAuthFilter,
                         UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ─── Password Encoder (BCrypt hashing) ──────────
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
