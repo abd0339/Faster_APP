@@ -30,8 +30,8 @@ public class AuthService {
 
     // ─── OTP config ───────────────────────────────────
     private static final int OTP_EXPIRY_MINUTES = 10;
-    private static final int OTP_MAX_ATTEMPTS   = 3;
-    private static final SecureRandom RANDOM     = new SecureRandom();
+    private static final int OTP_MAX_ATTEMPTS = 3;
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     // ─────────────────────────────────────────────────
     // REGISTER
@@ -39,7 +39,7 @@ public class AuthService {
     // 2. Save user (isPhoneVerified = false)
     // 3. Generate + send OTP via SMS/WhatsApp
     // 4. Return response WITHOUT a token
-    //    (token is issued only after OTP verified)
+    // (token is issued only after OTP verified)
     // ─────────────────────────────────────────────────
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -47,11 +47,11 @@ public class AuthService {
         // ─── Uniqueness checks ────────────────────────
         if (userRepository.existsByPhone(request.getPhone())) {
             throw new RuntimeException(
-                "Phone number is already registered");
+                    "Phone number is already registered");
         }
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException(
-                "Email address is already registered");
+                    "Email address is already registered");
         }
 
         // ─── Build and save user ──────────────────────
@@ -82,8 +82,8 @@ public class AuthService {
                 .isPhoneVerified(false)
                 .requiresOtp(true)
                 .message("Account created! We sent a 6-digit code to "
-                    + maskPhone(user.getPhone())
-                    + ". Enter it to activate your account.")
+                        + maskPhone(user.getPhone())
+                        + ". Enter it to activate your account.")
                 .build();
     }
 
@@ -98,32 +98,32 @@ public class AuthService {
         // ─── Find user by phone ───────────────────────
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException(
-                    "No account found with this phone number"));
+                        "No account found with this phone number"));
 
         if (Boolean.TRUE.equals(user.getIsPhoneVerified())) {
             throw new RuntimeException(
-                "Phone number is already verified");
+                    "Phone number is already verified");
         }
 
         // ─── Find latest OTP ──────────────────────────
         OtpVerification otp = otpRepository
                 .findTopByUserIdAndIsUsedFalseOrderByCreatedAtDesc(
-                    user.getId())
+                        user.getId())
                 .orElseThrow(() -> new RuntimeException(
-                    "No active OTP found. Request a new code."));
+                        "No active OTP found. Request a new code."));
 
         // ─── Check expiry ─────────────────────────────
         if (LocalDateTime.now().isAfter(otp.getExpiresAt())) {
             otpRepository.deleteAllByUserId(user.getId());
             throw new RuntimeException(
-                "Code has expired. Request a new one.");
+                    "Code has expired. Request a new one.");
         }
 
         // ─── Check attempt limit ──────────────────────
         if (otp.getAttempts() >= OTP_MAX_ATTEMPTS) {
             otpRepository.deleteAllByUserId(user.getId());
             throw new RuntimeException(
-                "Too many wrong attempts. Request a new code.");
+                    "Too many wrong attempts. Request a new code.");
         }
 
         // ─── Check code ───────────────────────────────
@@ -134,7 +134,7 @@ public class AuthService {
 
             int remaining = OTP_MAX_ATTEMPTS - otp.getAttempts();
             throw new RuntimeException(
-                "Wrong code. " + remaining + " attempt(s) remaining.");
+                    "Wrong code. " + remaining + " attempt(s) remaining.");
         }
 
         // ─── SUCCESS ──────────────────────────────────
@@ -149,7 +149,7 @@ public class AuthService {
         otpRepository.deleteAllByUserId(user.getId());
 
         log.info("✅ Phone verified for user {} ({})",
-            user.getFullName(), phone);
+                user.getFullName(), phone);
 
         // Issue JWT — first time user gets a token
         String token = jwtUtil.generateToken(
@@ -165,7 +165,7 @@ public class AuthService {
                 .isPhoneVerified(true)
                 .requiresOtp(false)
                 .message("Phone verified! Welcome to Faster, "
-                    + user.getFullName() + "!")
+                        + user.getFullName() + "!")
                 .build();
     }
 
@@ -179,11 +179,11 @@ public class AuthService {
 
         User user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> new RuntimeException(
-                    "No account found with this phone number"));
+                        "No account found with this phone number"));
 
         if (Boolean.TRUE.equals(user.getIsPhoneVerified())) {
             throw new RuntimeException(
-                "Phone number is already verified");
+                    "Phone number is already verified");
         }
 
         // Delete existing OTPs and send fresh one
@@ -198,7 +198,7 @@ public class AuthService {
                 .isPhoneVerified(false)
                 .requiresOtp(true)
                 .message("New code sent to "
-                    + maskPhone(phone) + ".")
+                        + maskPhone(phone) + ".")
                 .build();
     }
 
@@ -206,12 +206,13 @@ public class AuthService {
     // LOGIN
     // Blocks login if phone not verified yet.
     // ─────────────────────────────────────────────────
+    @Transactional
     public AuthResponse login(LoginRequest request) {
 
         if (request.getEmail() == null &&
                 request.getPhone() == null) {
             throw new RuntimeException(
-                "Please provide your email or phone number");
+                    "Please provide your email or phone number");
         }
 
         // ─── Find user ────────────────────────────────
@@ -221,32 +222,32 @@ public class AuthService {
             user = userRepository
                     .findByEmail(request.getEmail().toLowerCase())
                     .orElseThrow(() -> new RuntimeException(
-                        "No account found with this email address"));
+                            "No account found with this email address"));
         } else {
             user = userRepository
                     .findByPhone(request.getPhone())
                     .orElseThrow(() -> new RuntimeException(
-                        "No account found with this phone number"));
+                            "No account found with this phone number"));
         }
 
         // ─── Password check ───────────────────────────
         if (!passwordEncoder.matches(
                 request.getPassword(), user.getPassword())) {
             throw new RuntimeException(
-                "Incorrect password. Please try again");
+                    "Incorrect password. Please try again");
         }
 
         // ─── Account checks ───────────────────────────
         if (Boolean.FALSE.equals(user.getIsActive())) {
             throw new RuntimeException(
-                "This account has been deactivated. Contact support");
+                    "This account has been deactivated. Contact support");
         }
 
         if (Boolean.TRUE.equals(user.getIsBlocked())) {
             throw new RuntimeException(
-                "Your account has been paused by admin. "
-                + "Please settle your outstanding commission "
-                + "via OMT or WishMoney, then contact admin.");
+                    "Your account has been paused by admin. "
+                            + "Please settle your outstanding commission "
+                            + "via OMT or WishMoney, then contact admin.");
         }
 
         // ─── Phone verification gate ──────────────────
@@ -263,8 +264,8 @@ public class AuthService {
                     .isPhoneVerified(false)
                     .requiresOtp(true)
                     .message("Please verify your phone number. "
-                        + "We sent a new code to "
-                        + maskPhone(user.getPhone()) + ".")
+                            + "We sent a new code to "
+                            + maskPhone(user.getPhone()) + ".")
                     .build();
         }
 
@@ -293,7 +294,7 @@ public class AuthService {
     private void sendOtp(User user) {
         // Generate secure 6-digit code
         String code = String.format("%06d",
-            RANDOM.nextInt(900000) + 100000);
+                RANDOM.nextInt(900000) + 100000);
 
         // Save to DB
         OtpVerification otp = OtpVerification.builder()
@@ -301,7 +302,7 @@ public class AuthService {
                 .phone(user.getPhone())
                 .code(code)
                 .expiresAt(LocalDateTime.now()
-                    .plusMinutes(OTP_EXPIRY_MINUTES))
+                        .plusMinutes(OTP_EXPIRY_MINUTES))
                 .attempts(0)
                 .isUsed(false)
                 .build();
@@ -322,14 +323,15 @@ public class AuthService {
         communicationService.sendOtpMessage(user.getPhone(), message);
 
         log.info("📲 OTP sent to {} for user {}",
-            maskPhone(user.getPhone()), user.getFullName());
+                maskPhone(user.getPhone()), user.getFullName());
     }
 
     // Mask phone for logging: +96170123456 → +961***3456
     private String maskPhone(String phone) {
-        if (phone == null || phone.length() < 6) return "***";
+        if (phone == null || phone.length() < 6)
+            return "***";
         return phone.substring(0, 4)
-            + "***"
-            + phone.substring(phone.length() - 4);
+                + "***"
+                + phone.substring(phone.length() - 4);
     }
 }
