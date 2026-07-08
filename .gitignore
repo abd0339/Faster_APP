@@ -62,7 +62,8 @@ desktop.ini
 # ─── Node (tooling) ───────────────────────────────────
 node_modules/
 npm-debug.log
-yarn-error.log..bfg-report/
+yarn-error.log
+..bfg-report/
 secrets.txt
 bfg.jar
 backend/target/

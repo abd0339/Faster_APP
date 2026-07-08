@@ -7,34 +7,37 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
+import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * REST CORS configuration.
+ *
+ * FIX (C1): now reads the SAME property as WebSocketConfig and
+ * application-prod.properties — app.cors.allowed-origins, backed by the
+ * ALLOWED_ORIGINS env var (comma-separated). Previously this file read a
+ * different, singular ALLOWED_ORIGIN env var that nothing else used, so
+ * REST CORS and WebSocket CORS were configured from two different sources.
+ *
+ * Set in prod .env:
+ *   ALLOWED_ORIGINS=https://faster-app.org,https://www.faster-app.org
+ */
 @Configuration
 public class CorsConfig {
 
-    // Reads from ALLOWED_ORIGIN env var — set in .env on the server.
-    // Falls back to common local dev origins if not set.
-    @Value("${ALLOWED_ORIGIN:}")
-    private String allowedOrigin;
+    @Value("${app.cors.allowed-origins:http://localhost:*,http://10.0.2.*,http://192.168.*.*}")
+    private String allowedOrigins;
 
     @Bean
     public CorsFilter corsFilter() {
 
         CorsConfiguration config = new CorsConfiguration();
 
-        // Always allow local dev origins
-        java.util.List<String> origins = new java.util.ArrayList<>(List.of(
-            "http://localhost:*",
-            "http://10.0.2.*",
-            "http://192.168.*.*"
-        ));
-
-        // Add the production domain from env var if set
-        if (allowedOrigin != null && !allowedOrigin.isBlank()) {
-            origins.add(allowedOrigin);
-            // Also allow the www subdomain automatically
-            if (!allowedOrigin.contains("www.")) {
-                origins.add(allowedOrigin.replace("https://", "https://www."));
+        List<String> origins = new ArrayList<>();
+        for (String origin : allowedOrigins.split(",")) {
+            String trimmed = origin.trim();
+            if (!trimmed.isEmpty()) {
+                origins.add(trimmed);
             }
         }
 
