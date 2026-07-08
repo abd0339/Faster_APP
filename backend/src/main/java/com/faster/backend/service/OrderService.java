@@ -3,6 +3,9 @@ package com.faster.backend.service;
 import com.faster.backend.dto.OrderItemLineRequest;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
+import com.faster.backend.exception.ForbiddenException;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +18,11 @@ import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -28,8 +34,6 @@ public class OrderService {
     private final SimpMessagingTemplate messagingTemplate;
     private final LedgerService ledgerService;
     private final CommunicationService communicationService;
-    // FIX (C2): all money now flows through PricingService instead
-    // of being trusted from the client request.
     private final PricingService pricingService;
 
     private static final BigDecimal DRIVER_COMMISSION_RATE =
@@ -39,11 +43,55 @@ public class OrderService {
     private static final double SEARCH_RADIUS_KM = 5.0;
 
     // ─────────────────────────────────────────────────
-    // QUOTE — lets the customer app show the real price
-    // BEFORE placing the order. Nothing is persisted here.
-    // The actual order creation below recomputes from
-    // scratch regardless — this is a display convenience,
-    // never a trusted input.
+    // FIX (M2): ORDER STATUS STATE MACHINE
+    //
+    // Previously updateStatus() accepted ANY newStatus from
+    // any authorized party with zero validation of the
+    // current state — a single PATCH request could jump
+    // PENDING → DELIVERED directly, skipping PREPARING,
+    // READY_FOR_PICKUP, and PICKED_UP entirely, which would
+    // immediately trigger driver commission for work that
+    // was never actually done.
+    //
+    // This map is the single source of truth for which
+    // transitions are legal from which state. ACCEPTED is
+    // deliberately absent as a reachable target here — it
+    // can ONLY happen through acceptOrder()'s atomic
+    // assignDriver() update, never through this generic
+    // status endpoint.
+    // ─────────────────────────────────────────────────
+    private static final Map<Order.OrderStatus, Set<Order.OrderStatus>>
+            ALLOWED_TRANSITIONS = new EnumMap<>(Order.OrderStatus.class);
+
+    static {
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.PENDING,
+                EnumSet.of(Order.OrderStatus.CANCELLED));
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.ACCEPTED,
+                EnumSet.of(Order.OrderStatus.PREPARING,
+                        Order.OrderStatus.CANCELLED));
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.PREPARING,
+                EnumSet.of(Order.OrderStatus.READY_FOR_PICKUP,
+                        Order.OrderStatus.CANCELLED));
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.READY_FOR_PICKUP,
+                EnumSet.of(Order.OrderStatus.PICKED_UP,
+                        Order.OrderStatus.CANCELLED));
+        // Once picked up, the driver has the physical goods —
+        // cancellation is no longer a valid outcome, only delivery.
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.PICKED_UP,
+                EnumSet.of(Order.OrderStatus.DELIVERED));
+        // Terminal states — no transitions out via this endpoint.
+        // DISPUTED is entered only through disputeOrder(), and
+        // resolved only through AdminService.resolveDispute().
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.DELIVERED,
+                EnumSet.noneOf(Order.OrderStatus.class));
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.CANCELLED,
+                EnumSet.noneOf(Order.OrderStatus.class));
+        ALLOWED_TRANSITIONS.put(Order.OrderStatus.DISPUTED,
+                EnumSet.noneOf(Order.OrderStatus.class));
+    }
+
+    // ─────────────────────────────────────────────────
+    // QUOTE — display-only, never trusted for creation
     // ─────────────────────────────────────────────────
     public com.faster.backend.dto.OrderQuoteResponse quoteLogisticsOrder(
             Long merchantId,
@@ -67,9 +115,6 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // CREATE STANDARD ORDER (LOGISTICS)
-    // FIX (C2): totalPrice/deliveryFee are no longer
-    // parameters — they're computed here from the
-    // merchant's own catalog and real distance.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createOrder(Long merchantId,
@@ -87,7 +132,6 @@ public class OrderService {
         User merchant = getUser(merchantId);
         User customer = getUser(customerId);
 
-        // ─── Server-computed pricing (never client input) ──
         BigDecimal totalPrice =
                 pricingService.calculateItemsTotal(merchantId, items);
 
@@ -129,9 +173,6 @@ public class OrderService {
 
         Order saved = orderRepository.save(order);
 
-        // Bonus fix found while wiring in PricingService: stock was
-        // never actually decremented anywhere in the order flow.
-        // ItemService.decrementStock() existed but nothing called it.
         pricingService.decrementStockForOrder(items);
 
         notifyNearestDrivers(
@@ -148,8 +189,6 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // CREATE MOBILITY ORDER (Uber-style ride)
-    // FIX (C2): rideFee is no longer a parameter — it's
-    // computed from real pickup→destination distance.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createMobilityOrder(
@@ -212,18 +251,6 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // CREATE O2O ORDER (Offline Customer by phone)
-    // FIX (C2): totalPrice/deliveryFee removed as params.
-    // A merchant can no longer under-report the sale total
-    // to dodge the 10% commission — items are priced from
-    // their own catalog exactly like app orders.
-    //
-    // deliveryLat/deliveryLng are optional here: Flow 1
-    // (merchant pins the exact map location) has them and
-    // gets a real distance-based fee; Flow 2 (WhatsApp
-    // bridge link, customer shares location later) does not
-    // yet, so PricingService falls back to the minimum fee
-    // until the location is confirmed. This is a known,
-    // intentional limitation — not a silent gap.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createO2OOrder(Long merchantId,
@@ -287,9 +314,6 @@ public class OrderService {
                 saved, pickupLat, pickupLng,
                 Order.OrderType.LOGISTICS);
 
-        // Send WhatsApp/SMS tracking link to offline customer
-        // CommunicationService handles Twilio/Vonage routing
-        // Never blocks order creation — failures are logged only
         communicationService.sendO2OTrackingLink(saved);
 
         return saved;
@@ -305,8 +329,8 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // DRIVER ACCEPTS ORDER
-    // Atomic update prevents double-accept race condition
-    // For O2O: sends driver-assigned SMS to offline customer
+    // The ONLY path that moves an order out of PENDING.
+    // Atomic update prevents double-accept race condition.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order acceptOrder(Long driverId, Long orderId) {
@@ -314,7 +338,7 @@ public class OrderService {
         User driver = getUser(driverId);
 
         if (Boolean.TRUE.equals(driver.getIsBlocked())) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Your account is blocked. " +
                     "Settle your commission debt via OMT or WishMoney, " +
                     "then contact admin to reactivate.");
@@ -324,14 +348,14 @@ public class OrderService {
                 orderId, driverId, LocalDateTime.now());
 
         if (updated == 0) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Order is no longer available — " +
                     "another driver already accepted it.");
         }
 
         Order saved = orderRepository.findById(orderId)
                 .orElseThrow(() ->
-                        new RuntimeException("Order not found"));
+                        new NotFoundException("Order not found"));
 
         if (saved.getMerchant() != null) {
             messagingTemplate.convertAndSend(
@@ -355,6 +379,11 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // UPDATE ORDER STATUS
+    // FIX (M2): every transition is now checked against
+    // ALLOWED_TRANSITIONS before anything is persisted.
+    // A request to jump straight to DELIVERED (or any
+    // other non-adjacent state) is rejected with a clear
+    // 422 BusinessException instead of silently succeeding.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order updateStatus(Long orderId,
@@ -364,7 +393,7 @@ public class OrderService {
         Order order = orderRepository
                 .findById(orderId)
                 .orElseThrow(() ->
-                        new RuntimeException("Order not found"));
+                        new NotFoundException("Order not found"));
 
         boolean isMerchant = order.getMerchant() != null &&
                 order.getMerchant().getId().equals(requesterId);
@@ -372,8 +401,25 @@ public class OrderService {
                 order.getDriver().getId().equals(requesterId);
 
         if (!isMerchant && !isDriver) {
-            throw new RuntimeException(
+            throw new ForbiddenException(
                     "Not authorized to update this order");
+        }
+
+        // ─── State machine check (the M2 fix) ─────────
+        Set<Order.OrderStatus> allowedNext =
+                ALLOWED_TRANSITIONS.getOrDefault(
+                        order.getStatus(),
+                        EnumSet.noneOf(Order.OrderStatus.class));
+
+        if (!allowedNext.contains(newStatus)) {
+            throw new BusinessException(
+                    "Cannot change order status from "
+                    + order.getStatus() + " to " + newStatus
+                    + ". Allowed next status"
+                    + (allowedNext.size() == 1 ? " is " : "es are ")
+                    + (allowedNext.isEmpty()
+                            ? "none — this order is in a final state"
+                            : allowedNext));
         }
 
         switch (newStatus) {
@@ -408,6 +454,11 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // DISPUTE ORDER
+    // FIX (M2, minor extension): an order that's already
+    // CANCELLED or already DISPUTED can't be disputed
+    // again. DELIVERED orders CAN still be disputed
+    // (e.g. customer complains after the fact) — that's
+    // intentional, not a gap.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order disputeOrder(Long orderId,
@@ -417,7 +468,7 @@ public class OrderService {
         Order order = orderRepository
                 .findById(orderId)
                 .orElseThrow(() ->
-                        new RuntimeException("Order not found"));
+                        new NotFoundException("Order not found"));
 
         boolean isParty =
                 (order.getMerchant() != null &&
@@ -428,8 +479,15 @@ public class OrderService {
                         order.getCustomer().getId().equals(requesterId));
 
         if (!isParty) {
-            throw new RuntimeException(
+            throw new ForbiddenException(
                     "Not authorized to dispute this order");
+        }
+
+        if (order.getStatus() == Order.OrderStatus.CANCELLED
+                || order.getStatus() == Order.OrderStatus.DISPUTED) {
+            throw new BusinessException(
+                    "This order is " + order.getStatus()
+                    + " and cannot be disputed");
         }
 
         order.setStatus(Order.OrderStatus.DISPUTED);
@@ -457,7 +515,7 @@ public class OrderService {
     public Order trackOrder(String trackingCode) {
         return orderRepository
                 .findByTrackingCode(trackingCode)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Order not found. Check your tracking code."));
     }
 
@@ -550,6 +608,6 @@ public class OrderService {
     private User getUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() ->
-                        new RuntimeException("User not found"));
+                        new NotFoundException("User not found"));
     }
 }
