@@ -1,5 +1,6 @@
 package com.faster.backend.service;
 
+import com.faster.backend.dto.OrderItemLineRequest;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
 import com.faster.backend.repository.OrderRepository;
@@ -27,6 +28,9 @@ public class OrderService {
     private final SimpMessagingTemplate messagingTemplate;
     private final LedgerService ledgerService;
     private final CommunicationService communicationService;
+    // FIX (C2): all money now flows through PricingService instead
+    // of being trusted from the client request.
+    private final PricingService pricingService;
 
     private static final BigDecimal DRIVER_COMMISSION_RATE =
             new BigDecimal("0.20");
@@ -35,13 +39,42 @@ public class OrderService {
     private static final double SEARCH_RADIUS_KM = 5.0;
 
     // ─────────────────────────────────────────────────
+    // QUOTE — lets the customer app show the real price
+    // BEFORE placing the order. Nothing is persisted here.
+    // The actual order creation below recomputes from
+    // scratch regardless — this is a display convenience,
+    // never a trusted input.
+    // ─────────────────────────────────────────────────
+    public com.faster.backend.dto.OrderQuoteResponse quoteLogisticsOrder(
+            Long merchantId,
+            List<OrderItemLineRequest> items,
+            Double pickupLat, Double pickupLng,
+            Double deliveryLat, Double deliveryLng) {
+
+        BigDecimal totalPrice =
+                pricingService.calculateItemsTotal(merchantId, items);
+        BigDecimal deliveryFee = pricingService.calculateDeliveryFee(
+                pickupLat, pickupLng, deliveryLat, deliveryLng);
+        BigDecimal grandTotal = totalPrice.add(deliveryFee)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        return com.faster.backend.dto.OrderQuoteResponse.builder()
+                .totalPrice(totalPrice)
+                .deliveryFee(deliveryFee)
+                .grandTotal(grandTotal)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────────
     // CREATE STANDARD ORDER (LOGISTICS)
+    // FIX (C2): totalPrice/deliveryFee are no longer
+    // parameters — they're computed here from the
+    // merchant's own catalog and real distance.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createOrder(Long merchantId,
             Long customerId,
-            BigDecimal totalPrice,
-            BigDecimal deliveryFee,
+            List<OrderItemLineRequest> items,
             Double pickupLat,
             Double pickupLng,
             String pickupAddress,
@@ -54,9 +87,12 @@ public class OrderService {
         User merchant = getUser(merchantId);
         User customer = getUser(customerId);
 
-        BigDecimal actualDeliveryFee = deliveryFee != null
-                ? deliveryFee.setScale(2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        // ─── Server-computed pricing (never client input) ──
+        BigDecimal totalPrice =
+                pricingService.calculateItemsTotal(merchantId, items);
+
+        BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
+                pickupLat, pickupLng, deliveryLat, deliveryLng);
 
         BigDecimal driverCommission = actualDeliveryFee
                 .multiply(DRIVER_COMMISSION_RATE)
@@ -93,6 +129,11 @@ public class OrderService {
 
         Order saved = orderRepository.save(order);
 
+        // Bonus fix found while wiring in PricingService: stock was
+        // never actually decremented anywhere in the order flow.
+        // ItemService.decrementStock() existed but nothing called it.
+        pricingService.decrementStockForOrder(items);
+
         notifyNearestDrivers(
                 saved, pickupLat, pickupLng,
                 Order.OrderType.LOGISTICS);
@@ -107,11 +148,12 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // CREATE MOBILITY ORDER (Uber-style ride)
+    // FIX (C2): rideFee is no longer a parameter — it's
+    // computed from real pickup→destination distance.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createMobilityOrder(
             Long customerId,
-            BigDecimal rideFee,
             Double pickupLat,
             Double pickupLng,
             String pickupAddress,
@@ -122,9 +164,8 @@ public class OrderService {
 
         User customer = getUser(customerId);
 
-        BigDecimal actualFee = rideFee != null
-                ? rideFee.setScale(2, RoundingMode.HALF_UP)
-                : new BigDecimal("3.00");
+        BigDecimal actualFee = pricingService.calculateRideFee(
+                pickupLat, pickupLng, deliveryLat, deliveryLng);
 
         BigDecimal driverCommission = actualFee
                 .multiply(DRIVER_COMMISSION_RATE)
@@ -171,24 +212,37 @@ public class OrderService {
 
     // ─────────────────────────────────────────────────
     // CREATE O2O ORDER (Offline Customer by phone)
-    // Merchant creates for customer who called by phone
-    // After save: sends WhatsApp/SMS via CommunicationService
+    // FIX (C2): totalPrice/deliveryFee removed as params.
+    // A merchant can no longer under-report the sale total
+    // to dodge the 10% commission — items are priced from
+    // their own catalog exactly like app orders.
+    //
+    // deliveryLat/deliveryLng are optional here: Flow 1
+    // (merchant pins the exact map location) has them and
+    // gets a real distance-based fee; Flow 2 (WhatsApp
+    // bridge link, customer shares location later) does not
+    // yet, so PricingService falls back to the minimum fee
+    // until the location is confirmed. This is a known,
+    // intentional limitation — not a silent gap.
     // ─────────────────────────────────────────────────
     @Transactional
     public Order createO2OOrder(Long merchantId,
             String offlinePhone,
             String offlineLandmark,
-            BigDecimal totalPrice,
-            BigDecimal deliveryFee,
+            List<OrderItemLineRequest> items,
             Double pickupLat,
             Double pickupLng,
-            String pickupAddress) {
+            String pickupAddress,
+            Double deliveryLat,
+            Double deliveryLng) {
 
         User merchant = getUser(merchantId);
 
-        BigDecimal actualDeliveryFee = deliveryFee != null
-                ? deliveryFee.setScale(2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        BigDecimal totalPrice =
+                pricingService.calculateItemsTotal(merchantId, items);
+
+        BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
+                pickupLat, pickupLng, deliveryLat, deliveryLng);
 
         BigDecimal driverCommission = actualDeliveryFee
                 .multiply(DRIVER_COMMISSION_RATE)
@@ -220,10 +274,14 @@ public class OrderService {
                 .pickupLat(pickupLat)
                 .pickupLng(pickupLng)
                 .pickupAddress(pickupAddress)
+                .deliveryLat(deliveryLat)
+                .deliveryLng(deliveryLng)
                 .deliveryAddress(offlineLandmark)
                 .build();
 
         Order saved = orderRepository.save(order);
+
+        pricingService.decrementStockForOrder(items);
 
         notifyNearestDrivers(
                 saved, pickupLat, pickupLng,
@@ -275,7 +333,6 @@ public class OrderService {
                 .orElseThrow(() ->
                         new RuntimeException("Order not found"));
 
-        // Notify merchant (only for LOGISTICS)
         if (saved.getMerchant() != null) {
             messagingTemplate.convertAndSend(
                     "/topic/merchant/" +
@@ -283,14 +340,12 @@ public class OrderService {
                     buildStatusUpdate(saved));
         }
 
-        // Notify customer if app user
         if (saved.getCustomer() != null) {
             messagingTemplate.convertAndSend(
                     "/topic/order/" + orderId,
                     buildStatusUpdate(saved));
         }
 
-        // For O2O: SMS the offline customer that driver is coming
         if (saved.getOfflineCustomerPhone() != null) {
             communicationService.sendDriverAssignedNotification(saved);
         }

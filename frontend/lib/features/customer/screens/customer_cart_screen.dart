@@ -15,6 +15,15 @@ import '../../../shared/widgets/google_places_search_field.dart';
 import '../services/cart_service.dart';
 import 'customer_order_tracking_screen.dart';
 
+// FIX (C2 — server-side pricing):
+// This screen no longer sends totalPrice/deliveryFee to the backend.
+// It sends WHAT was ordered (itemId + quantity per line) and WHERE
+// (delivery coordinates). The server looks up real prices from the
+// merchant's own catalog and computes delivery fee from distance —
+// see PricingService.java. This screen calls /api/orders/quote to
+// SHOW the real price before the customer confirms, but that quote
+// is a display convenience only — the actual order creation
+// recomputes everything from scratch server-side regardless.
 class CustomerCartScreen extends StatefulWidget {
   const CustomerCartScreen({super.key});
 
@@ -27,10 +36,16 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
   final _notesCtrl = TextEditingController();
   bool _isPlacingOrder = false;
   bool _isDetectingLocation = false;
+  bool _isQuoting = false;
 
-  // Delivery fee — merchant sets this, default is $2
-  // Future: calculate from distance
-  double _deliveryFee = 2.00;
+  // ─── Server-computed pricing (never client-computed) ──
+  // Populated by _fetchQuote(). Until the first quote comes
+  // back these are null and the UI shows a loading state
+  // instead of a guessed number.
+  double? _serverTotalPrice;
+  double? _serverDeliveryFee;
+  double? _serverGrandTotal;
+  String? _quoteError;
 
   // Customer GPS coordinates
   double? _deliveryLat;
@@ -41,6 +56,8 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
     super.initState();
     // Auto-detect location on open
     _autoDetectLocation();
+    // Get an initial price quote for whatever's already in the cart
+    _fetchQuote();
   }
 
   @override
@@ -100,6 +117,63 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
       // Location permission denied — user types manually
     } finally {
       if (mounted) setState(() => _isDetectingLocation = false);
+      // Coordinates may have just changed — refresh the quote
+      _fetchQuote();
+    }
+  }
+
+  // ─── Build the cart lines the server actually needs ──
+  // itemId + quantity only for now. Modifier/addon selection
+  // in the cart UI is a separate future feature; when added,
+  // include modifierOptionIds/addonIds per line here too.
+  List<Map<String, dynamic>> _buildItemLines() {
+    return CartService.instance.items
+        .map((item) => {
+              'itemId': item.itemId,
+              'quantity': item.quantity,
+            })
+        .toList();
+  }
+
+  // ─── Get a real, server-computed price quote ─────────
+  // Called on load and whenever the cart or delivery
+  // location changes. Never trust a locally-computed
+  // total for display — this is what the backend will
+  // actually charge.
+  Future<void> _fetchQuote() async {
+    final cart = CartService.instance;
+    if (cart.isEmpty || cart.merchantId == null) return;
+
+    if (!mounted) return;
+    setState(() {
+      _isQuoting = true;
+      _quoteError = null;
+    });
+
+    try {
+      final res = await ApiService.instance.post(
+        '/api/orders/quote',
+        data: {
+          'merchantId': cart.merchantId,
+          'items': _buildItemLines(),
+          'deliveryLat': _deliveryLat,
+          'deliveryLng': _deliveryLng,
+        },
+      );
+      final data = res.data as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _serverTotalPrice = (data['totalPrice'] as num).toDouble();
+        _serverDeliveryFee = (data['deliveryFee'] as num).toDouble();
+        _serverGrandTotal = (data['grandTotal'] as num).toDouble();
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(
+            () => _quoteError = 'Could not calculate price. Pull to refresh.');
+      }
+    } finally {
+      if (mounted) setState(() => _isQuoting = false);
     }
   }
 
@@ -116,12 +190,13 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
     setState(() => _isPlacingOrder = true);
     try {
       final cart = CartService.instance;
+      // Only sends WHAT was ordered — never a price.
+      // The server computes totalPrice/deliveryFee itself.
       final res = await ApiService.instance.post(
         ApiConstants.orders,
         data: {
           'merchantId': cart.merchantId,
-          'totalPrice': cart.subtotal,
-          'deliveryFee': _deliveryFee,
+          'items': _buildItemLines(),
           'deliveryAddress': _addressCtrl.text.trim(),
           'deliveryLat': _deliveryLat,
           'deliveryLng': _deliveryLng,
@@ -154,8 +229,14 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = CartService.instance;
-    final subtotal = cart.subtotal;
-    final grandTotal = subtotal + _deliveryFee;
+    // These are LOCAL estimates shown only while the real quote
+    // is loading — the button label and final charge always use
+    // the server-computed values once available.
+    final localSubtotalEstimate = cart.subtotal;
+
+    final displayTotal = _serverTotalPrice ?? localSubtotalEstimate;
+    final displayDeliveryFee = _serverDeliveryFee;
+    final displayGrandTotal = _serverGrandTotal;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -296,6 +377,8 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                               _deliveryLat = result.lat;
                               _deliveryLng = result.lng;
                               setState(() {});
+                              // Address changed → real delivery fee changes
+                              _fetchQuote();
                             },
                           ),
                           const SizedBox(height: 16),
@@ -315,20 +398,30 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                             child: Column(children: [
                               _summaryRow(
                                   'Items subtotal',
-                                  '\$${subtotal.toStringAsFixed(2)}',
+                                  '\$${displayTotal.toStringAsFixed(2)}',
                                   AppColors.textPrimary),
                               const SizedBox(height: 8),
                               _summaryRow(
                                   'Delivery fee',
-                                  '\$${_deliveryFee.toStringAsFixed(2)}',
+                                  displayDeliveryFee != null
+                                      ? '\$${displayDeliveryFee.toStringAsFixed(2)}'
+                                      : (_isQuoting ? 'Calculating…' : '—'),
                                   AppColors.textHint),
                               const Divider(
                                   color: AppColors.glassBorder, height: 20),
                               _summaryRow(
                                   'Total you pay',
-                                  '\$${grandTotal.toStringAsFixed(2)}',
+                                  displayGrandTotal != null
+                                      ? '\$${displayGrandTotal.toStringAsFixed(2)}'
+                                      : (_isQuoting ? 'Calculating…' : '—'),
                                   AppColors.accent,
                                   isBold: true),
+                              if (_quoteError != null) ...[
+                                const SizedBox(height: 8),
+                                Text(_quoteError!,
+                                    style: AppTextStyles.caption
+                                        .copyWith(color: AppColors.error)),
+                              ],
                             ]),
                           ),
 
@@ -343,7 +436,9 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'Pay \$${grandTotal.toStringAsFixed(2)} cash to driver at your door.',
+                                  displayGrandTotal != null
+                                      ? 'Pay \$${displayGrandTotal.toStringAsFixed(2)} cash to driver at your door.'
+                                      : 'Final price is confirmed by the store before your driver arrives.',
                                   style: AppTextStyles.caption
                                       .copyWith(color: AppColors.warning),
                                 ),
@@ -355,8 +450,9 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
 
                           // ─── Place order button ──────
                           AppButton(
-                            label:
-                                'Place Order — \$${grandTotal.toStringAsFixed(2)}',
+                            label: displayGrandTotal != null
+                                ? 'Place Order — \$${displayGrandTotal.toStringAsFixed(2)}'
+                                : 'Place Order',
                             icon: Icons.check_rounded,
                             isLoading: _isPlacingOrder,
                             color: AppColors.accent,
@@ -397,6 +493,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                 CartService.instance
                     .updateQuantity(item.itemId, item.quantity - 1);
                 setState(() {});
+                _fetchQuote();
               },
               child: Container(
                 width: 30,
@@ -420,6 +517,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                 CartService.instance
                     .updateQuantity(item.itemId, item.quantity + 1);
                 setState(() {});
+                _fetchQuote();
               },
               child: Container(
                 width: 30,
@@ -441,6 +539,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
             onTap: () {
               CartService.instance.removeItem(item.itemId);
               setState(() {});
+              _fetchQuote();
             },
             child: const Icon(Icons.delete_outline_rounded,
                 color: AppColors.error, size: 18),

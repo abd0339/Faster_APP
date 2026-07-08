@@ -1,39 +1,38 @@
 package com.faster.backend.dto;
 
 import com.faster.backend.entity.Order;
-import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
-import java.math.BigDecimal;
 
+import java.util.List;
+
+/**
+ * FIX (C2 — Critical): totalPrice and deliveryFee are REMOVED from this
+ * DTO. They used to be trusted straight from the client, meaning a
+ * customer could POST {"totalPrice": 0.01} and the platform's commission
+ * would be calculated on a fake number.
+ *
+ * The client now sends WHAT was ordered (merchantId + item lines) and
+ * WHERE (pickup/delivery coordinates). OrderService + PricingService
+ * compute the real totalPrice (from the merchant's own catalog) and the
+ * real deliveryFee/rideFee (from actual distance) entirely server-side.
+ * Nothing money-related is ever read from this request body anymore.
+ */
 @Data
 public class OrderRequest {
 
-    // ─── Which merchant (LOGISTICS orders only) ───────
-    // Required for LOGISTICS — the store the customer orders from
+    // ─── Which merchant (LOGISTICS / O2O orders only) ─
     // NOT required for MOBILITY (ride requests)
-    // NOT required for O2O (merchant creates for offline customer)
     private Long merchantId;
 
-    // ─── Product value ────────────────────────────────
-    // LOGISTICS: total value of items ordered
-    // MOBILITY: 0.00 (no products)
-    // What the driver pays the merchant at pickup (LOGISTICS)
-    @NotNull(message = "Total price is required")
-    @DecimalMin(value = "0.00",
-                message = "Price cannot be negative")
-    private BigDecimal totalPrice;
-
-    // ─── Delivery fee ─────────────────────────────────
-    // What the customer pays the driver for delivery/ride
-    // Platform takes 20% of this as driver commission
-    // Driver keeps the remaining 80%
-    @DecimalMin(value = "0.00",
-                message = "Delivery fee cannot be negative")
-    private BigDecimal deliveryFee;
+    // ─── Cart lines — required for LOGISTICS and O2O ──
+    // Each line is an itemId + quantity (+ optional
+    // modifiers/addons). Server looks up real prices from
+    // this merchant's own catalog — see PricingService.
+    // NOT used for MOBILITY (no products involved).
+    private List<OrderItemLineRequest> items;
 
     // ─── Pickup location ──────────────────────────────
-    // LOGISTICS: merchant store location
+    // LOGISTICS/O2O: merchant store location
     // MOBILITY: customer current location (pickup point)
     private Double pickupLat;
     private Double pickupLng;
@@ -42,6 +41,10 @@ public class OrderRequest {
     // ─── Delivery location ────────────────────────────
     // LOGISTICS: customer home/delivery address
     // MOBILITY: customer destination
+    // O2O: optional — only if merchant pins an exact map
+    // location (Flow 1). May be null for the WhatsApp
+    // "bridge link" flow (Flow 2) where the offline
+    // customer shares location after order creation.
     private Double deliveryLat;
     private Double deliveryLng;
     private String deliveryAddress;
@@ -57,7 +60,6 @@ public class OrderRequest {
     // ─── O2O fields (offline customer via phone) ──────
     // Set isO2O = true when merchant creates order
     // for a customer who called by phone
-    // isO2O = false by default (all app orders)
     private Boolean isO2O = false;
 
     // Required only when isO2O = true

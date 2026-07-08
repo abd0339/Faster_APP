@@ -1,5 +1,6 @@
 package com.faster.backend.controller;
 
+import com.faster.backend.dto.OrderQuoteResponse;
 import com.faster.backend.dto.OrderRequest;
 import com.faster.backend.dto.OrderStatusRequest;
 import com.faster.backend.entity.Order;
@@ -25,10 +26,47 @@ public class OrderController {
         private final OrderRepository orderRepository;
 
         // ─────────────────────────────────────────────────
+        // POST /api/orders/quote
+        // FIX (C2): lets the customer app show the REAL,
+        // server-computed price before the customer confirms.
+        // Nothing is persisted — createOrder() below recomputes
+        // from scratch regardless, so this is a display
+        // convenience only, never a trusted value.
+        // ─────────────────────────────────────────────────
+        @PostMapping("/api/orders/quote")
+        public ResponseEntity<?> quoteOrder(
+                        @RequestBody OrderRequest req) {
+
+                if (req.getMerchantId() == null) {
+                        return ResponseEntity.badRequest()
+                                        .body(Map.of("message",
+                                                        "merchantId is required for a quote"));
+                }
+
+                OrderQuoteResponse quote = orderService.quoteLogisticsOrder(
+                                req.getMerchantId(),
+                                req.getItems(),
+                                req.getPickupLat(),
+                                req.getPickupLng(),
+                                req.getDeliveryLat(),
+                                req.getDeliveryLng());
+
+                return ResponseEntity.ok(quote);
+        }
+
+        // ─────────────────────────────────────────────────
         // POST /api/orders
         // Who calls this:
         //   MERCHANT  → O2O (isO2O: true, offline customer by phone)
         //   CUSTOMER  → App order (LOGISTICS or MOBILITY)
+        //
+        // FIX (C2 — Critical): totalPrice/deliveryFee are no
+        // longer read from the request. The client sends WHAT
+        // was ordered (merchantId + item lines) and WHERE
+        // (coordinates); OrderService + PricingService compute
+        // the real price server-side from the merchant's own
+        // catalog and real distance. See OrderRequest.java and
+        // PricingService.java for the full explanation.
         // ─────────────────────────────────────────────────
         @PostMapping("/api/orders")
         public ResponseEntity<?> createOrder(
@@ -41,7 +79,6 @@ public class OrderController {
                 // ─── O2O: Merchant creates for offline customer ──
                 if (Boolean.TRUE.equals(req.getIsO2O())) {
 
-                        // Only merchants can create O2O orders
                         if (user.getRole() != User.Role.MERCHANT) {
                                 return ResponseEntity.status(403)
                                                 .body(Map.of("message",
@@ -55,24 +92,30 @@ public class OrderController {
                                                                 "Phone and landmark are required for O2O orders"));
                         }
 
+                        if (req.getItems() == null || req.getItems().isEmpty()) {
+                                return ResponseEntity.badRequest()
+                                                .body(Map.of("message",
+                                                                "At least one item is required for O2O orders"));
+                        }
+
                         order = orderService.createO2OOrder(
                                         user.getId(),
                                         req.getOfflineCustomerPhone(),
                                         req.getOfflineLandmark(),
-                                        req.getTotalPrice(),
-                                        req.getDeliveryFee(),
+                                        req.getItems(),
                                         req.getPickupLat(),
                                         req.getPickupLng(),
-                                        req.getPickupAddress());
+                                        req.getPickupAddress(),
+                                        req.getDeliveryLat(),
+                                        req.getDeliveryLng());
 
                 } else if (req.getOrderType() == Order.OrderType.MOBILITY) {
 
                         // ─── MOBILITY: Customer requests a ride ──────────
-                        // No merchant involved — driver picks up passenger
-                        // Uses PEOPLE or HYBRID mode drivers
+                        // No items, no client-sent fee — server derives
+                        // the ride fee from pickup→destination distance.
                         order = orderService.createMobilityOrder(
                                         user.getId(),
-                                        req.getDeliveryFee(),
                                         req.getPickupLat(),
                                         req.getPickupLng(),
                                         req.getPickupAddress(),
@@ -84,18 +127,22 @@ public class OrderController {
                 } else {
 
                         // ─── LOGISTICS: Customer orders from a store ─────
-                        // merchantId must be provided by client
                         if (req.getMerchantId() == null) {
                                 return ResponseEntity.badRequest()
                                                 .body(Map.of("message",
                                                                 "merchantId is required for LOGISTICS orders"));
                         }
 
+                        if (req.getItems() == null || req.getItems().isEmpty()) {
+                                return ResponseEntity.badRequest()
+                                                .body(Map.of("message",
+                                                                "Cart must contain at least one item"));
+                        }
+
                         order = orderService.createOrder(
                                         req.getMerchantId(),
                                         user.getId(),
-                                        req.getTotalPrice(),
-                                        req.getDeliveryFee(),
+                                        req.getItems(),
                                         req.getPickupLat(),
                                         req.getPickupLng(),
                                         req.getPickupAddress(),
@@ -111,8 +158,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // GET /api/orders/{id}
-        // Single order — accessible by merchant, driver,
-        // customer who owns it, or admin
         // ─────────────────────────────────────────────────
         @GetMapping("/api/orders/{id}")
         public ResponseEntity<?> getOrderById(
@@ -142,7 +187,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // POST /api/orders/{id}/accept
-        // Driver accepts a pending order
         // ─────────────────────────────────────────────────
         @PostMapping("/api/orders/{id}/accept")
         public ResponseEntity<?> acceptOrder(
@@ -172,9 +216,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // PATCH /api/orders/{id}/status
-        // Update order status — driver or merchant
-        // PENDING → ACCEPTED → PREPARING → READY_FOR_PICKUP
-        //         → PICKED_UP → DELIVERED
         // ─────────────────────────────────────────────────
         @PatchMapping("/api/orders/{id}/status")
         public ResponseEntity<?> updateStatus(
@@ -184,7 +225,6 @@ public class OrderController {
 
                 User user = getUser(auth);
 
-                // Dispute handled separately
                 if (req.getStatus() == Order.OrderStatus.DISPUTED) {
                         if (req.getDisputeReason() == null
                                         || req.getDisputeReason().isBlank()) {
@@ -208,7 +248,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // GET /api/orders/merchant
-        // Merchant sees all orders for their store
         // ─────────────────────────────────────────────────
         @GetMapping("/api/orders/merchant")
         public ResponseEntity<List<Order>> getMerchantOrders(
@@ -220,7 +259,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // GET /api/orders/driver
-        // Driver sees all their orders (full history)
         // ─────────────────────────────────────────────────
         @GetMapping("/api/orders/driver")
         public ResponseEntity<List<Order>> getDriverOrders(
@@ -232,7 +270,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // GET /api/orders/driver/active
-        // Driver sees their current active order only
         // ─────────────────────────────────────────────────
         @GetMapping("/api/orders/driver/active")
         public ResponseEntity<List<Order>> getActiveDriverOrders(
@@ -244,7 +281,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // GET /api/orders/customer
-        // Customer sees all their orders (history)
         // ─────────────────────────────────────────────────
         @GetMapping("/api/orders/customer")
         public ResponseEntity<List<Order>> getCustomerOrders(
@@ -256,8 +292,6 @@ public class OrderController {
 
         // ─────────────────────────────────────────────────
         // GET /tracking/public/{trackingCode}
-        // PUBLIC — No auth needed
-        // Offline customer tracks via SMS link
         // ─────────────────────────────────────────────────
         @GetMapping("/tracking/public/{trackingCode}")
         public ResponseEntity<?> trackOrder(

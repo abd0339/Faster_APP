@@ -304,8 +304,6 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
           (_vehicles.firstWhere((v) => v['value'] == _selectedVehicle)['label']
               as String);
       final res = await ApiService.instance.post(ApiConstants.orders, data: {
-        'totalPrice': 0.00,
-        'deliveryFee': _fare,
         'pickupAddress': _pickupCtrl.text.trim(),
         'pickupLat': _pickupLat,
         'pickupLng': _pickupLng,
