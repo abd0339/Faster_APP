@@ -53,7 +53,6 @@ dependencies:
   url_launcher: ^6.2.1
   permission_handler: ^11.3.1
   connectivity_plus: ^5.0.2
-  vibration: ^1.8.4
   battery_plus: ^4.0.2
 
   # ─── Icons ────────────────────────────────────────
