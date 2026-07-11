@@ -30,6 +30,16 @@ public class AdminUserResponse {
     private String vehicleType;
     private String vehiclePlate;
 
+    // NEW — booleans only, never raw file paths. Admin UI
+    // uses these to decide which "view document" buttons to
+    // show; the actual bytes are fetched through the
+    // authenticated GET /api/admin/drivers/{id}/documents/{type}
+    // endpoint using driverId + docType, never a stored path.
+    private Boolean hasProfilePhoto;
+    private Boolean hasNationalId;
+    private Boolean hasLicenseFront;
+    private Boolean hasLicenseBack;
+
     // ─── Build from User entity ───────────────────────
     public static AdminUserResponse from(User user) {
         return AdminUserResponse.builder()
@@ -51,6 +61,10 @@ public class AdminUserResponse {
                     : "PENDING")
                 .vehicleType(user.getVehicleType())
                 .vehiclePlate(user.getVehiclePlate())
+                .hasProfilePhoto(user.getDriverPhotoUrl() != null)
+                .hasNationalId(user.getNationalIdUrl() != null)
+                .hasLicenseFront(user.getDriverLicenseFrontUrl() != null)
+                .hasLicenseBack(user.getDriverLicenseBackUrl() != null)
                 .build();
     }
 }

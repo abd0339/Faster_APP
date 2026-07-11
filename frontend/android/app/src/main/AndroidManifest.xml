@@ -1,4 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- FIX — release manifest had ZERO permissions.
+         Without these, the APK builds fine but every API
+         call and every GPS read silently fails on a real
+         device — no crash, no error, just nothing working. -->
+
+    <!-- Required for every backend API call (login, orders, etc.) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Required by geolocator — driver GPS tracking,
+         customer address auto-detect, map centering -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Required for driver background GPS while app is
+         minimized during an active delivery -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+
     <application
         android:label="faster_app"
         android:name="${applicationName}"

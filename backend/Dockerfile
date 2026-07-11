@@ -32,7 +32,8 @@ RUN addgroup -S faster && adduser -S faster -G faster
 COPY --from=builder /build/target/backend-0.0.1-SNAPSHOT.jar app.jar
 
 # Create uploads directory and set ownership
-RUN mkdir -p /app/uploads/items /app/uploads/offers && \
+RUN mkdir -p /app/uploads/items /app/uploads/offers \
+        /app/private-uploads/drivers && \
     chown -R faster:faster /app
 
 # Switch to non-root user

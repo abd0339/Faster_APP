@@ -43,6 +43,7 @@ src/main/resources/application-staging.properties
 
 # ─── Upload folders (user-generated content) ──────────
 uploads/
+private-uploads/
 src/main/resources/uploads/
 
 # ─── IDE — IntelliJ IDEA ──────────────────────────────

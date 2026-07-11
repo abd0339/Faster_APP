@@ -88,10 +88,21 @@ public class User {
     private String vehicleType; // MOTO / CAR / TOKTOK
     private String vehiclePlate;
 
-    // Document URLs (uploaded images)
+    // ─── Document paths (PRIVATE storage — never public) ─
+    // These store a RELATIVE path under the private upload
+    // root (e.g. "drivers/42/profile-<uuid>.jpg"), never a
+    // public URL. Files are served only through the
+    // authenticated /api/driver/documents/{type} and
+    // /api/admin/drivers/{id}/documents/{type} endpoints —
+    // see FileStorageService and DriverController.
     private String driverPhotoUrl;
     private String nationalIdUrl;
     private String vehiclePaperUrl;
+
+    // NEW — driver's license, front and back
+    // (national ID stays a single photo per product decision)
+    private String driverLicenseFrontUrl;
+    private String driverLicenseBackUrl;
 
     // ─── Timestamps ──────────────────────────────────
     @Column(updatable = false)

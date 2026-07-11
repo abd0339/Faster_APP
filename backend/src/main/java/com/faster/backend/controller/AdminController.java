@@ -6,13 +6,18 @@ import com.faster.backend.dto.DebtSettlementRequest;
 import com.faster.backend.entity.LedgerEntry;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.service.AdminService;
+import com.faster.backend.service.FileStorageService;
 import com.faster.backend.service.LedgerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.Resource;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -27,6 +32,14 @@ public class AdminController {
     private final AdminService adminService;
     private final LedgerService ledgerService;
     private final UserRepository userRepository;
+    private final FileStorageService fileStorageService;
+
+    private static final java.util.Set<String> VALID_DOC_TYPES =
+            java.util.Set.of(
+                    "PROFILE_PHOTO",
+                    "NATIONAL_ID",
+                    "LICENSE_FRONT",
+                    "LICENSE_BACK");
 
     // ─────────────────────────────────────────────────
     // DASHBOARD STATS
@@ -303,5 +316,59 @@ public class AdminController {
         return ResponseEntity.ok(Map.of(
                 "message", "Driver rejected",
                 "reason", reason));
+    }
+
+    // ─────────────────────────────────────────────────
+    // GET /api/admin/drivers/{driverId}/documents/{docType}
+    // NEW — admin views ANY driver's uploaded document.
+    // Already protected by SecurityConfig's
+    // /api/admin/** → hasRole("ADMIN") rule, so this
+    // endpoint is unreachable without a valid admin JWT.
+    // The file itself lives in PRIVATE storage (see
+    // FileStorageService) — there is no public URL for
+    // it under any circumstance.
+    // ─────────────────────────────────────────────────
+    @GetMapping("/drivers/{driverId}/documents/{docType}")
+    public ResponseEntity<Resource> viewDriverDocument(
+            @PathVariable Long driverId,
+            @PathVariable String docType) {
+
+        String type = docType.toUpperCase();
+        if (!VALID_DOC_TYPES.contains(type)) {
+            throw new BusinessException("Invalid document type");
+        }
+
+        User driver = userRepository.findById(driverId)
+                .orElseThrow(() -> new NotFoundException("Driver not found"));
+
+        if (driver.getRole() != User.Role.DRIVER) {
+            throw new BusinessException(
+                    "This user is not a driver");
+        }
+
+        String relativePath = switch (type) {
+            case "PROFILE_PHOTO" -> driver.getDriverPhotoUrl();
+            case "NATIONAL_ID" -> driver.getNationalIdUrl();
+            case "LICENSE_FRONT" -> driver.getDriverLicenseFrontUrl();
+            case "LICENSE_BACK" -> driver.getDriverLicenseBackUrl();
+            default -> null;
+        };
+
+        if (relativePath == null) {
+            throw new NotFoundException(
+                    "This driver has not uploaded that document");
+        }
+
+        Resource resource = fileStorageService.loadPrivateImage(relativePath);
+
+        String lower = relativePath.toLowerCase();
+        String contentType = lower.endsWith(".png") ? "image/png"
+                : lower.endsWith(".gif") ? "image/gif"
+                : lower.endsWith(".webp") ? "image/webp"
+                : "image/jpeg";
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .body(resource);
     }
 }
