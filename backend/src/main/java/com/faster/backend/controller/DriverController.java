@@ -129,26 +129,29 @@ public class DriverController {
         boolean isOnline = locationService.isDriverOnline(driverId);
         String mode = locationService.getDriverMode(driverId);
 
-        return ResponseEntity.ok(Map.of(
-                "driverId", driverId,
-                "isOnline", isOnline,
-                "mode", mode != null ? mode : "OFFLINE",
-                "verificationStatus",
-                driver.getVerificationStatus() != null
-                        ? driver.getVerificationStatus().name()
-                        : "PENDING",
-                "vehicleType",
-                driver.getVehicleType() != null
-                        ? driver.getVehicleType() : "",
-                "vehiclePlate",
-                driver.getVehiclePlate() != null
-                        ? driver.getVehiclePlate() : "",
-                "isBlocked",
-                Boolean.TRUE.equals(driver.getIsBlocked()),
-                "hasProfilePhoto", driver.getDriverPhotoUrl() != null,
-                "hasNationalId", driver.getNationalIdUrl() != null,
-                "hasLicenseFront", driver.getDriverLicenseFrontUrl() != null,
-                "hasLicenseBack", driver.getDriverLicenseBackUrl() != null));
+        // NOTE: Map.of() caps out at 10 key-value pairs (20 args).
+        // This response needs 11, so Map.ofEntries() is used instead —
+        // it has no such limit.
+        return ResponseEntity.ok(Map.ofEntries(
+                Map.entry("driverId", driverId),
+                Map.entry("isOnline", isOnline),
+                Map.entry("mode", mode != null ? mode : "OFFLINE"),
+                Map.entry("verificationStatus",
+                        driver.getVerificationStatus() != null
+                                ? driver.getVerificationStatus().name()
+                                : "PENDING"),
+                Map.entry("vehicleType",
+                        driver.getVehicleType() != null
+                                ? driver.getVehicleType() : ""),
+                Map.entry("vehiclePlate",
+                        driver.getVehiclePlate() != null
+                                ? driver.getVehiclePlate() : ""),
+                Map.entry("isBlocked",
+                        Boolean.TRUE.equals(driver.getIsBlocked())),
+                Map.entry("hasProfilePhoto", driver.getDriverPhotoUrl() != null),
+                Map.entry("hasNationalId", driver.getNationalIdUrl() != null),
+                Map.entry("hasLicenseFront", driver.getDriverLicenseFrontUrl() != null),
+                Map.entry("hasLicenseBack", driver.getDriverLicenseBackUrl() != null)));
     }
 
     // ─────────────────────────────────────────────────
