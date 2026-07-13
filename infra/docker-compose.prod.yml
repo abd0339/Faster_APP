@@ -77,6 +77,14 @@ services:
       APP_UPLOAD_DIR: /app/uploads
       # CORS — your actual domain
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # Vonage — WhatsApp (JWT) + SMS (api_key/secret)
+      VONAGE_APPLICATION_ID: ${VONAGE_APPLICATION_ID}
+      VONAGE_PRIVATE_KEY_PATH: /app/secrets/vonage-private.key
+      VONAGE_WHATSAPP_FROM: ${VONAGE_WHATSAPP_FROM}
+      VONAGE_API_KEY: ${VONAGE_API_KEY}
+      VONAGE_API_SECRET: ${VONAGE_API_SECRET}
+      VONAGE_SMS_SENDER: ${VONAGE_SMS_SENDER}
+      VONAGE_DEFAULT_CHANNEL: ${VONAGE_DEFAULT_CHANNEL}
     volumes:
       # Persist user-uploaded PUBLIC images outside the container
       - uploads_data:/app/uploads
@@ -88,6 +96,11 @@ services:
       # the authenticated Spring endpoints in DriverController /
       # AdminController can read them.
       - private_uploads_data:/app/private-uploads
+      # Vonage private key — a single file, mounted READ-ONLY
+      # from the host. Lives at /opt/faster-app/vonage-private.key
+      # on the server, OUTSIDE git, OUTSIDE the Docker image.
+      # Same treatment as .env: server-only secret, never committed.
+      - ../vonage-private.key:/app/secrets/vonage-private.key:ro
     networks:
       - faster_internal
     # NOT exposed to host — nginx proxies to it

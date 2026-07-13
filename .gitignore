@@ -69,3 +69,4 @@ bfg.jar
 backend/target/
 backend/uploads/
 backend/gradle/
+vonage-private.key

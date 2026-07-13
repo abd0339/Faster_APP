@@ -54,11 +54,16 @@ public class AuthController {
     // User requests a fresh OTP (expired or not received)
     //
     // Body: { "phone": "+96170000001" }
+    // Body (choosing a channel):
+    //   { "phone": "+96170000001", "channel": "SMS" }
+    //   channel is optional — omit or send "WHATSAPP" for
+    //   the default. This is what powers the "Resend via
+    //   SMS instead" button on the OTP screen.
     @PostMapping("/resend-otp")
     public ResponseEntity<AuthResponse> resendOtp(
             @Valid @RequestBody ResendOtpRequest request) {
         return ResponseEntity.ok(
-            authService.resendOtp(request.getPhone()));
+            authService.resendOtp(request.getPhone(), request.getChannel()));
     }
 
     // ─── Inner DTOs ───────────────────────────────────
@@ -79,5 +84,8 @@ public class AuthController {
 
         @NotBlank(message = "Phone is required")
         private String phone;
+
+        // Optional — "WHATSAPP" (default) or "SMS"
+        private String channel;
     }
 }

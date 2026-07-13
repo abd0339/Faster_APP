@@ -86,7 +86,8 @@ public class SecurityConfig {
                                 "/tracking/public/**",
                                 "/api/store/**",
                                 "/uploads/**",
-                                "/ws/**")
+                                "/ws/**",
+                                "/api/webhooks/vonage/**")
                         .permitAll()
 
                         .requestMatchers("/api/merchant/**")

@@ -27,4 +27,10 @@ public interface MessageLogRepository
     // Used for retry logic or admin alerts
     List<MessageLog> findByStatusOrderByCreatedAtDesc(
             MessageLog.DeliveryStatus status);
+
+    // ─── NEW — used by VonageWebhookController ────────
+    // Looks up the log entry(ies) for a given provider
+    // message ID so the status webhook can update
+    // DeliveryStatus.DELIVERED / FAILED after the fact.
+    List<MessageLog> findByProviderMessageId(String providerMessageId);
 }

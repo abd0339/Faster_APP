@@ -46,9 +46,19 @@ public class MessageLog {
     private MessageType messageType;
 
     // ─── Which provider sent it ───────────────────────
-    // Matches provider name from .env: twilio / vonage
+    // Always "vonage" now — kept as a column for history/audit
+    // of the earlier multi-provider period, and in case a
+    // second provider is ever added back later.
     @Column(nullable = false)
     private String provider;
+
+    // ─── Which channel: WHATSAPP or SMS ──────────────
+    // NEW — lets support/admin see exactly how a message
+    // was attempted, and lets a customer's "resend via SMS"
+    // choice be distinguished from the original WhatsApp send.
+    @Column(nullable = false)
+    @Builder.Default
+    private String channel = "WHATSAPP";
 
     // ─── The full text of the message sent ───────────
     @Column(columnDefinition = "TEXT", nullable = false)
