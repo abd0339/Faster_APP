@@ -87,7 +87,7 @@ public class SecurityConfig {
                                 "/api/store/**",
                                 "/uploads/**",
                                 "/ws/**",
-                                "/api/webhooks/vonage/**")
+                                "/api/webhooks/twilio/**")
                         .permitAll()
 
                         .requestMatchers("/api/merchant/**")

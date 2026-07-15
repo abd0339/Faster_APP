@@ -4,52 +4,45 @@ import com.faster.backend.entity.MessageLog;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
 import com.faster.backend.repository.MessageLogRepository;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.StringReader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.security.KeyFactory;
-import java.security.PrivateKey;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.time.Instant;
 import java.time.format.DateTimeFormatter;
-import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 // ─────────────────────────────────────────────────────
-// CommunicationService — Vonage ONLY.
+// CommunicationService — Twilio ONLY.
 //
-// FIX: Twilio has been fully removed. This app now uses
-// exclusively Vonage's Messages API (WhatsApp) and SMS API
-// (Alphanumeric Sender ID), per product decision to
-// consolidate on one provider.
+// FIX: Vonage has been fully removed (account issues on
+// their side made it unworkable). Twilio confirmed working
+// with real delivered messages to 3 different Lebanese
+// numbers after enabling Geo Permissions for Lebanon.
+//
+// Much simpler than Vonage here: BOTH channels use the same
+// Messages API endpoint with simple Basic Auth (Account SID
+// + Auth Token) — no JWT, no private key file to manage.
 //
 // TWO CHANNELS, CALLER CHOOSES:
-//   Channel.WHATSAPP (default/primary) — Vonage Messages
-//     API v1, authenticated with a JWT signed by the
-//     Application's private key (Application ID = "kid").
-//   Channel.SMS (fallback/alternate) — Vonage's classic
-//     SMS API, authenticated with api_key + api_secret,
-//     sent from an Alphanumeric Sender ID (e.g. "FasterApp")
-//     rather than a phone number — required for Lebanon,
-//     where numeric sender IDs aren't reliably supported.
+//   Channel.WHATSAPP (default/primary) — sent via the
+//     Twilio WhatsApp sandbox number for now. Swaps to a
+//     real approved WhatsApp Business sender later by
+//     changing one env var, no code change needed.
+//   Channel.SMS (fallback/alternate) — sent through the
+//     Messaging Service (alphanumeric sender "FasterApp"
+//     with a real phone number as automatic fallback —
+//     Twilio picks whichever actually works per destination
+//     country, so Lebanon is handled correctly either way).
 //
 // Every message is logged to message_logs (channel + status)
-// for audit and support purposes. A failed send NEVER
-// throws back up to the caller — it's logged and swallowed,
-// so a broken SMS/WhatsApp provider can never block an
-// order or a registration from completing.
+// for audit. A failed send NEVER throws back to the caller —
+// logged and swallowed, so a broken provider can never block
+// an order or registration from completing.
 // ─────────────────────────────────────────────────────
 @Slf4j
 @Service
@@ -61,53 +54,40 @@ public class CommunicationService {
 
     public enum Channel { WHATSAPP, SMS }
 
-    // ─── Shared ───────────────────────────────────────
     @Value("${app.base.url:http://localhost:8080}")
     private String baseUrl;
 
-    // Which channel to use when the caller doesn't specify
-    // one explicitly (register/O2O/notifications all default
-    // to WhatsApp per product decision — richer formatting,
-    // free-ish delivery, no per-message carrier fee like SMS).
-    @Value("${vonage.default-channel:WHATSAPP}")
+    @Value("${twilio.default-channel:WHATSAPP}")
     private String defaultChannelName;
 
-    // ─── Vonage Messages API (WhatsApp) — JWT auth ────
-    @Value("${vonage.application-id:}")
-    private String vonageApplicationId;
+    // ─── Twilio credentials — same for both channels ──
+    @Value("${twilio.account-sid:}")
+    private String twilioAccountSid;
 
-    // Path to the PEM private key file, mounted into the
-    // container as a read-only file — NEVER stored in git,
-    // NEVER baked into the Docker image. See docker-compose.
-    @Value("${vonage.private-key-path:}")
-    private String vonagePrivateKeyPath;
+    @Value("${twilio.auth-token:}")
+    private String twilioAuthToken;
 
-    // WhatsApp sender — sandbox number for now
-    // (whatsapp:+14157386102-style, digits only here),
-    // switches to your approved WhatsApp Business number
-    // once Meta approval clears — no code change needed,
-    // just update this one env var.
-    @Value("${vonage.whatsapp-from:}")
-    private String vonageWhatsAppFrom;
+    // ─── SMS — routed through the Messaging Service ───
+    // Twilio automatically picks the Alphanumeric Sender
+    // ("FasterApp") or the pooled phone number, whichever
+    // actually works for the destination country.
+    @Value("${twilio.messaging-service-sid:}")
+    private String twilioMessagingServiceSid;
 
-    // ─── Vonage SMS API — api_key/api_secret auth ─────
-    @Value("${vonage.api-key:}")
-    private String vonageApiKey;
+    // ─── WhatsApp — sandbox number for now ────────────
+    // Format: whatsapp:+14155238886
+    // Switches to your approved WhatsApp Business number
+    // once Meta approval clears — just update this env var.
+    @Value("${twilio.whatsapp-from:whatsapp:+14155238886}")
+    private String twilioWhatsAppFrom;
 
-    @Value("${vonage.api-secret:}")
-    private String vonageApiSecret;
-
-    // Alphanumeric Sender ID — e.g. "FasterApp".
-    // Lebanon requires this instead of a numeric sender;
-    // see Faster_Logistics docs for why.
-    @Value("${vonage.sms-sender:FasterApp}")
-    private String vonageSmsSender;
+    private static final String TWILIO_MESSAGES_URL =
+            "https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json";
 
     // ─────────────────────────────────────────────────
     // PUBLIC API — message types the system sends
     // ─────────────────────────────────────────────────
 
-    // ── 1. O2O: Send tracking link to offline customer ─
     public void sendO2OTrackingLink(Order order) {
         if (order.getOfflineCustomerPhone() == null) return;
 
@@ -119,7 +99,6 @@ public class CommunicationService {
                 order.getId(), order.getTrackingCode(), defaultChannel());
     }
 
-    // ── 2. O2O: Notify customer when driver assigned ───
     public void sendDriverAssignedNotification(Order order) {
         if (order.getOfflineCustomerPhone() == null) return;
         if (order.getDriver() == null) return;
@@ -143,7 +122,6 @@ public class CommunicationService {
                 order.getId(), order.getTrackingCode(), defaultChannel());
     }
 
-    // ── 3. Admin manually notifies driver of debt ─────
     public void sendDriverDebtNotification(User driver, String amountDue) {
         if (driver.getPhone() == null) return;
 
@@ -160,10 +138,6 @@ public class CommunicationService {
                 null, null, defaultChannel());
     }
 
-    // ── 4. Platform announcement (broadcast) ──────────
-    // Used for account-blocked notices, offers, general
-    // announcements — anything admin sends to one or many
-    // users. Caller loops over recipients; this sends one.
     public void sendPlatformAnnouncement(String phone, String announcementText) {
         if (phone == null || phone.isBlank()) return;
 
@@ -175,15 +149,13 @@ public class CommunicationService {
                 null, null, defaultChannel());
     }
 
-    // ── 5. OTP for phone verification ─────────────────
-    // Overload without channel = use the default (WhatsApp).
     public void sendOtpMessage(String phone, String messageBody) {
         sendOtpMessage(phone, messageBody, defaultChannel());
     }
 
-    // FIX: NEW — explicit channel choice. Called when the
-    // user taps "Resend via SMS instead" after not receiving
-    // the WhatsApp OTP (or vice versa). See AuthService.resendOtp().
+    // Explicit channel choice — called when the user taps
+    // "Resend via SMS instead" after not receiving the
+    // WhatsApp OTP. See AuthService.resendOtp().
     public void sendOtpMessage(String phone, String messageBody, Channel channel) {
         if (phone == null || phone.isBlank()) return;
         sendMessage(phone, messageBody,
@@ -201,7 +173,7 @@ public class CommunicationService {
         MessageLog msgLog = MessageLog.builder()
                 .recipientPhone(toPhone)
                 .messageType(type)
-                .provider("vonage")
+                .provider("twilio")
                 .channel(channel.name())
                 .messageBody(body)
                 .status(MessageLog.DeliveryStatus.PENDING)
@@ -213,14 +185,14 @@ public class CommunicationService {
 
         try {
             String providerMessageId = (channel == Channel.WHATSAPP)
-                    ? sendViaVonageWhatsApp(toPhone, body)
-                    : sendViaVonageSms(toPhone, body);
+                    ? sendViaTwilioWhatsApp(toPhone, body)
+                    : sendViaTwilioSms(toPhone, body);
 
             msgLog.setStatus(MessageLog.DeliveryStatus.SENT);
             msgLog.setProviderMessageId(providerMessageId);
             messageLogRepository.save(msgLog);
 
-            log.info("✅ Message sent via vonage/{} to {} | type={} | id={}",
+            log.info("✅ Message sent via twilio/{} to {} | type={} | id={}",
                     channel, toPhone, type, providerMessageId);
 
         } catch (Exception e) {
@@ -228,145 +200,69 @@ public class CommunicationService {
             msgLog.setErrorMessage(e.getMessage());
             messageLogRepository.save(msgLog);
 
-            log.error("❌ Message failed via vonage/{} to {} | type={} | error={}",
+            log.error("❌ Message failed via twilio/{} to {} | type={} | error={}",
                     channel, toPhone, type, e.getMessage());
         }
     }
 
     // ─────────────────────────────────────────────────
-    // VONAGE MESSAGES API — WhatsApp (JWT auth)
-    //
-    //   POST https://api.nexmo.com/v1/messages
-    //   Authorization: Bearer <JWT signed with private key>
-    //
-    // The JWT's "application_id" claim + the private key's
-    // matching public key (registered on the Vonage
-    // Application) is what authenticates the request —
-    // there is no separate API secret for this channel.
+    // TWILIO SMS — via Messaging Service
+    // Twilio automatically selects the Alphanumeric Sender
+    // ("FasterApp") or falls back to the pooled phone number
+    // depending on what the destination country supports.
     // ─────────────────────────────────────────────────
-    private String sendViaVonageWhatsApp(String toPhone, String body) {
-        String url = "https://api.nexmo.com/v1/messages";
+    private String sendViaTwilioSms(String toPhone, String body) {
+        String url = String.format(TWILIO_MESSAGES_URL, twilioAccountSid);
 
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("To", normalizePhone(toPhone));
+        form.add("MessagingServiceSid", twilioMessagingServiceSid);
+        form.add("Body", body);
+
+        return postToTwilio(url, form);
+    }
+
+    // ─────────────────────────────────────────────────
+    // TWILIO WHATSAPP — direct sandbox/business number
+    // Same endpoint and auth as SMS, just whatsapp: prefix
+    // on both From and To.
+    // ─────────────────────────────────────────────────
+    private String sendViaTwilioWhatsApp(String toPhone, String body) {
+        String url = String.format(TWILIO_MESSAGES_URL, twilioAccountSid);
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("To", "whatsapp:" + normalizePhone(toPhone));
+        form.add("From", twilioWhatsAppFrom);
+        form.add("Body", body);
+
+        return postToTwilio(url, form);
+    }
+
+    private String postToTwilio(String url, MultiValueMap<String, String> form) {
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(generateVonageJwt());
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setBasicAuth(twilioAccountSid, twilioAuthToken);
 
-        String normalizedTo = normalizePhone(toPhone).replace("+", "");
-        String fromNumber = vonageWhatsAppFrom.replace("whatsapp:", "").replace("+", "");
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("message_type", "text");
-        requestBody.put("text", body);
-        requestBody.put("to", Map.of("type", "whatsapp", "number", normalizedTo));
-        requestBody.put("from", Map.of("type", "whatsapp", "number", fromNumber));
-        requestBody.put("channel", "whatsapp");
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        HttpEntity<MultiValueMap<String, String>> entity =
+                new HttpEntity<>(form, headers);
 
         ResponseEntity<Map> response = restTemplate.exchange(
                 url, HttpMethod.POST, entity, Map.class);
 
         Map<?, ?> responseBody = response.getBody();
-        if (responseBody == null || responseBody.get("message_uuid") == null) {
+        if (responseBody == null || responseBody.get("sid") == null) {
             throw new RuntimeException(
-                    "Vonage WhatsApp returned empty response: " + response.getStatusCode());
+                    "Twilio returned empty response: " + response.getStatusCode());
         }
 
-        return responseBody.get("message_uuid").toString();
-    }
-
-    // ─────────────────────────────────────────────────
-    // VONAGE SMS API — Alphanumeric Sender ID (api_key/secret)
-    //
-    //   POST https://rest.nexmo.com/sms/json
-    //
-    // Used as the fallback/alternate channel when the
-    // customer chooses "resend via SMS" — or could become
-    // primary again in markets where WhatsApp isn't viable.
-    // ─────────────────────────────────────────────────
-    private String sendViaVonageSms(String toPhone, String body) {
-        String url = "https://rest.nexmo.com/sms/json";
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        String normalizedTo = normalizePhone(toPhone).replace("+", "");
-
-        Map<String, String> requestBody = new HashMap<>();
-        requestBody.put("api_key", vonageApiKey);
-        requestBody.put("api_secret", vonageApiSecret);
-        requestBody.put("to", normalizedTo);
-        requestBody.put("from", vonageSmsSender);
-        requestBody.put("text", body);
-
-        HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
-
-        ResponseEntity<Map> response = restTemplate.exchange(
-                url, HttpMethod.POST, entity, Map.class);
-
-        Map<?, ?> responseBody = response.getBody();
-        if (responseBody == null) {
-            throw new RuntimeException("Vonage SMS returned empty response");
-        }
-
-        @SuppressWarnings("unchecked")
-        java.util.List<Map<?, ?>> messages =
-                (java.util.List<Map<?, ?>>) responseBody.get("messages");
-
-        if (messages == null || messages.isEmpty()) {
-            throw new RuntimeException("Vonage SMS returned no messages in response");
-        }
-
-        Map<?, ?> first = messages.get(0);
-        String status = String.valueOf(first.get("status"));
-
-        if (!"0".equals(status)) {
-            Object errorObj = first.get("error-text");
-            String error = errorObj != null ? errorObj.toString() : "Unknown error";
+        Object errorCode = responseBody.get("error_code");
+        if (errorCode != null) {
+            Object errorMsg = responseBody.get("error_message");
             throw new RuntimeException(
-                    "Vonage SMS error: " + error + " (status=" + status + ")");
+                    "Twilio error " + errorCode + ": " + errorMsg);
         }
 
-        return String.valueOf(first.get("message-id"));
-    }
-
-    // ─────────────────────────────────────────────────
-    // VONAGE JWT — signs a short-lived (15 min) RS256 JWT
-    // using the Application's private key. Required for
-    // every Messages API (WhatsApp) call.
-    // ─────────────────────────────────────────────────
-    private String generateVonageJwt() {
-        try {
-            PrivateKey privateKey = loadPrivateKey();
-
-            Instant now = Instant.now();
-
-            return Jwts.builder()
-                    .setIssuedAt(java.util.Date.from(now))
-                    .setExpiration(java.util.Date.from(now.plusSeconds(900)))
-                    .setId(UUID.randomUUID().toString())
-                    .claim("application_id", vonageApplicationId)
-                    .signWith(privateKey, SignatureAlgorithm.RS256)
-                    .compact();
-
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    "Failed to generate Vonage JWT: " + e.getMessage(), e);
-        }
-    }
-
-    private PrivateKey loadPrivateKey() throws Exception {
-        String pem = Files.readString(Paths.get(vonagePrivateKeyPath), StandardCharsets.UTF_8);
-
-        String cleaned = pem
-                .replace("-----BEGIN PRIVATE KEY-----", "")
-                .replace("-----END PRIVATE KEY-----", "")
-                .replaceAll("\\s", "");
-
-        byte[] keyBytes = Base64.getDecoder().decode(cleaned);
-        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        return keyFactory.generatePrivate(keySpec);
+        return responseBody.get("sid").toString();
     }
 
     // ─────────────────────────────────────────────────
