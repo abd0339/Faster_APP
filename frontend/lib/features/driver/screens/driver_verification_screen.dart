@@ -1,8 +1,10 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart' as dio;
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/services/api_service.dart';
@@ -15,6 +17,13 @@ import '../../auth/bloc/auth_event.dart';
 import '../../../core/constants/api_constants.dart';
 import 'driver_dashboard_screen.dart';
 
+// FIX: this screen now actually uploads driver documents
+// (profile photo, national ID, license front/back) to the
+// backend's private storage — previously it only showed
+// decorative text rows and told the driver the admin would
+// "contact you on WhatsApp to collect your documents",
+// which was never true; the backend has supported real
+// uploads for a while but nothing in this screen called it.
 class DriverVerificationScreen extends StatefulWidget {
   const DriverVerificationScreen({super.key});
 
@@ -29,17 +38,32 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
   late Animation<double> _fadeAnim;
 
   // Form state
-  int _currentStep = 0; // 0=vehicle, 1=plate, 2=location, 3=waiting
+  // 0=vehicle, 1=plate, 2=documents, 3=location, 4=waiting
+  int _currentStep = 0;
   String _selectedVehicle = 'MOTO';
   String _selectedMode = 'PACKAGE';
   final _plateCtrl = TextEditingController();
-  final _nameCtrl = TextEditingController(); // driver name for WhatsApp
 
   // Location
   double? _lat;
   double? _lng;
   String _locationText = '';
   bool _isDetectingLocation = false;
+
+  // ─── Document upload state ────────────────────────
+  // Bytes picked THIS session (shown as a live preview)
+  final Map<String, Uint8List> _docPreviews = {};
+  // Which docs are confirmed uploaded — either from a
+  // previous session (loaded via /api/driver/status) or
+  // just now in this session
+  final Map<String, bool> _docUploaded = {
+    'PROFILE_PHOTO': false,
+    'NATIONAL_ID': false,
+    'LICENSE_FRONT': false,
+    'LICENSE_BACK': false,
+  };
+  // Which doc is actively uploading right now (disables its row)
+  String? _uploadingDocType;
 
   // Submission
   bool _isSubmitting = false;
@@ -94,6 +118,14 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
     },
   ];
 
+  // Document types shown, in order — label + required flag
+  static const _docTypes = [
+    {'type': 'PROFILE_PHOTO', 'label': 'Your Photo', 'required': true},
+    {'type': 'NATIONAL_ID', 'label': 'National ID / Passport', 'required': true},
+    {'type': 'LICENSE_FRONT', 'label': "Driver's License (front)", 'required': false},
+    {'type': 'LICENSE_BACK', 'label': "Driver's License (back)", 'required': false},
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -112,26 +144,116 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
   void dispose() {
     _animCtrl.dispose();
     _plateCtrl.dispose();
-    _nameCtrl.dispose();
     super.dispose();
   }
 
-  // ─── Check if already submitted ───────────────────
+  // ─── Check if already submitted / which docs exist ─
   Future<void> _checkExistingStatus() async {
     try {
       final res = await ApiService.instance.get(ApiConstants.driverStatus);
       final data = res.data as Map<String, dynamic>?;
       final verStatus = data?['verificationStatus'] as String?;
+
+      if (!mounted) return;
+      setState(() {
+        _docUploaded['PROFILE_PHOTO'] = data?['hasProfilePhoto'] == true;
+        _docUploaded['NATIONAL_ID'] = data?['hasNationalId'] == true;
+        _docUploaded['LICENSE_FRONT'] = data?['hasLicenseFront'] == true;
+        _docUploaded['LICENSE_BACK'] = data?['hasLicenseBack'] == true;
+      });
+
       if (verStatus == 'SUBMITTED' ||
           verStatus == 'APPROVED' ||
           verStatus == 'REJECTED') {
         if (!mounted) return;
         setState(() {
           _submittedStatus = verStatus;
-          _currentStep = 3;
+          _currentStep = 4;
         });
       }
     } catch (_) {}
+  }
+
+  // ─── Pick + upload one document ───────────────────
+  Future<void> _pickAndUploadDoc(String docType, ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _docPreviews[docType] = bytes;
+        _uploadingDocType = docType;
+      });
+
+      final filename =
+          picked.name.isNotEmpty ? picked.name : '$docType.jpg';
+
+      await ApiService.instance.uploadImageBytes(
+        ApiConstants.driverDocumentUpload(docType),
+        bytes,
+        filename,
+        'file',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _docUploaded[docType] = true;
+        _uploadingDocType = null;
+      });
+      if (!kIsWeb) HapticFeedback.lightImpact();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _uploadingDocType = null);
+        _showError(ApiService.getErrorMessage(e));
+      }
+    }
+  }
+
+  // ─── Show camera/gallery choice for a doc ─────────
+  void _showDocPickerSheet(String docType) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded,
+                  color: AppColors.primary),
+              title: Text('Take a photo', style: AppTextStyles.bodyMedium),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadDoc(docType, ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded,
+                  color: AppColors.primary),
+              title: Text('Choose from gallery',
+                  style: AppTextStyles.bodyMedium),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadDoc(docType, ImageSource.gallery);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   // ─── Detect location ──────────────────────────────
@@ -187,6 +309,16 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
       _showError('Please enter your plate number');
       return;
     }
+    // Mirror the backend's requirement so the driver gets
+    // instant feedback instead of a failed round trip —
+    // the backend still enforces this regardless.
+    if (_docUploaded['PROFILE_PHOTO'] != true ||
+        _docUploaded['NATIONAL_ID'] != true) {
+      _showError('Please upload your photo and national ID first');
+      setState(() => _currentStep = 2);
+      return;
+    }
+
     if (!mounted) return;
     setState(() {
       _isSubmitting = true;
@@ -209,17 +341,11 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
       if (!mounted) return;
       setState(() {
         _submittedStatus = 'SUBMITTED';
-        _currentStep = 3;
+        _currentStep = 4;
       });
 
-      // Animate to waiting screen
       _animCtrl.reset();
       _animCtrl.forward();
-
-      // Send WhatsApp notification to admin
-      // Admin number from env — using placeholder here
-      // In production: read from backend config endpoint
-      _notifyAdminWhatsApp();
     } catch (e) {
       if (mounted) {
         setState(() => _errorMsg = ApiService.getErrorMessage(e));
@@ -229,43 +355,15 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
     }
   }
 
-  // ─── WhatsApp notification to admin ───────────────
-  void _notifyAdminWhatsApp() {
-    // This opens WhatsApp with pre-filled message to admin
-    // In production: backend sends WhatsApp via Twilio/Meta API
-    // For now: open WhatsApp with message (web/mobile)
-    // Admin WhatsApp number — update in production
-    const adminPhone = '+96170000000'; // ← update this
-    final msg = Uri.encodeComponent(
-      '🆕 New Driver Verification Request\n'
-      '─────────────────────\n'
-      '🏍️ Vehicle: $_selectedVehicle\n'
-      '🔖 Plate: ${_plateCtrl.text.trim().toUpperCase()}\n'
-      '📦 Mode: $_selectedMode\n'
-      '📍 Location: $_locationText\n'
-      '─────────────────────\n'
-      'Please review in the Admin Panel and approve/reject.',
-    );
-
-    if (kIsWeb) {
-      // Web: open WhatsApp web
-      // url_launcher would be used here in production
-      debugPrint('WhatsApp URL: https://wa.me/$adminPhone?text=$msg');
-    } else {
-      // Mobile: open WhatsApp app
-      debugPrint('wa.me/$adminPhone?text=$msg');
-    }
-  }
-
   // ─── GO TO NEXT STEP ──────────────────────────────
   void _nextStep() {
-    if (_currentStep < 3) {
+    if (_currentStep < 4) {
       if (!kIsWeb) HapticFeedback.selectionClick();
       _animCtrl.reset();
       setState(() => _currentStep++);
       _animCtrl.forward();
-      // Auto-detect location on step 2
-      if (_currentStep == 2 && !kIsWeb) {
+      // Auto-detect location on the location step
+      if (_currentStep == 3 && !kIsWeb) {
         _detectLocation();
       }
     }
@@ -288,7 +386,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
         child: Column(
           children: [
             _buildHeader(),
-            if (_currentStep < 3) _buildProgressBar(),
+            if (_currentStep < 4) _buildProgressBar(),
             Expanded(
               child: FadeTransition(
                 opacity: _fadeAnim,
@@ -331,15 +429,15 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                 Text('Driver Verification',
                     style: AppTextStyles.headlineMedium),
                 Text(
-                  _currentStep == 3
+                  _currentStep == 4
                       ? _submittedStatus == 'APPROVED'
                           ? 'Account Approved!'
                           : _submittedStatus == 'REJECTED'
                               ? 'Application Rejected'
                               : 'Under Review'
-                      : 'Step ${_currentStep + 1} of 3',
+                      : 'Step ${_currentStep + 1} of 4',
                   style: AppTextStyles.bodyMedium.copyWith(
-                    color: _currentStep == 3 && _submittedStatus == 'APPROVED'
+                    color: _currentStep == 4 && _submittedStatus == 'APPROVED'
                         ? AppColors.accent
                         : AppColors.textHint,
                   ),
@@ -347,7 +445,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
               ],
             ),
           ),
-          // Logout
           GestureDetector(
             onTap: () => context.read<AuthBloc>().add(LogoutRequested()),
             child: Container(
@@ -368,11 +465,11 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
 
   // ─── PROGRESS BAR ─────────────────────────────────
   Widget _buildProgressBar() {
-    const steps = ['Vehicle', 'Plate', 'Location'];
+    const steps = ['Vehicle', 'Plate', 'Docs', 'Location'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
       child: Row(
-        children: List.generate(3, (i) {
+        children: List.generate(4, (i) {
           final done = i < _currentStep;
           final active = i == _currentStep;
           return Expanded(
@@ -405,7 +502,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                     ],
                   ),
                 ),
-                if (i < 2) const SizedBox(width: 8),
+                if (i < 3) const SizedBox(width: 8),
               ],
             ),
           );
@@ -422,8 +519,10 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
       case 1:
         return _buildPlateStep();
       case 2:
-        return _buildLocationStep();
+        return _buildDocumentsStep();
       case 3:
+        return _buildLocationStep();
+      case 4:
         return _buildWaitingStep();
       default:
         return _buildVehicleStep();
@@ -446,8 +545,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             style: AppTextStyles.bodyMedium,
           ),
           const SizedBox(height: 28),
-
-          // Vehicle cards
           ...(_vehicles.map((v) {
             final isSelected = _selectedVehicle == v['value'];
             return Padding(
@@ -501,13 +598,9 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
               ),
             );
           })),
-
           const SizedBox(height: 24),
-
-          // Driver mode
           Text('Delivery Mode', style: AppTextStyles.headlineSmall),
           const SizedBox(height: 12),
-
           ...(_modes.map((m) {
             final isSelected = _selectedMode == m['value'];
             return Padding(
@@ -558,9 +651,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
               ),
             );
           })),
-
           const SizedBox(height: 32),
-
           AppButton(
             label: 'Continue',
             icon: Icons.arrow_forward_rounded,
@@ -587,8 +678,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             style: AppTextStyles.bodyMedium,
           ),
           const SizedBox(height: 32),
-
-          // Selected vehicle preview
           GlassCard(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -625,13 +714,9 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
               ],
             ),
           ),
-
           const SizedBox(height: 28),
-
           Text('Plate Number', style: AppTextStyles.headlineSmall),
           const SizedBox(height: 12),
-
-          // Plate input — large, styled
           Container(
             decoration: BoxDecoration(
               color: AppColors.glassWhite,
@@ -663,44 +748,29 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
               ),
             ),
           ),
-
           const SizedBox(height: 12),
           Text(
             'Enter your plate number exactly as it appears on your vehicle.',
             style: AppTextStyles.caption,
           ),
-
           const SizedBox(height: 28),
-
-          // Documents info card
           GlassCard(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  const Icon(Icons.info_outline_rounded,
-                      color: AppColors.warning, size: 18),
-                  const SizedBox(width: 8),
-                  Text('Documents Required',
-                      style: AppTextStyles.headlineSmall
-                          .copyWith(color: AppColors.warning)),
-                ]),
-                const SizedBox(height: 12),
-                _docRow('National ID or Passport'),
-                _docRow('Vehicle Registration Paper'),
-                _docRow('Clear photo of yourself'),
-                const SizedBox(height: 8),
-                Text(
-                  'The admin will contact you on WhatsApp '
-                  'to collect your documents after submission.',
-                  style:
-                      AppTextStyles.caption.copyWith(color: AppColors.primary),
+            child: Row(children: [
+              const Icon(Icons.info_outline_rounded,
+                  color: AppColors.primary, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "Next you'll upload your photo and ID "
+                  'directly in the app — no need to send '
+                  'anything separately.',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.primary),
                 ),
-              ],
-            ),
+              ),
+            ]),
           ),
-
           if (_errorMsg != null) ...[
             const SizedBox(height: 16),
             Container(
@@ -716,9 +786,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                       .copyWith(color: AppColors.error)),
             ),
           ],
-
           const SizedBox(height: 32),
-
           AppButton(
             label: 'Continue',
             icon: Icons.arrow_forward_rounded,
@@ -729,20 +797,140 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
     );
   }
 
-  Widget _docRow(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
+  // ─── STEP 3: DOCUMENTS (NEW — real upload) ────────
+  Widget _buildDocumentsStep() {
+    final requiredDone = _docUploaded['PROFILE_PHOTO'] == true &&
+        _docUploaded['NATIONAL_ID'] == true;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.check_rounded, size: 14, color: AppColors.accent),
-          const SizedBox(width: 8),
-          Text(text, style: AppTextStyles.bodyMedium),
+          const SizedBox(height: 8),
+          Text('Upload Your Documents', style: AppTextStyles.displayMedium),
+          const SizedBox(height: 8),
+          Text(
+            'Photo and National ID are required. '
+            "Driver's license is optional for now.",
+            style: AppTextStyles.bodyMedium,
+          ),
+          const SizedBox(height: 24),
+          ..._docTypes.map((doc) => _docUploadRow(
+                docType: doc['type'] as String,
+                label: doc['label'] as String,
+                required: doc['required'] as bool,
+              )),
+          const SizedBox(height: 32),
+          AppButton(
+            label: 'Continue',
+            icon: Icons.arrow_forward_rounded,
+            onPressed: requiredDone ? _nextStep : null,
+          ),
+          if (!requiredDone) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Upload your photo and National ID to continue.',
+              style: AppTextStyles.caption
+                  .copyWith(color: AppColors.textHint),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ],
       ),
     );
   }
 
-  // ─── STEP 3: LOCATION ─────────────────────────────
+  Widget _docUploadRow({
+    required String docType,
+    required String label,
+    required bool required,
+  }) {
+    final uploaded = _docUploaded[docType] == true;
+    final preview = _docPreviews[docType];
+    final isUploading = _uploadingDocType == docType;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: GestureDetector(
+        onTap: isUploading ? null : () => _showDocPickerSheet(docType),
+        child: GlassCard(
+          padding: const EdgeInsets.all(14),
+          borderColor: uploaded ? AppColors.accent.withValues(alpha: 0.4) : null,
+          child: Row(
+            children: [
+              // Thumbnail or placeholder icon
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  color: AppColors.glassWhite,
+                  child: isUploading
+                      ? const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.primary),
+                          ),
+                        )
+                      : preview != null
+                          ? Image.memory(preview, fit: BoxFit.cover)
+                          : Icon(
+                              uploaded
+                                  ? Icons.check_circle_rounded
+                                  : Icons.add_a_photo_outlined,
+                              color: uploaded
+                                  ? AppColors.accent
+                                  : AppColors.textHint,
+                            ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(label, style: AppTextStyles.labelLarge),
+                        if (required) ...[
+                          const SizedBox(width: 4),
+                          Text('*',
+                              style: AppTextStyles.labelLarge
+                                  .copyWith(color: AppColors.error)),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      uploaded
+                          ? 'Uploaded'
+                          : required
+                              ? 'Required'
+                              : 'Optional',
+                      style: AppTextStyles.caption.copyWith(
+                        color: uploaded
+                            ? AppColors.accent
+                            : AppColors.textHint,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                uploaded ? Icons.refresh_rounded : Icons.chevron_right_rounded,
+                color: AppColors.textHint,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── STEP 4: LOCATION ─────────────────────────────
   Widget _buildLocationStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -758,8 +946,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             style: AppTextStyles.bodyMedium,
           ),
           const SizedBox(height: 32),
-
-          // GPS detect button
           GestureDetector(
             onTap: kIsWeb ? null : _detectLocation,
             child: GlassCard(
@@ -823,10 +1009,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
               ),
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // Manual location input
           AppInput(
             controller: TextEditingController(text: _locationText),
             hint: 'Or type your area (e.g. Tripoli, Mina)',
@@ -834,10 +1017,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             prefixIcon: Icons.place_outlined,
             onChanged: (v) => setState(() => _locationText = v),
           ),
-
           const SizedBox(height: 32),
-
-          // Submit
           AppButton(
             label: 'Submit for Review',
             icon: Icons.send_rounded,
@@ -846,34 +1026,12 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             textColor: AppColors.background,
             onPressed: _submitVerification,
           ),
-
-          const SizedBox(height: 12),
-
-          GlassCard(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                const Icon(Icons.chat_rounded,
-                    color: Color(0xFF25D366), size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'After submitting, the admin will '
-                    'contact you on WhatsApp to complete '
-                    'your verification.',
-                    style: AppTextStyles.caption
-                        .copyWith(color: AppColors.textSecondary),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
   }
 
-  // ─── STEP 4: WAITING / STATUS ─────────────────────
+  // ─── STEP 5: WAITING / STATUS ─────────────────────
   Widget _buildWaitingStep() {
     final isApproved = _submittedStatus == 'APPROVED';
     final isRejected = _submittedStatus == 'REJECTED';
@@ -884,7 +1042,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Status icon
             AnimatedContainer(
               duration: const Duration(milliseconds: 400),
               width: 100,
@@ -933,9 +1090,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                 ),
               ),
             ),
-
             const SizedBox(height: 32),
-
             Text(
               isApproved
                   ? '🎉 You\'re Approved!'
@@ -951,26 +1106,21 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
               ),
               textAlign: TextAlign.center,
             ),
-
             const SizedBox(height: 16),
-
             Text(
               isApproved
                   ? 'Your account is approved. You can now '
                       'go online and start receiving orders!'
                   : isRejected
                       ? 'Your application was not approved. '
-                          'Please contact the admin on WhatsApp '
-                          'for more information.'
-                      : 'Your application is under review.\n'
-                          'The admin will contact you on WhatsApp '
-                          'within 24 hours to complete verification.',
+                          'Please contact support for more information.'
+                      : 'Your application and documents are under '
+                          "review. We'll notify you as soon as an "
+                          'admin has reviewed them.',
               style: AppTextStyles.bodyMedium,
               textAlign: TextAlign.center,
             ),
-
             const SizedBox(height: 32),
-
             if (isApproved) ...[
               AppButton(
                 label: 'Go to Dashboard',
@@ -987,17 +1137,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                 },
               ),
             ] else if (isRejected) ...[
-              AppButton(
-                label: 'Contact Admin on WhatsApp',
-                icon: Icons.chat_rounded,
-                color: const Color(0xFF25D366),
-                textColor: AppColors.background,
-                onPressed: () {
-                  // Open WhatsApp to admin
-                  debugPrint('Opening WhatsApp to admin...');
-                },
-              ),
-              const SizedBox(height: 12),
               AppButton(
                 label: 'Resubmit Application',
                 icon: Icons.refresh_rounded,
@@ -1017,37 +1156,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                 },
               ),
             ] else ...[
-              // Pending — WhatsApp contact
-              GlassCard(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(children: [
-                      const Icon(Icons.chat_rounded,
-                          color: Color(0xFF25D366), size: 24),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('WhatsApp Notification Sent',
-                                style: AppTextStyles.labelLarge),
-                            Text(
-                              'Admin has been notified of '
-                              'your application.',
-                              style: AppTextStyles.bodyMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ]),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Check status button
               AppButton(
                 label: 'Check Status',
                 icon: Icons.refresh_rounded,
@@ -1071,7 +1179,3 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
     ));
   }
 }
-
-// ─── Keep for import compatibility ────────────────────
-// This file replaces driver_profile_screen.dart
-// No exports needed — AppRouter imports DriverVerificationScreen

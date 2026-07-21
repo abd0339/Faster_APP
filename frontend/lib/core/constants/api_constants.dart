@@ -35,6 +35,17 @@ class ApiConstants {
   static const String driverMode = '/api/driver/mode';
   static const String driverStatus = '/api/driver/status';
 
+  // Driver document upload/view — docType is one of
+  // PROFILE_PHOTO / NATIONAL_ID / LICENSE_FRONT / LICENSE_BACK
+  static String driverDocumentUpload(String docType) =>
+      '/api/driver/documents/$docType';
+  static String driverDocumentView(String docType) =>
+      '/api/driver/documents/$docType';
+
+  // Admin viewing a specific driver's document
+  static String adminDriverDocumentView(int driverId, String docType) =>
+      '/api/admin/drivers/$driverId/documents/$docType';
+
   // ─── Orders ───────────────────────────────────────
   static const String orders = '/api/orders';
   static const String merchantOrders = '/api/orders/merchant';

@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -681,6 +682,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               if (verStatus.isNotEmpty) _badge(verStatus, _verColor(verStatus)),
             ]),
 
+            // NEW — document thumbnails so admin can actually
+            // review what the driver uploaded before approving.
+            // Previously there was no way to see these at all
+            // from the admin dashboard even though the backend
+            // has stored them securely for a while.
+            if (isPending) ...[
+              const SizedBox(height: 12),
+              _driverDocThumbnails(id, driver),
+            ],
+
             const SizedBox(height: 12),
             const Divider(color: AppColors.glassBorder, height: 1),
             const SizedBox(height: 12),
@@ -755,6 +766,162 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       default:
         return AppColors.textHint;
     }
+  }
+
+  // ─── NEW — Driver document thumbnails ──────────────
+  // Shows a small tappable thumbnail for each document the
+  // driver has uploaded (booleans only come from the admin
+  // user list — hasProfilePhoto etc. — never a raw file path).
+  // Tapping fetches the actual bytes through the authenticated
+  // admin endpoint and opens a full-screen viewer.
+  Widget _driverDocThumbnails(int driverId, Map<String, dynamic> driver) {
+    final docs = <Map<String, String>>[
+      if (driver['hasProfilePhoto'] == true)
+        {'type': 'PROFILE_PHOTO', 'label': 'Photo'},
+      if (driver['hasNationalId'] == true)
+        {'type': 'NATIONAL_ID', 'label': 'ID'},
+      if (driver['hasLicenseFront'] == true)
+        {'type': 'LICENSE_FRONT', 'label': 'License F'},
+      if (driver['hasLicenseBack'] == true)
+        {'type': 'LICENSE_BACK', 'label': 'License B'},
+    ];
+
+    if (docs.isEmpty) {
+      return Text(
+        'No documents uploaded yet',
+        style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
+      );
+    }
+
+    return Row(
+      children: docs.map((doc) {
+        return Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: GestureDetector(
+            onTap: () => _viewDriverDocument(
+                driverId, doc['type']!, doc['label']!),
+            child: Column(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    color: AppColors.glassWhite,
+                    child: FutureBuilder<Uint8List>(
+                      future: ApiService.instance.getBytes(
+                        ApiConstants.adminDriverDocumentView(
+                            driverId, doc['type']!),
+                      ),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState !=
+                            ConnectionState.done) {
+                          return const Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: AppColors.primary),
+                            ),
+                          );
+                        }
+                        if (snapshot.hasError || snapshot.data == null) {
+                          return const Icon(Icons.broken_image_outlined,
+                              color: AppColors.textHint, size: 18);
+                        }
+                        return Image.memory(snapshot.data!,
+                            fit: BoxFit.cover);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(doc['label']!,
+                    style: AppTextStyles.caption
+                        .copyWith(fontSize: 9, color: AppColors.textHint)),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ─── Full-screen document viewer ──────────────────
+  void _viewDriverDocument(int driverId, String docType, String label) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(label,
+                            style: AppTextStyles.headlineSmall),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded,
+                            color: AppColors.textPrimary),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: FutureBuilder<Uint8List>(
+                      future: ApiService.instance.getBytes(
+                        ApiConstants.adminDriverDocumentView(
+                            driverId, docType),
+                      ),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState !=
+                            ConnectionState.done) {
+                          return const SizedBox(
+                            height: 200,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                  color: AppColors.primary),
+                            ),
+                          );
+                        }
+                        if (snapshot.hasError || snapshot.data == null) {
+                          return const SizedBox(
+                            height: 120,
+                            child: Center(
+                              child: Text('Could not load document',
+                                  style:
+                                      TextStyle(color: AppColors.textHint)),
+                            ),
+                          );
+                        }
+                        return InteractiveViewer(
+                          child: Image.memory(snapshot.data!),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ═══════════════════════════════════════════════════

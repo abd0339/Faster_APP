@@ -92,6 +92,21 @@ class ApiService {
     return _dio.delete(path);
   }
 
+  // ─── GET raw bytes (authenticated image fetch) ────
+  // NEW — needed for driver documents and other private
+  // images. Image.network() can't attach the JWT auth
+  // header, so the admin/driver document viewers fetch
+  // bytes through Dio (which already has the interceptor)
+  // and render them with Image.memory() instead.
+  Future<Uint8List> getBytes(String path) async {
+    await init();
+    final response = await _dio.get<List<int>>(
+      path,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(response.data ?? []);
+  }
+
   // ─── Upload image (multipart — web + mobile) ──────
   Future<Response> uploadImageBytes(
     String path,

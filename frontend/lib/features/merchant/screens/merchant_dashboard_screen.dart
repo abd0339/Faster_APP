@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart' as dio;
+import 'package:latlong2/latlong.dart';
 import 'package:faster_app/core/constants/app_config.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
+import '../../../shared/widgets/map_picker_screen.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import 'merchant_categories_screen.dart';
@@ -407,6 +409,13 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     final deliveryCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final landmarkCtrl = TextEditingController();
+    // NEW — captured when merchant picks the destination on
+    // the map instead of only typing a text landmark. Sent as
+    // deliveryLat/deliveryLng so the backend can compute a
+    // real distance-based delivery fee for this O2O order
+    // instead of always falling back to the minimum fee.
+    double? o2oDeliveryLat;
+    double? o2oDeliveryLng;
     final priceCtrl = TextEditingController();
     final feeCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
@@ -532,6 +541,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                   'isO2O': true,
                   'offlineCustomerPhone': phone,
                   'offlineLandmark': landmark,
+                  // NEW — real coordinates when merchant picked
+                  // the exact location on the map, letting the
+                  // backend compute a real distance-based
+                  // delivery fee instead of the flat fallback
+                  'deliveryLat': o2oDeliveryLat,
+                  'deliveryLng': o2oDeliveryLng,
                   'customerNotes': notesCtrl.text.trim(),
                 };
               } else {
@@ -987,6 +1002,78 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                             label: 'Delivery Location',
                             prefixIcon: Icons.location_on_outlined,
                             maxLines: 2,
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          // NEW — "Pick on Map" button for O2O,
+                          // matching the map picker already used
+                          // elsewhere in the app. Previously O2O
+                          // only had a text field with no way to
+                          // set an exact map pin — this was the
+                          // explicitly requested missing piece.
+                          GestureDetector(
+                            onTap: () async {
+                              final result = await Navigator.push<MapPickResult>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => MapPickerScreen(
+                                    title: 'Pick Delivery Location',
+                                    initialLocation: o2oDeliveryLat != null &&
+                                            o2oDeliveryLng != null
+                                        ? LatLng(
+                                            o2oDeliveryLat!, o2oDeliveryLng!)
+                                        : null,
+                                  ),
+                                ),
+                              );
+                              if (result != null) {
+                                setSheet(() {
+                                  landmarkCtrl.text = result.address;
+                                  o2oDeliveryLat = result.lat;
+                                  o2oDeliveryLng = result.lng;
+                                });
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 12, horizontal: 14),
+                              decoration: BoxDecoration(
+                                color: o2oDeliveryLat != null
+                                    ? AppColors.accent.withValues(alpha: 0.1)
+                                    : AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: o2oDeliveryLat != null
+                                      ? AppColors.accent.withValues(alpha: 0.4)
+                                      : AppColors.primary.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    o2oDeliveryLat != null
+                                        ? Icons.check_circle_rounded
+                                        : Icons.map_outlined,
+                                    size: 18,
+                                    color: o2oDeliveryLat != null
+                                        ? AppColors.accent
+                                        : AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    o2oDeliveryLat != null
+                                        ? 'Location pinned on map'
+                                        : 'Pick exact location on map',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: o2oDeliveryLat != null
+                                          ? AppColors.accent
+                                          : AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
 
                           const SizedBox(height: 10),
