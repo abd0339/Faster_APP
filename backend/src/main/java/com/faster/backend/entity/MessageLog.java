@@ -46,9 +46,9 @@ public class MessageLog {
     private MessageType messageType;
 
     // ─── Which provider sent it ───────────────────────
-    // Always "vonage" now — kept as a column for history/audit
-    // of the earlier multi-provider period, and in case a
-    // second provider is ever added back later.
+    // Which provider actually sent it — currently always
+    // "twilio", kept as a column for history/audit from the
+    // earlier multi-provider period (Twilio → Vonage → Twilio)
     @Column(nullable = false)
     private String provider;
 
