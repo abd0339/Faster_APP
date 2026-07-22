@@ -57,8 +57,8 @@ public class OrderController {
         // ─────────────────────────────────────────────────
         // POST /api/orders
         // Who calls this:
-        //   MERCHANT  → O2O (isO2O: true, offline customer by phone)
-        //   CUSTOMER  → App order (LOGISTICS or MOBILITY)
+        // MERCHANT → O2O (isO2O: true, offline customer by phone)
+        // CUSTOMER → App order (LOGISTICS or MOBILITY)
         //
         // FIX (C2 — Critical): totalPrice/deliveryFee are no
         // longer read from the request. The client sends WHAT
@@ -92,17 +92,19 @@ public class OrderController {
                                                                 "Phone and landmark are required for O2O orders"));
                         }
 
-                        if (req.getItems() == null || req.getItems().isEmpty()) {
+                        if (req.getTotalPrice() == null
+                                        || req.getTotalPrice()
+                                                        .compareTo(java.math.BigDecimal.ZERO) <= 0) {
                                 return ResponseEntity.badRequest()
                                                 .body(Map.of("message",
-                                                                "At least one item is required for O2O orders"));
+                                                                "A valid order price is required for O2O orders"));
                         }
 
                         order = orderService.createO2OOrder(
                                         user.getId(),
                                         req.getOfflineCustomerPhone(),
                                         req.getOfflineLandmark(),
-                                        req.getItems(),
+                                        req.getTotalPrice(),
                                         req.getPickupLat(),
                                         req.getPickupLng(),
                                         req.getPickupAddress(),
@@ -166,8 +168,7 @@ public class OrderController {
 
                 User user = getUser(auth);
                 Order order = orderRepository.findById(id)
-                                .orElseThrow(() ->
-                                                new RuntimeException("Order not found"));
+                                .orElseThrow(() -> new RuntimeException("Order not found"));
 
                 boolean isMerchant = order.getMerchant() != null &&
                                 order.getMerchant().getId().equals(user.getId());
@@ -305,22 +306,46 @@ public class OrderController {
                                 "orderType", order.getOrderType(),
                                 "pickupAddress",
                                 order.getPickupAddress() != null
-                                                ? order.getPickupAddress() : "",
+                                                ? order.getPickupAddress()
+                                                : "",
                                 "deliveryAddress",
                                 order.getDeliveryAddress() != null
-                                                ? order.getDeliveryAddress() : "",
+                                                ? order.getDeliveryAddress()
+                                                : "",
                                 "createdAt", order.getCreatedAt(),
                                 "updatedAt", order.getUpdatedAt()));
+        }
+
+        // ─────────────────────────────────────────────────
+        // PATCH /tracking/public/{trackingCode}/location
+        // NEW — the offline customer opens their tracking
+        // link and shares their location; this recomputes
+        // the real distance-based delivery fee instead of
+        // leaving it at the flat fallback used at order
+        // creation when no coordinates were available yet.
+        // Public — no auth — matches the existing GET above.
+        // ─────────────────────────────────────────────────
+        @PatchMapping("/tracking/public/{trackingCode}/location")
+        public ResponseEntity<?> updateTrackingLocation(
+                        @PathVariable String trackingCode,
+                        @RequestBody Map<String, Double> body) {
+
+                Order order = orderService.updateTrackingLocation(
+                                trackingCode, body.get("lat"), body.get("lng"));
+
+                return ResponseEntity.ok(Map.of(
+                                "message", "Location confirmed",
+                                "trackingCode", order.getTrackingCode(),
+                                "deliveryFee", order.getDeliveryFee(),
+                                "grandTotal", order.getGrandTotal()));
         }
 
         // ─── Helper: get authenticated user ───────────────
         private User getUser(Authentication auth) {
                 String principal = auth.getName();
                 return userRepository.findByEmail(principal)
-                                .orElseGet(() ->
-                                                userRepository.findByPhone(principal)
-                                                                .orElseThrow(() ->
-                                                                                new RuntimeException(
-                                                                                                "User not found")));
+                                .orElseGet(() -> userRepository.findByPhone(principal)
+                                                .orElseThrow(() -> new RuntimeException(
+                                                                "User not found")));
         }
 }

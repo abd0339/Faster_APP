@@ -3,19 +3,22 @@ package com.faster.backend.dto;
 import com.faster.backend.entity.Order;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * FIX (C2 — Critical): totalPrice and deliveryFee are REMOVED from this
- * DTO. They used to be trusted straight from the client, meaning a
- * customer could POST {"totalPrice": 0.01} and the platform's commission
- * would be calculated on a fake number.
+ * FIX (C2 — Critical): totalPrice and deliveryFee were REMOVED from this
+ * DTO for standard app orders — a customer could POST
+ * {"totalPrice": 0.01} and the platform's commission would be
+ * calculated on a fake number. Standard LOGISTICS orders (customer's
+ * own cart) still send item lines only — see below.
  *
- * The client now sends WHAT was ordered (merchantId + item lines) and
- * WHERE (pickup/delivery coordinates). OrderService + PricingService
- * compute the real totalPrice (from the merchant's own catalog) and the
- * real deliveryFee/rideFee (from actual distance) entirely server-side.
- * Nothing money-related is ever read from this request body anymore.
+ * FIX (product decision, O2O): O2O is different — the MERCHANT enters
+ * their own order's price for a phone customer who isn't in the app.
+ * That's the merchant's own sale, not a customer-supplied number, so
+ * totalPrice IS trusted here specifically for isO2O=true requests.
+ * deliveryFee is NEVER trusted from the client for ANY order type —
+ * always computed server-side by PricingService from real distance.
  */
 @Data
 public class OrderRequest {
@@ -24,12 +27,16 @@ public class OrderRequest {
     // NOT required for MOBILITY (ride requests)
     private Long merchantId;
 
-    // ─── Cart lines — required for LOGISTICS and O2O ──
-    // Each line is an itemId + quantity (+ optional
-    // modifiers/addons). Server looks up real prices from
-    // this merchant's own catalog — see PricingService.
-    // NOT used for MOBILITY (no products involved).
+    // ─── Cart lines — required for standard LOGISTICS ─
+    // (customer's own self-checkout cart). NOT used for
+    // O2O (see totalPrice below) or MOBILITY.
     private List<OrderItemLineRequest> items;
+
+    // ─── Manual price — O2O ONLY ──────────────────────
+    // The merchant's own entered price for a phone order.
+    // Ignored/unused for standard LOGISTICS (those use
+    // items above) and MOBILITY (no product involved).
+    private BigDecimal totalPrice;
 
     // ─── Pickup location ──────────────────────────────
     // LOGISTICS/O2O: merchant store location
@@ -54,7 +61,7 @@ public class OrderRequest {
 
     // ─── Order type ───────────────────────────────────
     // LOGISTICS = package delivery (default)
-    // MOBILITY  = people transport (Uber-style ride)
+    // MOBILITY = people transport (Uber-style ride)
     private Order.OrderType orderType;
 
     // ─── O2O fields (offline customer via phone) ──────

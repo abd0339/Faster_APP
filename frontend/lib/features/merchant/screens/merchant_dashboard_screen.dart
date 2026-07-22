@@ -534,17 +534,18 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                 }
                 body = {
                   'totalPrice': price,
-                  'deliveryFee': fee ?? 2.0,
                   'pickupAddress': pickupCtrl.text.trim(),
                   'pickupLat': pickupLat,
                   'pickupLng': pickupLng,
                   'isO2O': true,
                   'offlineCustomerPhone': phone,
                   'offlineLandmark': landmark,
-                  // NEW — real coordinates when merchant picked
-                  // the exact location on the map, letting the
-                  // backend compute a real distance-based
-                  // delivery fee instead of the flat fallback
+                  // Delivery fee is NEVER sent from the client —
+                  // the backend always computes it from real
+                  // distance via PricingService. Sending lat/lng
+                  // (when the merchant picked an exact map location)
+                  // lets that calculation be accurate immediately
+                  // instead of falling back to the minimum fee.
                   'deliveryLat': o2oDeliveryLat,
                   'deliveryLng': o2oDeliveryLng,
                   'customerNotes': notesCtrl.text.trim(),
@@ -1014,7 +1015,8 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                           // explicitly requested missing piece.
                           GestureDetector(
                             onTap: () async {
-                              final result = await Navigator.push<MapPickResult>(
+                              final result =
+                                  await Navigator.push<MapPickResult>(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => MapPickerScreen(
@@ -1046,7 +1048,8 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                                 border: Border.all(
                                   color: o2oDeliveryLat != null
                                       ? AppColors.accent.withValues(alpha: 0.4)
-                                      : AppColors.primary.withValues(alpha: 0.3),
+                                      : AppColors.primary
+                                          .withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
@@ -1227,9 +1230,34 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                       decimal: true),
+                              // NEW — for O2O specifically, this
+                              // field is read-only and ignored: the
+                              // backend always computes delivery
+                              // fee from real distance. Left active
+                              // for the non-O2O manual-address flow
+                              // for now (separate, still-open item).
+                              readOnly: isO2O,
                             ),
                           ),
                         ]),
+
+                        if (isO2O) ...[
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            const Icon(Icons.auto_awesome_rounded,
+                                size: 14, color: AppColors.accent),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Delivery fee is calculated automatically '
+                                'based on real distance once a location '
+                                'is set.',
+                                style: AppTextStyles.caption
+                                    .copyWith(color: AppColors.accent),
+                              ),
+                            ),
+                          ]),
+                        ],
 
                         if (!isO2O || whatsappAvailable == 'yes') ...[
                           const SizedBox(height: 12),
