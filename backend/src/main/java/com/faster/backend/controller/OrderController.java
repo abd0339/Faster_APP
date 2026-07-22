@@ -292,32 +292,62 @@ public class OrderController {
         }
 
         // ─────────────────────────────────────────────────
-        // GET /tracking/public/{trackingCode}
+        // GET /api/tracking/public/{trackingCode}
+        // FIX: moved from /tracking/public/** to /api/tracking/public/**.
+        // Previously nginx routed the human-facing tracking LINK
+        // (sent via WhatsApp/SMS) straight to this JSON endpoint —
+        // a customer clicking the link saw raw JSON text, not a
+        // page. Now /tracking/public/** is served by the Flutter
+        // SPA (a real page), which calls THIS endpoint internally
+        // to fetch the data it needs. See nginx.conf and
+        // PublicTrackingScreen (Flutter).
+        //
+        // Also now returns orderId (so the Flutter page can poll
+        // status) and driver info once assigned.
         // ─────────────────────────────────────────────────
-        @GetMapping("/tracking/public/{trackingCode}")
+        @GetMapping("/api/tracking/public/{trackingCode}")
         public ResponseEntity<?> trackOrder(
                         @PathVariable String trackingCode) {
 
                 Order order = orderService.trackOrder(trackingCode);
 
-                return ResponseEntity.ok(Map.of(
-                                "trackingCode", order.getTrackingCode(),
-                                "status", order.getStatus(),
-                                "orderType", order.getOrderType(),
-                                "pickupAddress",
+                Map<String, Object> response = new java.util.HashMap<>();
+                response.put("orderId", order.getId());
+                response.put("trackingCode", order.getTrackingCode());
+                response.put("status", order.getStatus());
+                response.put("orderType", order.getOrderType());
+                response.put("pickupAddress",
                                 order.getPickupAddress() != null
                                                 ? order.getPickupAddress()
-                                                : "",
-                                "deliveryAddress",
+                                                : "");
+                response.put("deliveryAddress",
                                 order.getDeliveryAddress() != null
                                                 ? order.getDeliveryAddress()
-                                                : "",
-                                "createdAt", order.getCreatedAt(),
-                                "updatedAt", order.getUpdatedAt()));
+                                                : "");
+                response.put("deliveryLat", order.getDeliveryLat());
+                response.put("deliveryLng", order.getDeliveryLng());
+                response.put("grandTotal", order.getGrandTotal());
+                response.put("deliveryFee", order.getDeliveryFee());
+                response.put("createdAt", order.getCreatedAt());
+                response.put("updatedAt", order.getUpdatedAt());
+
+                if (order.getDriver() != null) {
+                        response.put("driverName", order.getDriver().getFullName());
+                        response.put("driverVehicleType",
+                                        order.getDriver().getVehicleType() != null
+                                                        ? order.getDriver().getVehicleType()
+                                                        : "");
+                        response.put("driverVehiclePlate",
+                                        order.getDriver().getVehiclePlate() != null
+                                                        ? order.getDriver().getVehiclePlate()
+                                                        : "");
+                }
+
+                return ResponseEntity.ok(response);
         }
 
         // ─────────────────────────────────────────────────
-        // PATCH /tracking/public/{trackingCode}/location
+        // PATCH /api/tracking/public/{trackingCode}/location
         // NEW — the offline customer opens their tracking
         // link and shares their location; this recomputes
         // the real distance-based delivery fee instead of
@@ -325,7 +355,7 @@ public class OrderController {
         // creation when no coordinates were available yet.
         // Public — no auth — matches the existing GET above.
         // ─────────────────────────────────────────────────
-        @PatchMapping("/tracking/public/{trackingCode}/location")
+        @PatchMapping("/api/tracking/public/{trackingCode}/location")
         public ResponseEntity<?> updateTrackingLocation(
                         @PathVariable String trackingCode,
                         @RequestBody Map<String, Double> body) {

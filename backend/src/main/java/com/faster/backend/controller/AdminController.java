@@ -29,346 +29,390 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AdminController {
 
-    private final AdminService adminService;
-    private final LedgerService ledgerService;
-    private final UserRepository userRepository;
-    private final FileStorageService fileStorageService;
+        private final AdminService adminService;
+        private final LedgerService ledgerService;
+        private final UserRepository userRepository;
+        private final FileStorageService fileStorageService;
+        private final com.faster.backend.service.OrderFeedbackService feedbackService;
 
-    private static final java.util.Set<String> VALID_DOC_TYPES =
-            java.util.Set.of(
-                    "PROFILE_PHOTO",
-                    "NATIONAL_ID",
-                    "LICENSE_FRONT",
-                    "LICENSE_BACK");
+        private static final java.util.Set<String> VALID_DOC_TYPES = java.util.Set.of(
+                        "PROFILE_PHOTO",
+                        "NATIONAL_ID",
+                        "LICENSE_FRONT",
+                        "LICENSE_BACK");
 
-    // ─────────────────────────────────────────────────
-    // DASHBOARD STATS
-    // ─────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────
+        // DASHBOARD STATS
+        // ─────────────────────────────────────────────────
 
-    // GET /api/admin/stats
-    @GetMapping("/stats")
-    public ResponseEntity<AdminStatsResponse> getStats() {
-        return ResponseEntity.ok(
-                adminService.getPlatformStats());
-    }
-
-    // GET /api/admin/revenue
-    @GetMapping("/revenue")
-    public ResponseEntity<?> getRevenue(
-            @RequestParam(required = false) LocalDateTime from,
-            @RequestParam(required = false) LocalDateTime to) {
-        return ResponseEntity.ok(
-                ledgerService.getPlatformRevenue(
-                        from, to));
-    }
-
-    // ─────────────────────────────────────────────────
-    // USER MANAGEMENT
-    // ─────────────────────────────────────────────────
-
-    // GET /api/admin/users
-    @GetMapping("/users")
-    public ResponseEntity<List<AdminUserResponse>> getAllUsers() {
-        return ResponseEntity.ok(
-                adminService.getAllUsers());
-    }
-
-    // GET /api/admin/users/{id}
-    @GetMapping("/users/{id}")
-    public ResponseEntity<AdminUserResponse> getUser(@PathVariable Long id) {
-        return ResponseEntity.ok(
-                adminService.getUserById(id));
-    }
-
-    // GET /api/admin/drivers
-    @GetMapping("/drivers")
-    public ResponseEntity<List<AdminUserResponse>> getAllDrivers() {
-        return ResponseEntity.ok(
-                adminService.getAllDrivers());
-    }
-
-    // GET /api/admin/drivers/blocked
-    @GetMapping("/drivers/blocked")
-    public ResponseEntity<List<AdminUserResponse>> getBlockedDrivers() {
-        return ResponseEntity.ok(
-                adminService.getBlockedDrivers());
-    }
-
-    // GET /api/admin/merchants
-    @GetMapping("/merchants")
-    public ResponseEntity<List<AdminUserResponse>> getAllMerchants() {
-        return ResponseEntity.ok(
-                adminService.getUsersByRole(
-                        User.Role.MERCHANT));
-    }
-
-    // PATCH /api/admin/users/{id}/block
-    @PatchMapping("/users/{id}/block")
-    public ResponseEntity<?> blockUser(
-            @PathVariable Long id) {
-        AdminUserResponse user = adminService.blockUser(id);
-        return ResponseEntity.ok(Map.of(
-                "message", "User blocked successfully",
-                "user", user));
-    }
-
-    // PATCH /api/admin/users/{id}/unblock
-    @PatchMapping("/users/{id}/unblock")
-    public ResponseEntity<?> unblockUser(
-            @PathVariable Long id) {
-        AdminUserResponse user = adminService.unblockUser(id);
-        return ResponseEntity.ok(Map.of(
-                "message", "User unblocked successfully",
-                "user", user));
-    }
-
-    // PATCH /api/admin/users/{id}/deactivate
-    @PatchMapping("/users/{id}/deactivate")
-    public ResponseEntity<?> deactivateUser(
-            @PathVariable Long id) {
-        AdminUserResponse user = adminService.deactivateUser(id);
-        return ResponseEntity.ok(Map.of(
-                "message", "User deactivated successfully",
-                "user", user));
-    }
-
-    // ─────────────────────────────────────────────────
-    // ORDER MANAGEMENT
-    // ─────────────────────────────────────────────────
-
-    // GET /api/admin/orders
-    @GetMapping("/orders")
-    public ResponseEntity<List<Order>> getAllOrders() {
-        return ResponseEntity.ok(
-                adminService.getAllOrders());
-    }
-
-    // GET /api/admin/orders/disputed
-    @GetMapping("/orders/disputed")
-    public ResponseEntity<List<Order>> getDisputedOrders() {
-        return ResponseEntity.ok(
-                adminService.getDisputedOrders());
-    }
-
-    // GET /api/admin/orders/active
-    @GetMapping("/orders/active")
-    public ResponseEntity<List<Order>> getActiveOrders() {
-        return ResponseEntity.ok(
-                adminService.getActiveOrders());
-    }
-
-    // PATCH /api/admin/orders/{id}/resolve
-    @PatchMapping("/orders/{id}/resolve")
-    public ResponseEntity<?> resolveDispute(
-            @PathVariable Long id,
-            @RequestParam Order.OrderStatus resolution) {
-        Order order = adminService
-                .resolveDispute(id, resolution);
-        return ResponseEntity.ok(Map.of(
-                "message", "Dispute resolved",
-                "orderId", order.getId(),
-                "newStatus", order.getStatus()));
-    }
-
-    // ─────────────────────────────────────────────────
-    // FINANCIAL MANAGEMENT
-    // ─────────────────────────────────────────────────
-
-    // GET /api/admin/ledger
-    @GetMapping("/ledger")
-    public ResponseEntity<List<LedgerEntry>> getFullLedger() {
-        return ResponseEntity.ok(
-                adminService.getFullLedger());
-    }
-
-    // GET /api/admin/ledger/driver/{id}
-    @GetMapping("/ledger/driver/{id}")
-    public ResponseEntity<?> getDriverLedger(
-            @PathVariable Long id) {
-        return ResponseEntity.ok(
-                ledgerService.getDriverLedger(id)
-                        .stream()
-                        .map(com.faster.backend.dto.LedgerResponse::from)
-                        .collect(java.util.stream.Collectors.toList()));
-    }
-
-    // GET /api/admin/ledger/merchant/{id}
-    @GetMapping("/ledger/merchant/{id}")
-    public ResponseEntity<?> getMerchantLedger(
-            @PathVariable Long id) {
-        return ResponseEntity.ok(
-                ledgerService.getMerchantLedger(id)
-                        .stream()
-                        .map(com.faster.backend.dto.LedgerResponse::from)
-                        .collect(java.util.stream.Collectors.toList()));
-    }
-
-    // GET /api/admin/drivers/{id}/debt
-    @GetMapping("/drivers/{id}/debt")
-    public ResponseEntity<?> getDriverDebt(
-            @PathVariable Long id) {
-        return ResponseEntity.ok(
-                ledgerService.getDriverDebtSummary(id));
-    }
-
-    // PATCH /api/admin/drivers/{id}/settle
-    // Admin confirms driver paid their commission
-    @PatchMapping("/drivers/{id}/settle")
-    public ResponseEntity<?> settleDriverDebt(
-            @PathVariable Long id,
-            @Valid @RequestBody DebtSettlementRequest request,
-            Authentication auth) {
-
-        Long adminId = getAdminId(auth);
-
-        LedgerEntry entry = adminService
-                .settleDriverDebt(
-                        id,
-                        request.getAmount(),
-                        request.getPaymentReference(),
-                        adminId);
-
-        return ResponseEntity.ok(Map.of(
-                "message",
-                "Driver debt settled successfully. " +
-                        "Account reactivated.",
-                "amountPaid", entry.getAmount(),
-                "remainingDebt", entry.getBalanceAfter(),
-                "paymentReference",
-                entry.getPaymentReference()));
-    }
-
-    // PATCH /api/admin/merchants/{id}/settle
-    // Admin confirms merchant paid commission
-    @PatchMapping("/merchants/{id}/settle")
-    public ResponseEntity<?> settleMerchantCommission(
-            @PathVariable Long id,
-            @Valid @RequestBody DebtSettlementRequest request,
-            Authentication auth) {
-
-        Long adminId = getAdminId(auth);
-
-        LedgerEntry entry = adminService
-                .settleMerchantCommission(
-                        id,
-                        request.getAmount(),
-                        request.getPaymentReference(),
-                        adminId);
-
-        return ResponseEntity.ok(Map.of(
-                "message",
-                "Merchant commission settled.",
-                "amountPaid", entry.getAmount(),
-                "remainingBalance", entry.getBalanceAfter(),
-                "paymentReference",
-                entry.getPaymentReference()));
-    }
-
-    // ─── Helper ───────────────────────────────────────
-    private Long getAdminId(Authentication auth) {
-        String principal = auth.getName();
-        User user = userRepository
-                .findByEmail(principal)
-                .orElseGet(() -> userRepository.findByPhone(principal)
-                        .orElseThrow(() -> new RuntimeException(
-                                "Admin not found")));
-        return user.getId();
-    }
-
-    // ─── GET /api/admin/drivers/pending ──────────────────
-    // Admin sees drivers waiting for verification
-    @GetMapping("/drivers/pending")
-    public ResponseEntity<?> getPendingDrivers() {
-        return ResponseEntity.ok(
-                userRepository
-                        .findByRoleAndVerificationStatus(
-                                User.Role.DRIVER,
-                                User.DriverVerificationStatus.SUBMITTED)
-                        .stream()
-                        .map(AdminUserResponse::from)
-                        .collect(java.util.stream.Collectors.toList()));
-    }
-
-    // ─── PATCH /api/admin/drivers/{id}/approve ───────────
-    @PatchMapping("/drivers/{id}/approve")
-    public ResponseEntity<?> approveDriver(
-            @PathVariable Long id) {
-        User driver = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Driver not found"));
-        driver.setVerificationStatus(
-                User.DriverVerificationStatus.APPROVED);
-        userRepository.save(driver);
-        return ResponseEntity.ok(Map.of(
-                "message", "Driver approved successfully",
-                "driverId", id));
-    }
-
-    // ─── PATCH /api/admin/drivers/{id}/reject ────────────
-    @PatchMapping("/drivers/{id}/reject")
-    public ResponseEntity<?> rejectDriver(
-            @PathVariable Long id,
-            @RequestParam String reason) {
-        User driver = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Driver not found"));
-        driver.setVerificationStatus(
-                User.DriverVerificationStatus.REJECTED);
-        userRepository.save(driver);
-        return ResponseEntity.ok(Map.of(
-                "message", "Driver rejected",
-                "reason", reason));
-    }
-
-    // ─────────────────────────────────────────────────
-    // GET /api/admin/drivers/{driverId}/documents/{docType}
-    // NEW — admin views ANY driver's uploaded document.
-    // Already protected by SecurityConfig's
-    // /api/admin/** → hasRole("ADMIN") rule, so this
-    // endpoint is unreachable without a valid admin JWT.
-    // The file itself lives in PRIVATE storage (see
-    // FileStorageService) — there is no public URL for
-    // it under any circumstance.
-    // ─────────────────────────────────────────────────
-    @GetMapping("/drivers/{driverId}/documents/{docType}")
-    public ResponseEntity<Resource> viewDriverDocument(
-            @PathVariable Long driverId,
-            @PathVariable String docType) {
-
-        String type = docType.toUpperCase();
-        if (!VALID_DOC_TYPES.contains(type)) {
-            throw new BusinessException("Invalid document type");
+        // GET /api/admin/stats
+        @GetMapping("/stats")
+        public ResponseEntity<AdminStatsResponse> getStats() {
+                return ResponseEntity.ok(
+                                adminService.getPlatformStats());
         }
 
-        User driver = userRepository.findById(driverId)
-                .orElseThrow(() -> new NotFoundException("Driver not found"));
-
-        if (driver.getRole() != User.Role.DRIVER) {
-            throw new BusinessException(
-                    "This user is not a driver");
+        // GET /api/admin/revenue
+        @GetMapping("/revenue")
+        public ResponseEntity<?> getRevenue(
+                        @RequestParam(required = false) LocalDateTime from,
+                        @RequestParam(required = false) LocalDateTime to) {
+                return ResponseEntity.ok(
+                                ledgerService.getPlatformRevenue(
+                                                from, to));
         }
 
-        String relativePath = switch (type) {
-            case "PROFILE_PHOTO" -> driver.getDriverPhotoUrl();
-            case "NATIONAL_ID" -> driver.getNationalIdUrl();
-            case "LICENSE_FRONT" -> driver.getDriverLicenseFrontUrl();
-            case "LICENSE_BACK" -> driver.getDriverLicenseBackUrl();
-            default -> null;
-        };
+        // ─────────────────────────────────────────────────
+        // USER MANAGEMENT
+        // ─────────────────────────────────────────────────
 
-        if (relativePath == null) {
-            throw new NotFoundException(
-                    "This driver has not uploaded that document");
+        // GET /api/admin/users
+        @GetMapping("/users")
+        public ResponseEntity<List<AdminUserResponse>> getAllUsers() {
+                return ResponseEntity.ok(
+                                adminService.getAllUsers());
         }
 
-        Resource resource = fileStorageService.loadPrivateImage(relativePath);
+        // GET /api/admin/users/{id}
+        @GetMapping("/users/{id}")
+        public ResponseEntity<AdminUserResponse> getUser(@PathVariable Long id) {
+                return ResponseEntity.ok(
+                                adminService.getUserById(id));
+        }
 
-        String lower = relativePath.toLowerCase();
-        String contentType = lower.endsWith(".png") ? "image/png"
-                : lower.endsWith(".gif") ? "image/gif"
-                : lower.endsWith(".webp") ? "image/webp"
-                : "image/jpeg";
+        // GET /api/admin/drivers
+        @GetMapping("/drivers")
+        public ResponseEntity<List<AdminUserResponse>> getAllDrivers() {
+                return ResponseEntity.ok(
+                                adminService.getAllDrivers());
+        }
 
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .body(resource);
-    }
+        // GET /api/admin/drivers/blocked
+        @GetMapping("/drivers/blocked")
+        public ResponseEntity<List<AdminUserResponse>> getBlockedDrivers() {
+                return ResponseEntity.ok(
+                                adminService.getBlockedDrivers());
+        }
+
+        // GET /api/admin/merchants
+        @GetMapping("/merchants")
+        public ResponseEntity<List<AdminUserResponse>> getAllMerchants() {
+                return ResponseEntity.ok(
+                                adminService.getUsersByRole(
+                                                User.Role.MERCHANT));
+        }
+
+        // PATCH /api/admin/users/{id}/block
+        @PatchMapping("/users/{id}/block")
+        public ResponseEntity<?> blockUser(
+                        @PathVariable Long id) {
+                AdminUserResponse user = adminService.blockUser(id);
+                return ResponseEntity.ok(Map.of(
+                                "message", "User blocked successfully",
+                                "user", user));
+        }
+
+        // PATCH /api/admin/users/{id}/unblock
+        @PatchMapping("/users/{id}/unblock")
+        public ResponseEntity<?> unblockUser(
+                        @PathVariable Long id) {
+                AdminUserResponse user = adminService.unblockUser(id);
+                return ResponseEntity.ok(Map.of(
+                                "message", "User unblocked successfully",
+                                "user", user));
+        }
+
+        // PATCH /api/admin/users/{id}/deactivate
+        @PatchMapping("/users/{id}/deactivate")
+        public ResponseEntity<?> deactivateUser(
+                        @PathVariable Long id) {
+                AdminUserResponse user = adminService.deactivateUser(id);
+                return ResponseEntity.ok(Map.of(
+                                "message", "User deactivated successfully",
+                                "user", user));
+        }
+
+        // ─────────────────────────────────────────────────
+        // ORDER MANAGEMENT
+        // ─────────────────────────────────────────────────
+
+        // GET /api/admin/orders
+        @GetMapping("/orders")
+        public ResponseEntity<List<Order>> getAllOrders() {
+                return ResponseEntity.ok(
+                                adminService.getAllOrders());
+        }
+
+        // GET /api/admin/orders/disputed
+        @GetMapping("/orders/disputed")
+        public ResponseEntity<List<Order>> getDisputedOrders() {
+                return ResponseEntity.ok(
+                                adminService.getDisputedOrders());
+        }
+
+        // GET /api/admin/orders/active
+        @GetMapping("/orders/active")
+        public ResponseEntity<List<Order>> getActiveOrders() {
+                return ResponseEntity.ok(
+                                adminService.getActiveOrders());
+        }
+
+        // PATCH /api/admin/orders/{id}/resolve
+        @PatchMapping("/orders/{id}/resolve")
+        public ResponseEntity<?> resolveDispute(
+                        @PathVariable Long id,
+                        @RequestParam Order.OrderStatus resolution) {
+                Order order = adminService
+                                .resolveDispute(id, resolution);
+                return ResponseEntity.ok(Map.of(
+                                "message", "Dispute resolved",
+                                "orderId", order.getId(),
+                                "newStatus", order.getStatus()));
+        }
+
+        // ─────────────────────────────────────────────────
+        // FINANCIAL MANAGEMENT
+        // ─────────────────────────────────────────────────
+
+        // GET /api/admin/ledger
+        @GetMapping("/ledger")
+        public ResponseEntity<List<LedgerEntry>> getFullLedger() {
+                return ResponseEntity.ok(
+                                adminService.getFullLedger());
+        }
+
+        // GET /api/admin/ledger/driver/{id}
+        @GetMapping("/ledger/driver/{id}")
+        public ResponseEntity<?> getDriverLedger(
+                        @PathVariable Long id) {
+                return ResponseEntity.ok(
+                                ledgerService.getDriverLedger(id)
+                                                .stream()
+                                                .map(com.faster.backend.dto.LedgerResponse::from)
+                                                .collect(java.util.stream.Collectors.toList()));
+        }
+
+        // GET /api/admin/ledger/merchant/{id}
+        @GetMapping("/ledger/merchant/{id}")
+        public ResponseEntity<?> getMerchantLedger(
+                        @PathVariable Long id) {
+                return ResponseEntity.ok(
+                                ledgerService.getMerchantLedger(id)
+                                                .stream()
+                                                .map(com.faster.backend.dto.LedgerResponse::from)
+                                                .collect(java.util.stream.Collectors.toList()));
+        }
+
+        // GET /api/admin/drivers/{id}/debt
+        @GetMapping("/drivers/{id}/debt")
+        public ResponseEntity<?> getDriverDebt(
+                        @PathVariable Long id) {
+                return ResponseEntity.ok(
+                                ledgerService.getDriverDebtSummary(id));
+        }
+
+        // PATCH /api/admin/drivers/{id}/settle
+        // Admin confirms driver paid their commission
+        @PatchMapping("/drivers/{id}/settle")
+        public ResponseEntity<?> settleDriverDebt(
+                        @PathVariable Long id,
+                        @Valid @RequestBody DebtSettlementRequest request,
+                        Authentication auth) {
+
+                Long adminId = getAdminId(auth);
+
+                LedgerEntry entry = adminService
+                                .settleDriverDebt(
+                                                id,
+                                                request.getAmount(),
+                                                request.getPaymentReference(),
+                                                adminId);
+
+                return ResponseEntity.ok(Map.of(
+                                "message",
+                                "Driver debt settled successfully. " +
+                                                "Account reactivated.",
+                                "amountPaid", entry.getAmount(),
+                                "remainingDebt", entry.getBalanceAfter(),
+                                "paymentReference",
+                                entry.getPaymentReference()));
+        }
+
+        // PATCH /api/admin/merchants/{id}/settle
+        // Admin confirms merchant paid commission
+        @PatchMapping("/merchants/{id}/settle")
+        public ResponseEntity<?> settleMerchantCommission(
+                        @PathVariable Long id,
+                        @Valid @RequestBody DebtSettlementRequest request,
+                        Authentication auth) {
+
+                Long adminId = getAdminId(auth);
+
+                LedgerEntry entry = adminService
+                                .settleMerchantCommission(
+                                                id,
+                                                request.getAmount(),
+                                                request.getPaymentReference(),
+                                                adminId);
+
+                return ResponseEntity.ok(Map.of(
+                                "message",
+                                "Merchant commission settled.",
+                                "amountPaid", entry.getAmount(),
+                                "remainingBalance", entry.getBalanceAfter(),
+                                "paymentReference",
+                                entry.getPaymentReference()));
+        }
+
+        // ─── Helper ───────────────────────────────────────
+        private Long getAdminId(Authentication auth) {
+                String principal = auth.getName();
+                User user = userRepository
+                                .findByEmail(principal)
+                                .orElseGet(() -> userRepository.findByPhone(principal)
+                                                .orElseThrow(() -> new RuntimeException(
+                                                                "Admin not found")));
+                return user.getId();
+        }
+
+        // ─── GET /api/admin/drivers/pending ──────────────────
+        // Admin sees drivers waiting for verification
+        @GetMapping("/drivers/pending")
+        public ResponseEntity<?> getPendingDrivers() {
+                return ResponseEntity.ok(
+                                userRepository
+                                                .findByRoleAndVerificationStatus(
+                                                                User.Role.DRIVER,
+                                                                User.DriverVerificationStatus.SUBMITTED)
+                                                .stream()
+                                                .map(AdminUserResponse::from)
+                                                .collect(java.util.stream.Collectors.toList()));
+        }
+
+        // ─── PATCH /api/admin/drivers/{id}/approve ───────────
+        @PatchMapping("/drivers/{id}/approve")
+        public ResponseEntity<?> approveDriver(
+                        @PathVariable Long id) {
+                User driver = userRepository.findById(id)
+                                .orElseThrow(() -> new RuntimeException("Driver not found"));
+                driver.setVerificationStatus(
+                                User.DriverVerificationStatus.APPROVED);
+                userRepository.save(driver);
+                return ResponseEntity.ok(Map.of(
+                                "message", "Driver approved successfully",
+                                "driverId", id));
+        }
+
+        // ─── PATCH /api/admin/drivers/{id}/reject ────────────
+        @PatchMapping("/drivers/{id}/reject")
+        public ResponseEntity<?> rejectDriver(
+                        @PathVariable Long id,
+                        @RequestParam String reason) {
+                User driver = userRepository.findById(id)
+                                .orElseThrow(() -> new RuntimeException("Driver not found"));
+                driver.setVerificationStatus(
+                                User.DriverVerificationStatus.REJECTED);
+                userRepository.save(driver);
+                return ResponseEntity.ok(Map.of(
+                                "message", "Driver rejected",
+                                "reason", reason));
+        }
+
+        // ─────────────────────────────────────────────────
+        // GET /api/admin/drivers/{driverId}/documents/{docType}
+        // NEW — admin views ANY driver's uploaded document.
+        // Already protected by SecurityConfig's
+        // /api/admin/** → hasRole("ADMIN") rule, so this
+        // endpoint is unreachable without a valid admin JWT.
+        // The file itself lives in PRIVATE storage (see
+        // FileStorageService) — there is no public URL for
+        // it under any circumstance.
+        // ─────────────────────────────────────────────────
+        @GetMapping("/drivers/{driverId}/documents/{docType}")
+        public ResponseEntity<Resource> viewDriverDocument(
+                        @PathVariable Long driverId,
+                        @PathVariable String docType) {
+
+                String type = docType.toUpperCase();
+                if (!VALID_DOC_TYPES.contains(type)) {
+                        throw new BusinessException("Invalid document type");
+                }
+
+                User driver = userRepository.findById(driverId)
+                                .orElseThrow(() -> new NotFoundException("Driver not found"));
+
+                if (driver.getRole() != User.Role.DRIVER) {
+                        throw new BusinessException(
+                                        "This user is not a driver");
+                }
+
+                String relativePath = switch (type) {
+                        case "PROFILE_PHOTO" -> driver.getDriverPhotoUrl();
+                        case "NATIONAL_ID" -> driver.getNationalIdUrl();
+                        case "LICENSE_FRONT" -> driver.getDriverLicenseFrontUrl();
+                        case "LICENSE_BACK" -> driver.getDriverLicenseBackUrl();
+                        default -> null;
+                };
+
+                if (relativePath == null) {
+                        throw new NotFoundException(
+                                        "This driver has not uploaded that document");
+                }
+
+                Resource resource = fileStorageService.loadPrivateImage(relativePath);
+
+                String lower = relativePath.toLowerCase();
+                String contentType = lower.endsWith(".png") ? "image/png"
+                                : lower.endsWith(".gif") ? "image/gif"
+                                                : lower.endsWith(".webp") ? "image/webp"
+                                                                : "image/jpeg";
+
+                return ResponseEntity.ok()
+                                .contentType(MediaType.parseMediaType(contentType))
+                                .body(resource);
+        }
+
+        // ─────────────────────────────────────────────────
+        // FEEDBACK — new "Feedback" category, matching the
+        // Ledger section pattern. Every delivered order can
+        // have one feedback entry; negative ones need admin
+        // attention, so they get their own dedicated queue.
+        // ─────────────────────────────────────────────────
+
+        // GET /api/admin/feedback — everything, newest first
+        @GetMapping("/feedback")
+        public ResponseEntity<?> getAllFeedback() {
+                return ResponseEntity.ok(feedbackService.getAllFeedback());
+        }
+
+        // GET /api/admin/feedback/unresolved — the queue that
+        // actually needs attention: negative + not yet resolved
+        @GetMapping("/feedback/unresolved")
+        public ResponseEntity<?> getUnresolvedFeedback() {
+                return ResponseEntity.ok(
+                                feedbackService.getUnresolvedNegativeFeedback());
+        }
+
+        // PATCH /api/admin/feedback/{id}/resolve
+        @PatchMapping("/feedback/{id}/resolve")
+        public ResponseEntity<?> resolveFeedback(
+                        @PathVariable Long id,
+                        Authentication auth) {
+                Long adminId = getAdminId(auth);
+                feedbackService.resolveFeedback(id, adminId);
+                return ResponseEntity.ok(Map.of(
+                                "message", "Feedback marked as resolved"));
+        }
+
+        // GET /api/admin/drivers/{id}/rating
+        @GetMapping("/drivers/{id}/rating")
+        public ResponseEntity<?> getDriverRating(@PathVariable Long id) {
+                return ResponseEntity.ok(feedbackService.getDriverRatingSummary(id));
+        }
+
+        // GET /api/admin/merchants/{id}/rating
+        @GetMapping("/merchants/{id}/rating")
+        public ResponseEntity<?> getMerchantRating(@PathVariable Long id) {
+                return ResponseEntity.ok(feedbackService.getMerchantRatingSummary(id));
+        }
 }

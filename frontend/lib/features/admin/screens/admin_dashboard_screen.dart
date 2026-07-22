@@ -34,6 +34,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   List<dynamic> _orders = [];
   List<dynamic> _disputedOrders = [];
   List<dynamic> _ledger = [];
+  // NEW — Feedback tab data
+  List<dynamic> _feedback = [];
 
   // Loading flags per tab
   bool _statsLoading = true;
@@ -41,6 +43,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   bool _merchantsLoading = false;
   bool _ordersLoading = false;
   bool _ledgerLoading = false;
+  bool _feedbackLoading = false;
 
   // Track which tabs have been loaded
   final Set<int> _loadedTabs = {};
@@ -48,7 +51,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() => _currentTab = _tabController.index);
@@ -87,6 +90,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         break;
       case 4:
         await _loadLedger();
+        break;
+      case 5:
+        await _loadFeedback();
         break;
     }
   }
@@ -186,6 +192,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       if (mounted) _showError(ApiService.getErrorMessage(e));
     } finally {
       if (mounted) setState(() => _ledgerLoading = false);
+    }
+  }
+
+  // ─── LOAD FEEDBACK ────────────────────────────────
+  // NEW — new "Feedback" category, matching the Ledger tab
+  // pattern. Shows ALL feedback, newest first — unresolved
+  // negative ones are visually surfaced at the top via
+  // sorting in the widget build, not a separate fetch.
+  Future<void> _loadFeedback() async {
+    if (!mounted) return;
+    setState(() => _feedbackLoading = true);
+    try {
+      final res = await ApiService.instance.get(ApiConstants.adminFeedback);
+      if (!mounted) return;
+      final d = res.data;
+      setState(() => _feedback = d is List ? d : []);
+    } catch (e) {
+      if (mounted) _showError(ApiService.getErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _feedbackLoading = false);
+    }
+  }
+
+  Future<void> _resolveFeedback(int id) async {
+    try {
+      await ApiService.instance.patch(ApiConstants.adminResolveFeedback(id));
+      await _loadFeedback();
+      if (mounted) _showSuccess('Marked as resolved');
+    } catch (e) {
+      if (mounted) _showError(ApiService.getErrorMessage(e));
     }
   }
 
@@ -299,6 +335,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   _buildMerchantsTab(),
                   _buildOrdersTab(),
                   _buildLedgerTab(),
+                  _buildFeedbackTab(),
                 ],
               ),
             ),
@@ -364,6 +401,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       (Icons.store_outlined, 'Merchants'),
       (Icons.receipt_long_outlined, 'Orders'),
       (Icons.account_balance_wallet_outlined, 'Ledger'),
+      (Icons.reviews_outlined, 'Feedback'),
     ];
 
     return Padding(
@@ -798,8 +836,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         return Padding(
           padding: const EdgeInsets.only(right: 10),
           child: GestureDetector(
-            onTap: () => _viewDriverDocument(
-                driverId, doc['type']!, doc['label']!),
+            onTap: () =>
+                _viewDriverDocument(driverId, doc['type']!, doc['label']!),
             child: Column(
               children: [
                 ClipRRect(
@@ -814,8 +852,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             driverId, doc['type']!),
                       ),
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState !=
-                            ConnectionState.done) {
+                        if (snapshot.connectionState != ConnectionState.done) {
                           return const Center(
                             child: SizedBox(
                               width: 16,
@@ -829,8 +866,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           return const Icon(Icons.broken_image_outlined,
                               color: AppColors.textHint, size: 18);
                         }
-                        return Image.memory(snapshot.data!,
-                            fit: BoxFit.cover);
+                        return Image.memory(snapshot.data!, fit: BoxFit.cover);
                       },
                     ),
                   ),
@@ -870,8 +906,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   Row(
                     children: [
                       Expanded(
-                        child: Text(label,
-                            style: AppTextStyles.headlineSmall),
+                        child: Text(label, style: AppTextStyles.headlineSmall),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close_rounded,
@@ -885,12 +920,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     borderRadius: BorderRadius.circular(12),
                     child: FutureBuilder<Uint8List>(
                       future: ApiService.instance.getBytes(
-                        ApiConstants.adminDriverDocumentView(
-                            driverId, docType),
+                        ApiConstants.adminDriverDocumentView(driverId, docType),
                       ),
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState !=
-                            ConnectionState.done) {
+                        if (snapshot.connectionState != ConnectionState.done) {
                           return const SizedBox(
                             height: 200,
                             child: Center(
@@ -904,8 +937,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                             height: 120,
                             child: Center(
                               child: Text('Could not load document',
-                                  style:
-                                      TextStyle(color: AppColors.textHint)),
+                                  style: TextStyle(color: AppColors.textHint)),
                             ),
                           );
                         }
@@ -1268,6 +1300,158 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       default:
         return cat;
     }
+  }
+
+  // ─── FEEDBACK TAB (NEW) ───────────────────────────
+  // Every delivered order can have one feedback entry.
+  // Unresolved negative feedback is sorted to the top so
+  // admin sees what needs attention first, matching a
+  // proper support-ticket-style priority queue.
+  Widget _buildFeedbackTab() {
+    if (_feedbackLoading) {
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.primary));
+    }
+
+    final items = List<Map<String, dynamic>>.from(
+        _feedback.map((e) => e as Map<String, dynamic>));
+
+    items.sort((a, b) {
+      final aUrgent = a['driverThumbsUp'] == false && a['resolved'] != true;
+      final bUrgent = b['driverThumbsUp'] == false && b['resolved'] != true;
+      if (aUrgent && !bUrgent) return -1;
+      if (!aUrgent && bUrgent) return 1;
+      return (b['createdAt'] as String? ?? '')
+          .compareTo(a['createdAt'] as String? ?? '');
+    });
+
+    final unresolvedCount = items
+        .where((e) => e['driverThumbsUp'] == false && e['resolved'] != true)
+        .length;
+
+    return RefreshIndicator(
+      onRefresh: _loadFeedback,
+      color: AppColors.primary,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+        children: [
+          _sectionHeader('Needs Attention', '$unresolvedCount',
+              unresolvedCount > 0 ? AppColors.error : AppColors.accent),
+          const SizedBox(height: 4),
+          if (items.isEmpty)
+            _emptyState('No feedback yet')
+          else
+            ...items.map(_feedbackCard),
+        ],
+      ),
+    );
+  }
+
+  Widget _feedbackCard(Map<String, dynamic> entry) {
+    final id = entry['id'] as int;
+    final driverId = entry['driverId'];
+    final merchantId = entry['merchantId'];
+    final thumbsUp = entry['driverThumbsUp'] as bool?;
+    final note = entry['negativeNote'] as String?;
+    final driverStars = entry['driverStars'];
+    final merchantStars = entry['merchantStars'];
+    final resolved = entry['resolved'] == true;
+    final isNegative = thumbsUp == false;
+    final createdAt = entry['createdAt']?.toString() ?? '';
+    final dateStr =
+        createdAt.length >= 16 ? createdAt.substring(0, 16) : createdAt;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GlassCard(
+        padding: const EdgeInsets.all(14),
+        borderColor: isNegative && !resolved
+            ? AppColors.error.withValues(alpha: 0.5)
+            : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(
+                thumbsUp == true
+                    ? Icons.thumb_up_alt_rounded
+                    : thumbsUp == false
+                        ? Icons.thumb_down_alt_rounded
+                        : Icons.remove_circle_outline_rounded,
+                color: thumbsUp == true
+                    ? AppColors.accent
+                    : thumbsUp == false
+                        ? AppColors.error
+                        : AppColors.textHint,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  driverId != null ? 'Driver #$driverId' : 'Order Feedback',
+                  style: AppTextStyles.headlineSmall,
+                ),
+              ),
+              if (isNegative)
+                _badge(resolved ? 'RESOLVED' : 'OPEN',
+                    resolved ? AppColors.accent : AppColors.error),
+            ]),
+            if (note != null && note.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(note, style: AppTextStyles.bodyMedium),
+              ),
+            ],
+            if (driverStars != null || merchantStars != null) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                if (driverStars != null) ...[
+                  const Icon(Icons.star_rounded,
+                      size: 14, color: AppColors.warning),
+                  const SizedBox(width: 4),
+                  Text('Driver: $driverStars/5', style: AppTextStyles.caption),
+                  const SizedBox(width: 14),
+                ],
+                if (merchantStars != null) ...[
+                  const Icon(Icons.star_rounded,
+                      size: 14, color: AppColors.warning),
+                  const SizedBox(width: 4),
+                  Text(
+                      'Store${merchantId != null ? " #$merchantId" : ""}: $merchantStars/5',
+                      style: AppTextStyles.caption),
+                ],
+              ]),
+            ],
+            const SizedBox(height: 8),
+            Row(children: [
+              Text(dateStr, style: AppTextStyles.caption),
+              const Spacer(),
+              if (isNegative && !resolved)
+                GestureDetector(
+                  onTap: () => _resolveFeedback(id),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('Mark Resolved',
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.background,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ]),
+          ],
+        ),
+      ),
+    );
   }
 
   // ─── SHARED WIDGETS ───────────────────────────────

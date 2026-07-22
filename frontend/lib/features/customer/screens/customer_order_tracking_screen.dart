@@ -6,6 +6,7 @@ import '../../../core/services/api_service.dart';
 import '../../../core/services/websocket_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
+import '../widgets/order_feedback_sheet.dart';
 
 class CustomerOrderTrackingScreen extends StatefulWidget {
   final int orderId;
@@ -27,6 +28,10 @@ class _CustomerOrderTrackingScreenState
   Map<String, dynamic>? _order;
   bool _isLoading = true;
   String _currentStatus = 'PENDING';
+  // NEW — guards against showing the feedback prompt more
+  // than once per screen session (e.g. on WebSocket
+  // reconnect re-delivering the same DELIVERED status).
+  bool _feedbackPromptShown = false;
 
   final _statusSteps = [
     'PENDING',
@@ -81,6 +86,7 @@ class _CustomerOrderTrackingScreenState
         _order = data;
         _currentStatus = data['status'] as String? ?? 'PENDING';
       });
+      _maybeShowFeedbackPrompt();
     } catch (e) {
       // Fallback — show with tracking code
       if (mounted) setState(() => _isLoading = false);
@@ -98,11 +104,37 @@ class _CustomerOrderTrackingScreenState
         final status = data['status'] as String?;
         if (status != null) {
           setState(() => _currentStatus = status);
-          // Reload full order data on update
+          // Reload full order data on update — this also
+          // re-checks and shows the feedback prompt via
+          // _maybeShowFeedbackPrompt() at the end of _loadOrder()
           _loadOrder();
         }
       },
     );
+  }
+
+  // ─── NEW — auto-show feedback prompt on delivery ──
+  // Fires once the order's status is DELIVERED, whether
+  // that's because the screen loaded with an already-
+  // delivered order, or because the WebSocket just pushed
+  // that status live while the customer was watching.
+  // Guarded by _feedbackPromptShown so it can never appear
+  // twice in the same screen session (e.g. a WebSocket
+  // reconnect re-delivering the same status update).
+  void _maybeShowFeedbackPrompt() {
+    if (_currentStatus != 'DELIVERED') return;
+    if (_feedbackPromptShown) return;
+    if (!mounted) return;
+
+    _feedbackPromptShown = true;
+
+    // Small delay so the "Delivered" status animation/badge
+    // is visible for a moment before the sheet slides up —
+    // feels less jarring than an instant modal.
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      showOrderFeedbackSheet(context, orderId: widget.orderId);
+    });
   }
 
   @override

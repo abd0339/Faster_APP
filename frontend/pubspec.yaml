@@ -9,7 +9,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
+
+  # NEW — needed for usePathUrlStrategy() so the public
+  # tracking link (faster-app.org/tracking/public/CODE) uses
+  # a real browser path instead of Flutter web's default
+  # hash-based URLs (faster-app.org/#/tracking/public/CODE)
+  flutter_web_plugins:
+    sdk: flutter
+
   flutter_dotenv: ^5.2.1
 
   # ─── State Management ─────────────────────────────

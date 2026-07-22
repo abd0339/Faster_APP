@@ -48,6 +48,11 @@ class ApiConstants {
 
   // ─── Orders ───────────────────────────────────────
   static const String orders = '/api/orders';
+
+  // NEW — customer submits feedback after delivery confirmation
+  static String orderFeedback(int orderId) => '/api/orders/$orderId/feedback';
+  static const String driverRating = '/api/driver/rating';
+
   static const String merchantOrders = '/api/orders/merchant';
   static const String driverOrders = '/api/orders/driver';
   static const String activeOrders = '/api/orders/driver/active';
@@ -63,6 +68,13 @@ class ApiConstants {
   static const String adminDrivers = '/api/admin/drivers';
   static const String adminOrders = '/api/admin/orders';
   static const String adminLedger = '/api/admin/ledger';
+
+  // NEW — Feedback tab
+  static const String adminFeedback = '/api/admin/feedback';
+  static const String adminFeedbackUnresolved =
+      '/api/admin/feedback/unresolved';
+  static String adminResolveFeedback(int id) =>
+      '/api/admin/feedback/$id/resolve';
   static const String adminRevenue = '/api/admin/revenue';
   static const String adminDriversPending = '/api/admin/drivers/pending';
   static const String adminDriversBlocked = '/api/admin/drivers/blocked';
@@ -89,7 +101,16 @@ class ApiConstants {
   // ─── Public ───────────────────────────────────────
   static String storeMenu(int merchantId) => '/api/store/$merchantId/menu';
   static String storeStatus(int merchantId) => '/api/store/$merchantId/status';
+  // Human-facing page URL (served by Flutter itself)
   static String trackOrder(String code) => '/tracking/public/$code';
+
+  // NEW — the JSON data endpoints PublicTrackingScreen calls.
+  // Moved off /tracking/public/** since that path is now the
+  // human page URL, served by the Flutter SPA via nginx.
+  static String publicTrackingData(String code) => '/api/tracking/public/$code';
+  static String publicTrackingLocation(String code) =>
+      '/api/tracking/public/$code/location';
+
   static String orderById(int id) => '/api/orders/$id';
 
   // ─── Dynamic ──────────────────────────────────────
