@@ -88,6 +88,12 @@ services:
       # the authenticated Spring endpoints in DriverController /
       # AdminController can read them.
       - private_uploads_data:/app/private-uploads
+      # Firebase Admin SDK service account — a single file,
+      # mounted READ-ONLY from the host, same treatment as
+      # every other server-only secret. Lives at
+      # /opt/faster-app/firebase-service-account.json on the
+      # server, OUTSIDE git, OUTSIDE the Docker image.
+      - ../firebase-service-account.json:/app/secrets/firebase-service-account.json:ro
     networks:
       - faster_internal
     # NOT exposed to host — nginx proxies to it

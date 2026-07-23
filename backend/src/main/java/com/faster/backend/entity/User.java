@@ -104,6 +104,15 @@ public class User {
     private String driverLicenseFrontUrl;
     private String driverLicenseBackUrl;
 
+    // ─── Firebase Phone Auth (NEW) ────────────────────
+    // Set once a user verifies their phone via Firebase
+    // Phone Auth instead of / in addition to the Twilio
+    // OTP flow. Nullable — old users and anyone who
+    // verified via Twilio never have this set, and that's
+    // fine; isPhoneVerified is the single source of truth
+    // either way.
+    private String firebaseUid;
+
     // ─── Timestamps ──────────────────────────────────
     @Column(updatable = false)
     private LocalDateTime createdAt;

@@ -69,3 +69,4 @@ bfg.jar
 backend/target/
 backend/uploads/
 backend/gradle/
+firebase-service-account.json

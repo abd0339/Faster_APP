@@ -120,6 +120,19 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- ─── Firebase Admin SDK ────────────────────
+             Used ONLY to verify Firebase Phone Auth ID
+             tokens server-side after Flutter completes
+             phone verification client-side via Firebase.
+             Login/registration itself stays on our own
+             BCrypt + JWT system — Firebase is purely a
+             one-time phone-ownership check at registration. -->
+        <dependency>
+            <groupId>com.google.firebase</groupId>
+            <artifactId>firebase-admin</artifactId>
+            <version>9.3.0</version>
+        </dependency>
+
         <!-- ─── Testing ──────────────────────────── -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

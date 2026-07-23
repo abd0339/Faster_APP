@@ -5,9 +5,14 @@ import com.faster.backend.dto.LoginRequest;
 import com.faster.backend.dto.RegisterRequest;
 import com.faster.backend.entity.OtpVerification;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.OtpVerificationRepository;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.security.JwtUtil;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -122,6 +127,89 @@ public class AuthService {
         otpRepository.deleteAllByUserId(user.getId());
 
         log.info("✅ Phone verified for user {} ({})", user.getFullName(), phone);
+
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+
+        return AuthResponse.builder()
+                .token(token)
+                .role(user.getRole().name())
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .isBlocked(user.getIsBlocked())
+                .isPhoneVerified(true)
+                .requiresOtp(false)
+                .message("Phone verified! Welcome to Faster, " + user.getFullName() + "!")
+                .build();
+    }
+
+    // ─────────────────────────────────────────────────
+    // VERIFY FIREBASE PHONE (NEW)
+    //
+    // An ADDITIONAL, independent way to verify a phone
+    // number — alongside the existing Twilio OTP flow
+    // above, not replacing it. A user can complete
+    // whichever one works for them; both set the exact
+    // same isPhoneVerified flag and issue the exact same
+    // JWT afterward. If Firebase is ever unreachable or
+    // misconfigured, the Twilio flow above is completely
+    // unaffected and still works on its own.
+    //
+    // Security: the phone number used to find the account
+    // comes ONLY from inside the verified Firebase token
+    // (the "phone_number" claim), NEVER from client input —
+    // this means a client can never claim to verify a phone
+    // number they don't actually control.
+    // ─────────────────────────────────────────────────
+    @Transactional
+    public AuthResponse verifyFirebasePhone(String idToken) {
+
+        FirebaseToken decodedToken;
+        try {
+            decodedToken = FirebaseAuth.getInstance().verifyIdToken(idToken);
+        } catch (FirebaseAuthException e) {
+            throw new BusinessException(
+                    "Invalid or expired verification. Please try again.");
+        } catch (IllegalStateException e) {
+            // FirebaseApp was never initialized (missing/bad
+            // service account) — a config problem, not the
+            // user's fault. Never let this look like their
+            // code was wrong.
+            log.error("Firebase Admin SDK not initialized: {}", e.getMessage());
+            throw new BusinessException(
+                    "Phone verification is temporarily unavailable. "
+                    + "Please try the SMS/WhatsApp code instead.");
+        }
+
+        String verifiedPhone = decodedToken.getClaims()
+                .get("phone_number") != null
+                ? decodedToken.getClaims().get("phone_number").toString()
+                : null;
+
+        if (verifiedPhone == null || verifiedPhone.isBlank()) {
+            throw new BusinessException(
+                    "This verification did not include a phone number");
+        }
+
+        User user = userRepository.findByPhone(verifiedPhone)
+                .orElseThrow(() -> new NotFoundException(
+                        "No account found for this phone number. "
+                        + "Please register first."));
+
+        // Idempotent — verifying twice (e.g. a retry) just
+        // logs the user in again rather than erroring
+        if (!Boolean.TRUE.equals(user.getIsPhoneVerified())) {
+            user.setIsPhoneVerified(true);
+            user.setFirebaseUid(decodedToken.getUid());
+            userRepository.save(user);
+
+            // Clear any pending Twilio OTP for this user —
+            // they're verified now via the other path
+            otpRepository.deleteAllByUserId(user.getId());
+
+            log.info("✅ Phone verified via Firebase for user {} ({})",
+                    user.getFullName(), maskPhone(verifiedPhone));
+        }
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
 

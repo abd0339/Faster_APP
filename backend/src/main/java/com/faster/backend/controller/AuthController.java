@@ -1,6 +1,7 @@
 package com.faster.backend.controller;
 
 import com.faster.backend.dto.AuthResponse;
+import com.faster.backend.dto.FirebaseVerifyRequest;
 import com.faster.backend.dto.LoginRequest;
 import com.faster.backend.dto.RegisterRequest;
 import com.faster.backend.service.AuthService;
@@ -64,6 +65,21 @@ public class AuthController {
             @Valid @RequestBody ResendOtpRequest request) {
         return ResponseEntity.ok(
             authService.resendOtp(request.getPhone(), request.getChannel()));
+    }
+
+    // ─── POST /api/auth/verify-firebase-phone (NEW) ───
+    // An ADDITIONAL way to verify a phone number, alongside
+    // the Twilio OTP flow above — not a replacement. Flutter
+    // completes Firebase Phone Auth client-side (Firebase
+    // sends its own SMS directly), then sends the resulting
+    // ID token here for server-side verification.
+    //
+    // Body: { "idToken": "<firebase id token>" }
+    @PostMapping("/verify-firebase-phone")
+    public ResponseEntity<AuthResponse> verifyFirebasePhone(
+            @Valid @RequestBody FirebaseVerifyRequest request) {
+        return ResponseEntity.ok(
+            authService.verifyFirebasePhone(request.getIdToken()));
     }
 
     // ─── Inner DTOs ───────────────────────────────────
