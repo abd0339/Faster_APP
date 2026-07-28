@@ -32,6 +32,7 @@ public class CommunicationController {
     private final CommunicationService communicationService;
     private final MessageLogRepository messageLogRepository;
     private final UserRepository userRepository;
+    private final com.faster.backend.service.PushNotificationService pushNotificationService;
 
     // ─────────────────────────────────────────────────
     // POST /api/admin/notify/driver-debt/{driverId}
@@ -96,6 +97,17 @@ public class CommunicationController {
         }
 
         communicationService.sendPlatformAnnouncement(phone, message);
+
+        // NEW (Phase 4) — push, additive alongside the
+        // WhatsApp/SMS announcement above. Only fires if this
+        // phone number belongs to a registered user (an offline
+        // O2O customer phone wouldn't have an app account/device).
+        userRepository.findByPhone(phone).ifPresent(user ->
+                pushNotificationService.sendToUser(
+                        user.getId(),
+                        "📢 Faster App",
+                        message,
+                        Map.of("type", "announcement")));
 
         return ResponseEntity.ok(Map.of(
                 "message", "Announcement sent to " + phone

@@ -63,9 +63,21 @@ public class AuthService {
 
         userRepository.save(user);
 
-        // Default channel on first registration — WhatsApp
-        sendOtp(user, CommunicationService.Channel.WHATSAPP);
-
+        // FIX (Phase 2 — Firebase Phone Auth): registration no
+        // longer auto-sends a Twilio OTP here. Flutter now
+        // triggers Firebase Phone Auth immediately after
+        // registration succeeds — Firebase sends its OWN SMS
+        // directly (not through this backend at all). If we
+        // ALSO auto-sent a Twilio message here, the user would
+        // get two different codes from two different senders
+        // arriving almost simultaneously, which is confusing,
+        // not a real improvement, and costs double.
+        //
+        // The Twilio/WhatsApp path is NOT removed — it's now an
+        // explicit fallback the user can reach with one tap
+        // ("Send code via WhatsApp/SMS instead") if Firebase's
+        // SMS doesn't arrive, via the existing /resend-otp
+        // endpoint. Nothing about that endpoint changed.
         return AuthResponse.builder()
                 .role(user.getRole().name())
                 .fullName(user.getFullName())
@@ -74,9 +86,7 @@ public class AuthService {
                 .isBlocked(false)
                 .isPhoneVerified(false)
                 .requiresOtp(true)
-                .message("Account created! We sent a 6-digit code via WhatsApp to "
-                        + maskPhone(user.getPhone())
-                        + ". Enter it to activate your account.")
+                .message("Account created! Verifying your phone number...")
                 .build();
     }
 
@@ -178,13 +188,13 @@ public class AuthService {
             log.error("Firebase Admin SDK not initialized: {}", e.getMessage());
             throw new BusinessException(
                     "Phone verification is temporarily unavailable. "
-                    + "Please try the SMS/WhatsApp code instead.");
+                            + "Please try the SMS/WhatsApp code instead.");
         }
 
         String verifiedPhone = decodedToken.getClaims()
                 .get("phone_number") != null
-                ? decodedToken.getClaims().get("phone_number").toString()
-                : null;
+                        ? decodedToken.getClaims().get("phone_number").toString()
+                        : null;
 
         if (verifiedPhone == null || verifiedPhone.isBlank()) {
             throw new BusinessException(
@@ -194,7 +204,7 @@ public class AuthService {
         User user = userRepository.findByPhone(verifiedPhone)
                 .orElseThrow(() -> new NotFoundException(
                         "No account found for this phone number. "
-                        + "Please register first."));
+                                + "Please register first."));
 
         // Idempotent — verifying twice (e.g. a retry) just
         // logs the user in again rather than erroring
@@ -251,7 +261,8 @@ public class AuthService {
         sendOtp(user, resolvedChannel);
 
         String channelLabel = resolvedChannel == CommunicationService.Channel.SMS
-                ? "SMS" : "WhatsApp";
+                ? "SMS"
+                : "WhatsApp";
 
         return AuthResponse.builder()
                 .role(user.getRole().name())
@@ -378,7 +389,8 @@ public class AuthService {
     }
 
     private String maskPhone(String phone) {
-        if (phone == null || phone.length() < 6) return "***";
+        if (phone == null || phone.length() < 6)
+            return "***";
         return phone.substring(0, 4) + "***" + phone.substring(phone.length() - 4);
     }
 }

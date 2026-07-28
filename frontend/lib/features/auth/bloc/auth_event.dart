@@ -47,6 +47,17 @@ class ResendOtpRequested extends AuthEvent {
   ResendOtpRequested({required this.phone});
 }
 
+/// NEW (Phase 2) — user completed Firebase Phone Auth
+/// (either automatically via SMS auto-detection, or by
+/// manually typing the code Firebase sent). This is an
+/// ADDITIONAL path alongside VerifyOtpRequested above —
+/// not a replacement. Carries the Firebase ID token, which
+/// the backend verifies server-side via Firebase Admin SDK.
+class VerifyFirebasePhoneRequested extends AuthEvent {
+  final String idToken;
+  VerifyFirebasePhoneRequested({required this.idToken});
+}
+
 // ─── Session Events ───────────────────────────────────
 class LogoutRequested extends AuthEvent {}
 

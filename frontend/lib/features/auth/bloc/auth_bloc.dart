@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../../core/constants/api_constants.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
@@ -139,6 +140,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     LogoutRequested event,
     Emitter<AuthState> emit,
   ) async {
+    // NEW (Phase 4) — stop pushes from reaching this device
+    // once signed out. Wrapped internally so any failure
+    // here never blocks the actual logout below.
+    await PushNotificationService.instance.unregister();
     await StorageService.instance.clearAll();
     emit(AuthLoggedOut());
   }

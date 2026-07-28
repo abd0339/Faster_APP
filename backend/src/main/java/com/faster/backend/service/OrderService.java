@@ -35,6 +35,7 @@ public class OrderService {
         private final LedgerService ledgerService;
         private final CommunicationService communicationService;
         private final PricingService pricingService;
+        private final PushNotificationService pushNotificationService;
 
         private static final BigDecimal DRIVER_COMMISSION_RATE = new BigDecimal("0.20");
         private static final BigDecimal MERCHANT_COMMISSION_RATE = new BigDecimal("0.10");
@@ -380,6 +381,16 @@ public class OrderService {
                         messagingTemplate.convertAndSend(
                                         "/topic/order/" + orderId,
                                         buildStatusUpdate(saved));
+
+                        // NEW (Phase 4) — push, additive alongside the
+                        // WebSocket broadcast above. Never blocks the
+                        // order flow if it fails — see PushNotificationService.
+                        pushNotificationService.sendToUser(
+                                        saved.getCustomer().getId(),
+                                        "Driver on the way! 🚗",
+                                        driver.getFullName() + " is heading to you now.",
+                                        Map.of("type", "order_status",
+                                                        "orderId", String.valueOf(orderId)));
                 }
 
                 if (saved.getOfflineCustomerPhone() != null) {
@@ -451,6 +462,28 @@ public class OrderService {
                 messagingTemplate.convertAndSend(
                                 "/topic/order/" + orderId,
                                 buildStatusUpdate(saved));
+
+                // NEW (Phase 4) — push, additive alongside the
+                // WebSocket broadcast above and never blocking on
+                // failure. Only for statuses a customer actually
+                // cares about seeing as a notification.
+                if (saved.getCustomer() != null) {
+                        String pushTitle = switch (newStatus) {
+                                case ACCEPTED -> "Order Accepted ✅";
+                                case PICKED_UP -> "Order Picked Up 📦";
+                                case DELIVERED -> "Order Delivered! 🎉";
+                                default -> null;
+                        };
+                        if (pushTitle != null) {
+                                pushNotificationService.sendToUser(
+                                                saved.getCustomer().getId(),
+                                                pushTitle,
+                                                "Order " + saved.getTrackingCode()
+                                                                + " — tap to view details.",
+                                                Map.of("type", "order_status",
+                                                                "orderId", String.valueOf(orderId)));
+                        }
+                }
 
                 if (saved.getMerchant() != null) {
                         messagingTemplate.convertAndSend(

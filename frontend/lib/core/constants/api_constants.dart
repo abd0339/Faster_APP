@@ -15,6 +15,10 @@ class ApiConstants {
 
   // ─── Auth ─────────────────────────────────────────
   static const String register = '/api/auth/register';
+
+  // ─── Push notifications (Phase 4 — FCM) ──────────
+  static const String registerDevice = '/api/devices/register';
+  static const String unregisterDevice = '/api/devices/unregister';
   static const String login = '/api/auth/login';
   static const String verifyOtp = '/api/auth/verify-otp';
   static const String resendOtp = '/api/auth/resend-otp';

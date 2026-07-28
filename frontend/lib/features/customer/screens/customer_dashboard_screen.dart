@@ -76,147 +76,150 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.glassBorder,
-                  borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.glassBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text('New Order', style: AppTextStyles.headlineLarge),
-            const SizedBox(height: 6),
-            Text('Choose how you want to order',
-                style: AppTextStyles.bodyMedium),
-            const SizedBox(height: 24),
+              const SizedBox(height: 20),
+              Text('New Order', style: AppTextStyles.headlineLarge),
+              const SizedBox(height: 6),
+              Text('Choose how you want to order',
+                  style: AppTextStyles.bodyMedium),
+              const SizedBox(height: 24),
 
-            // Option 1 — Order from store (LOGISTICS)
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(ctx);
-                setState(() => _currentIndex = 1); // Go to Stores tab
-              },
-              child: GlassCard(
-                padding: const EdgeInsets.all(18),
-                child: Row(children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
+              // Option 1 — Order from store (LOGISTICS)
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _currentIndex = 1); // Go to Stores tab
+                },
+                child: GlassCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.store_rounded,
+                          color: AppColors.primary, size: 26),
                     ),
-                    child: const Icon(Icons.store_rounded,
-                        color: AppColors.primary, size: 26),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Order from Store',
-                            style: AppTextStyles.headlineSmall),
-                        Text('Browse stores, pick items, add to cart',
-                            style: AppTextStyles.bodyMedium),
-                      ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Order from Store',
+                              style: AppTextStyles.headlineSmall),
+                          Text('Browse stores, pick items, add to cart',
+                              style: AppTextStyles.bodyMedium),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded,
-                      color: AppColors.textHint),
-                ]),
+                    const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textHint),
+                  ]),
+                ),
               ),
-            ),
 
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            // Option 2 — Direct delivery order (without browsing)
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(ctx);
-                _showDirectOrderSheet(context);
-              },
-              child: GlassCard(
-                padding: const EdgeInsets.all(18),
-                child: Row(children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
+              // Option 2 — Direct delivery order (without browsing)
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showDirectOrderSheet(context);
+                },
+                child: GlassCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.delivery_dining_rounded,
+                          color: AppColors.accent, size: 26),
                     ),
-                    child: const Icon(Icons.delivery_dining_rounded,
-                        color: AppColors.accent, size: 26),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Direct Delivery Order',
-                            style: AppTextStyles.headlineSmall),
-                        Text('Send anything from any location',
-                            style: AppTextStyles.bodyMedium),
-                      ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Direct Delivery Order',
+                              style: AppTextStyles.headlineSmall),
+                          Text('Send anything from any location',
+                              style: AppTextStyles.bodyMedium),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded,
-                      color: AppColors.textHint),
-                ]),
+                    const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textHint),
+                  ]),
+                ),
               ),
-            ),
 
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            // Option 3 — Request a ride
-            GestureDetector(
-              onTap: () {
-                Navigator.pop(ctx);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const CustomerRideScreen()),
-                );
-              },
-              child: GlassCard(
-                padding: const EdgeInsets.all(18),
-                child: Row(children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: AppColors.driverColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
+              // Option 3 — Request a ride
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const CustomerRideScreen()),
+                  );
+                },
+                child: GlassCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: AppColors.driverColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.directions_car_rounded,
+                          color: AppColors.driverColor, size: 26),
                     ),
-                    child: const Icon(Icons.directions_car_rounded,
-                        color: AppColors.driverColor, size: 26),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Request a Ride',
-                            style: AppTextStyles.headlineSmall),
-                        Text('Moto, Car, or Toktok — Moto \$2.50',
-                            style: AppTextStyles.bodyMedium),
-                      ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Request a Ride',
+                              style: AppTextStyles.headlineSmall),
+                          Text('Moto, Car, or Toktok — Moto \$2.50',
+                              style: AppTextStyles.bodyMedium),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded,
-                      color: AppColors.textHint),
-                ]),
+                    const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textHint),
+                  ]),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

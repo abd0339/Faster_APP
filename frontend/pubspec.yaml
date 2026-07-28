@@ -14,6 +14,16 @@ dependencies:
   # tracking link (faster-app.org/tracking/public/CODE) uses
   # a real browser path instead of Flutter web's default
   # hash-based URLs (faster-app.org/#/tracking/public/CODE)
+  # ─── Firebase (Phase 2 — phone verification, Phase 4 — push) ──
+  # Phone verification: additional path alongside existing Twilio
+  # OTP flow, not a replacement. Push (FCM): additive alongside
+  # existing WebSocket + Twilio notification channels.
+  # Versions verified against Firebase's official Flutter BoM
+  # 4.11.0 (March 2026) release notes — NOT guessed.
+  firebase_core: ^4.6.0
+  firebase_auth: ^6.3.0
+  firebase_messaging: ^16.1.2
+
   flutter_web_plugins:
     sdk: flutter
 

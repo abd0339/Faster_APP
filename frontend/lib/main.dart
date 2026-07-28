@@ -1,4 +1,5 @@
 import 'package:faster_app/dev/dev_launcher.DART';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'core/router/app_router.dart';
 import 'features/auth/bloc/auth_bloc.dart';
 import 'features/auth/bloc/auth_event.dart';
 import 'features/customer/screens/public_tracking_screen.dart';
+import 'firebase_options.dart';
 import 'shared/theme/app_theme.dart';
 import 'core/constants/app_colors.dart';
 import 'dev/dev_launcher.DART';
@@ -26,6 +28,23 @@ const bool kDevMode = bool.fromEnvironment(
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ─── Initialize Firebase (Phase 2 — phone verification) ──
+  // Used ONLY to verify phone ownership at registration — an
+  // additional path alongside the existing Twilio OTP flow,
+  // not a replacement. Wrapped in try/catch so a Firebase
+  // init failure (missing config, network issue, etc.) can
+  // NEVER block the whole app from starting — only the new
+  // Firebase-based verification screen would be affected;
+  // everything else (login, orders, tracking, Twilio OTP)
+  // keeps working exactly as before regardless.
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('⚠️ Firebase initialization failed: $e');
+  }
 
   // FIX: enables real browser paths (faster-app.org/tracking/...)
   // instead of Flutter web's default hash-based URLs

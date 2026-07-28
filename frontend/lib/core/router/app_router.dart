@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../features/auth/bloc/auth_bloc.dart';
 import '../../features/auth/bloc/auth_state.dart';
@@ -9,13 +10,36 @@ import '../../features/merchant/screens/merchant_dashboard_screen.dart';
 import '../../features/customer/screens/customer_dashboard_screen.dart';
 import '../../features/admin/screens/admin_dashboard_screen.dart';
 import '../../core/constants/app_colors.dart';
+import '../services/push_notification_service.dart';
 
 class AppRouter extends StatelessWidget {
   const AppRouter({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AuthBloc, AuthState>(
+    return BlocConsumer<AuthBloc, AuthState>(
+      // NEW (Phase 4) — initialize push notifications exactly
+      // once, right when the user actually logs in (transitions
+      // INTO AuthSuccess from something else). Wrapped so any
+      // failure here can never affect the actual navigation
+      // below — push is additive, not required for the app
+      // to work.
+      listenWhen: (previous, current) =>
+          current is AuthSuccess && previous is! AuthSuccess,
+      listener: (context, state) {
+        if (state is AuthSuccess) {
+          PushNotificationService.instance.initialize(
+            onNotificationTap: (data) {
+              // Future: route to a specific screen based on
+              // data['type']/data['orderId']. For now, tapping
+              // a push simply opens the app to its normal
+              // dashboard — already a real improvement over
+              // no push at all.
+              debugPrint('📬 Notification tapped: $data');
+            },
+          );
+        }
+      },
       builder: (context, state) {
         // Loading / splash
         if (state is AuthInitial || state is AuthLoading) {
