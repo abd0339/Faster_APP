@@ -12,6 +12,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<RegisterRequested>(_onRegister);
     on<VerifyOtpRequested>(_onVerifyOtp);
     on<ResendOtpRequested>(_onResendOtp);
+    on<VerifyFirebasePhoneRequested>(_onVerifyFirebasePhone);
     on<LogoutRequested>(_onLogout);
     on<CheckAuthStatus>(_onCheckAuth);
   }
@@ -130,6 +131,27 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         fullName: data['fullName'] ?? '',
         message: data['message'] ?? 'New code sent.',
       ));
+    } catch (e) {
+      emit(AuthFailure(ApiService.getErrorMessage(e)));
+    }
+  }
+
+  // ─── VERIFY FIREBASE PHONE (NEW — Phase 2) ────────
+  // An ADDITIONAL way to complete phone verification,
+  // alongside _onVerifyOtp above (Twilio) — not a
+  // replacement.
+  Future<void> _onVerifyFirebasePhone(
+    VerifyFirebasePhoneRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(AuthLoading());
+    try {
+      final res = await ApiService.instance.post(
+        ApiConstants.verifyFirebasePhone,
+        data: {'idToken': event.idToken},
+      );
+      final data = res.data as Map<String, dynamic>;
+      await _saveAndEmitSuccess(data, emit);
     } catch (e) {
       emit(AuthFailure(ApiService.getErrorMessage(e)));
     }

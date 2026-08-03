@@ -3,6 +3,10 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Firebase (Phase 2: phone verification). Reads
+    // google-services.json (must be in this same android/app/
+    // folder) and wires up Firebase's Android SDK.
+    id("com.google.gms.google-services")
 }
 
 android {
