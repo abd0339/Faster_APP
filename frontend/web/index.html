@@ -42,5 +42,21 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+
+  <!-- Firebase Cloud Messaging service worker registration.
+       MUST be its own separate <script> tag — putting this
+       inside the tag above (the one with src="...") is a
+       known bug where browsers silently ignore inline code
+       alongside a src attribute, and the worker never
+       actually registers. -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('firebase-messaging-sw.js', {
+          scope: '/firebase-cloud-messaging-push-scope',
+        });
+      });
+    }
+  </script>
 </body>
 </html>

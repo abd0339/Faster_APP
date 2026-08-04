@@ -10,6 +10,7 @@ import com.google.firebase.messaging.Notification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -123,7 +124,13 @@ public class PushNotificationService {
     /**
      * Unregisters a device — called on logout, so a signed-out
      * device stops receiving pushes meant for that user.
+     *
+     * FIX: derived delete queries (deleteByX) require an active
+     * transaction to execute — without @Transactional here,
+     * Spring throws "No EntityManager with actual transaction
+     * available for current thread" the moment this runs.
      */
+    @Transactional
     public void unregisterDevice(Long userId, String fcmToken) {
         deviceTokenRepository.deleteByUserIdAndFcmToken(userId, fcmToken);
     }

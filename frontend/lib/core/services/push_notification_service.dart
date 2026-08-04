@@ -100,8 +100,13 @@ class PushNotificationService {
   Future<void> unregister() async {
     if (_currentToken == null) return;
     try {
+      // FIX: FCM tokens can contain characters (like +, /, =)
+      // that aren't safe raw in a URL query string — must be
+      // percent-encoded, or Spring rejects the request with a
+      // 400 "bad syntax" error before it even reaches our code.
+      final encodedToken = Uri.encodeComponent(_currentToken!);
       await ApiService.instance
-          .delete('${ApiConstants.unregisterDevice}?fcmToken=$_currentToken');
+          .delete('${ApiConstants.unregisterDevice}?fcmToken=$encodedToken');
     } catch (e) {
       debugPrint('⚠️ Device token unregistration failed: $e');
     } finally {
