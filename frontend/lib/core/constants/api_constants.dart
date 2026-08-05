@@ -22,8 +22,6 @@ class ApiConstants {
   static const String login = '/api/auth/login';
   static const String verifyOtp = '/api/auth/verify-otp';
   static const String resendOtp = '/api/auth/resend-otp';
-  static const String verifyFirebasePhone =
-      '/api/auth/verify-firebase-phone';
 
   // ─── Merchant ─────────────────────────────────────
   static const String categories = '/api/merchant/categories';

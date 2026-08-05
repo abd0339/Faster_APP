@@ -541,12 +541,20 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Hello, ${name.split(' ').first}!',
-                    style: AppTextStyles.displayMedium),
-                Text('What do you need today?',
-                    style: AppTextStyles.bodyMedium),
-              ]),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Hello, ${name.split(' ').first}!',
+                        style: AppTextStyles.displayMedium,
+                        overflow: TextOverflow.ellipsis),
+                    Text('What do you need today?',
+                        style: AppTextStyles.bodyMedium,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
               GestureDetector(
                 onTap: () => context.read<AuthBloc>().add(LogoutRequested()),
                 child: Container(

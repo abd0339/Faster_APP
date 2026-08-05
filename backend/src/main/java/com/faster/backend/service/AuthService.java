@@ -10,9 +10,6 @@ import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.OtpVerificationRepository;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.security.JwtUtil;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseAuthException;
-import com.google.firebase.auth.FirebaseToken;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -63,21 +60,16 @@ public class AuthService {
 
         userRepository.save(user);
 
-        // FIX (Phase 2 — Firebase Phone Auth): registration no
-        // longer auto-sends a Twilio OTP here. Flutter now
-        // triggers Firebase Phone Auth immediately after
-        // registration succeeds — Firebase sends its OWN SMS
-        // directly (not through this backend at all). If we
-        // ALSO auto-sent a Twilio message here, the user would
-        // get two different codes from two different senders
-        // arriving almost simultaneously, which is confusing,
-        // not a real improvement, and costs double.
-        //
-        // The Twilio/WhatsApp path is NOT removed — it's now an
-        // explicit fallback the user can reach with one tap
-        // ("Send code via WhatsApp/SMS instead") if Firebase's
-        // SMS doesn't arrive, via the existing /resend-otp
-        // endpoint. Nothing about that endpoint changed.
+        // FIX (Firebase Phone Auth removed): Firebase's real-SMS
+        // delivery turned out to be unreliable specifically for
+        // Lebanese numbers (documented Google-side issue, error
+        // "auth/error-code:-39" — a 503 from Firebase's own
+        // backend, confirmed across multiple real registration
+        // attempts). Twilio SMS is proven 100% reliable for the
+        // same numbers, so registration goes back to auto-sending
+        // via Twilio directly — no more separate Firebase step.
+        sendOtp(user, resolveChannel(null));
+
         return AuthResponse.builder()
                 .role(user.getRole().name())
                 .fullName(user.getFullName())
@@ -154,95 +146,14 @@ public class AuthService {
     }
 
     // ─────────────────────────────────────────────────
-    // VERIFY FIREBASE PHONE (NEW)
-    //
-    // An ADDITIONAL, independent way to verify a phone
-    // number — alongside the existing Twilio OTP flow
-    // above, not replacing it. A user can complete
-    // whichever one works for them; both set the exact
-    // same isPhoneVerified flag and issue the exact same
-    // JWT afterward. If Firebase is ever unreachable or
-    // misconfigured, the Twilio flow above is completely
-    // unaffected and still works on its own.
-    //
-    // Security: the phone number used to find the account
-    // comes ONLY from inside the verified Firebase token
-    // (the "phone_number" claim), NEVER from client input —
-    // this means a client can never claim to verify a phone
-    // number they don't actually control.
-    // ─────────────────────────────────────────────────
-    @Transactional
-    public AuthResponse verifyFirebasePhone(String idToken) {
-
-        FirebaseToken decodedToken;
-        try {
-            decodedToken = FirebaseAuth.getInstance().verifyIdToken(idToken);
-        } catch (FirebaseAuthException e) {
-            throw new BusinessException(
-                    "Invalid or expired verification. Please try again.");
-        } catch (IllegalStateException e) {
-            // FirebaseApp was never initialized (missing/bad
-            // service account) — a config problem, not the
-            // user's fault. Never let this look like their
-            // code was wrong.
-            log.error("Firebase Admin SDK not initialized: {}", e.getMessage());
-            throw new BusinessException(
-                    "Phone verification is temporarily unavailable. "
-                            + "Please try the SMS/WhatsApp code instead.");
-        }
-
-        String verifiedPhone = decodedToken.getClaims()
-                .get("phone_number") != null
-                        ? decodedToken.getClaims().get("phone_number").toString()
-                        : null;
-
-        if (verifiedPhone == null || verifiedPhone.isBlank()) {
-            throw new BusinessException(
-                    "This verification did not include a phone number");
-        }
-
-        User user = userRepository.findByPhone(verifiedPhone)
-                .orElseThrow(() -> new NotFoundException(
-                        "No account found for this phone number. "
-                                + "Please register first."));
-
-        // Idempotent — verifying twice (e.g. a retry) just
-        // logs the user in again rather than erroring
-        if (!Boolean.TRUE.equals(user.getIsPhoneVerified())) {
-            user.setIsPhoneVerified(true);
-            user.setFirebaseUid(decodedToken.getUid());
-            userRepository.save(user);
-
-            // Clear any pending Twilio OTP for this user —
-            // they're verified now via the other path
-            otpRepository.deleteAllByUserId(user.getId());
-
-            log.info("✅ Phone verified via Firebase for user {} ({})",
-                    user.getFullName(), maskPhone(verifiedPhone));
-        }
-
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-
-        return AuthResponse.builder()
-                .token(token)
-                .role(user.getRole().name())
-                .fullName(user.getFullName())
-                .email(user.getEmail())
-                .phone(user.getPhone())
-                .isBlocked(user.getIsBlocked())
-                .isPhoneVerified(true)
-                .requiresOtp(false)
-                .message("Phone verified! Welcome to Faster, " + user.getFullName() + "!")
-                .build();
-    }
-
-    // ─────────────────────────────────────────────────
     // RESEND OTP
-    // FIX: now accepts an explicit channel so the Flutter
-    // app can offer "Resend via WhatsApp" (default) or
-    // "Resend via SMS instead" if the customer says they
-    // never received the WhatsApp message. Pass null to
-    // keep the previous default (WhatsApp) behavior.
+    // Accepts an explicit channel so the Flutter app can
+    // offer "Resend via SMS" (default, proven reliable) or
+    // "Resend via WhatsApp" if the customer prefers — though
+    // WhatsApp currently only works for numbers that have
+    // already messaged the business (Meta's Message Template
+    // requirement — see CommunicationService). Pass null to
+    // keep the default (SMS).
     // ─────────────────────────────────────────────────
     @Transactional
     public AuthResponse resendOtp(String phone, String channel) {
@@ -314,7 +225,7 @@ public class AuthService {
 
         if (Boolean.FALSE.equals(user.getIsPhoneVerified())) {
             otpRepository.deleteAllByUserId(user.getId());
-            sendOtp(user, CommunicationService.Channel.WHATSAPP);
+            sendOtp(user, resolveChannel(null));
             return AuthResponse.builder()
                     .role(user.getRole().name())
                     .fullName(user.getFullName())
@@ -323,7 +234,7 @@ public class AuthService {
                     .isPhoneVerified(false)
                     .requiresOtp(true)
                     .message("Please verify your phone number. "
-                            + "We sent a new code via WhatsApp to "
+                            + "We sent a new code via SMS to "
                             + maskPhone(user.getPhone()) + ".")
                     .build();
         }
@@ -377,14 +288,20 @@ public class AuthService {
     // Accepts "SMS" / "WHATSAPP" (case-insensitive), defaults
     // to WhatsApp for null/blank/unrecognized values — never
     // throws, since a typo here should never block a resend.
+    // Accepts "SMS" / "WHATSAPP" (case-insensitive), defaults
+    // to SMS — the only channel proven reliable for Lebanese
+    // numbers (WhatsApp requires a Meta-approved Message
+    // Template we don't have yet; see CommunicationService).
+    // Never throws — an unrecognized value should never block
+    // a resend.
     private CommunicationService.Channel resolveChannel(String channel) {
         if (channel == null || channel.isBlank()) {
-            return CommunicationService.Channel.WHATSAPP;
+            return CommunicationService.Channel.SMS;
         }
         try {
             return CommunicationService.Channel.valueOf(channel.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            return CommunicationService.Channel.WHATSAPP;
+            return CommunicationService.Channel.SMS;
         }
     }
 

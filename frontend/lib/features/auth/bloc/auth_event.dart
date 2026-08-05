@@ -44,18 +44,13 @@ class VerifyOtpRequested extends AuthEvent {
 /// User requests a new OTP (expired / not received)
 class ResendOtpRequested extends AuthEvent {
   final String phone;
-  ResendOtpRequested({required this.phone});
-}
-
-/// NEW (Phase 2) — user completed Firebase Phone Auth
-/// (either automatically via SMS auto-detection, or by
-/// manually typing the code Firebase sent). This is an
-/// ADDITIONAL path alongside VerifyOtpRequested above —
-/// not a replacement. Carries the Firebase ID token, which
-/// the backend verifies server-side via Firebase Admin SDK.
-class VerifyFirebasePhoneRequested extends AuthEvent {
-  final String idToken;
-  VerifyFirebasePhoneRequested({required this.idToken});
+  // Optional — "SMS" (default) or "WHATSAPP". Lets the OTP
+  // screen offer both as equally visible buttons, since
+  // WhatsApp only works for numbers that have already
+  // messaged the business (Meta Message Template
+  // requirement — see CommunicationService on the backend).
+  final String? channel;
+  ResendOtpRequested({required this.phone, this.channel});
 }
 
 // ─── Session Events ───────────────────────────────────

@@ -19,25 +19,33 @@ import java.util.Map;
 // ─────────────────────────────────────────────────────
 // CommunicationService — Twilio ONLY.
 //
-// FIX: Vonage has been fully removed (account issues on
-// their side made it unworkable). Twilio confirmed working
-// with real delivered messages to 3 different Lebanese
-// numbers after enabling Geo Permissions for Lebanon.
+// FIX (channel default flipped): WhatsApp requires an
+// approved Meta Message Template for any message to someone
+// who hasn't messaged the business first — confirmed via
+// real testing that this blocks OTP, tracking links, and
+// broadcasts alike for brand-new recipients (error 63016,
+// every time, no exceptions). No approved template exists
+// yet. SMS has no such restriction and is proven 100%
+// reliable for real Lebanese numbers. SMS is now the
+// default/primary channel platform-wide; WhatsApp remains
+// available and will become useful again once a Message
+// Template is approved by Meta — a separate, future task.
 //
 // Much simpler than Vonage here: BOTH channels use the same
 // Messages API endpoint with simple Basic Auth (Account SID
 // + Auth Token) — no JWT, no private key file to manage.
 //
 // TWO CHANNELS, CALLER CHOOSES:
-//   Channel.WHATSAPP (default/primary) — sent via the
-//     Twilio WhatsApp sandbox number for now. Swaps to a
-//     real approved WhatsApp Business sender later by
-//     changing one env var, no code change needed.
-//   Channel.SMS (fallback/alternate) — sent through the
+//   Channel.SMS (default/primary) — sent through the
 //     Messaging Service (alphanumeric sender "FasterApp"
 //     with a real phone number as automatic fallback —
 //     Twilio picks whichever actually works per destination
 //     country, so Lebanon is handled correctly either way).
+//   Channel.WHATSAPP (available, not yet reliable for new
+//     contacts) — sent via the approved WhatsApp Business
+//     sender. Works fine for anyone who has messaged the
+//     business first; fails with error 63016 for anyone who
+//     hasn't, until a Message Template is approved.
 //
 // Every message is logged to message_logs (channel + status)
 // for audit. A failed send NEVER throws back to the caller —

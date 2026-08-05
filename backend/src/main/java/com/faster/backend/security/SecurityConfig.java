@@ -85,7 +85,6 @@ public class SecurityConfig {
                                                                 "/api/auth/login",
                                                                 "/api/auth/verify-otp",
                                                                 "/api/auth/resend-otp",
-                                                                "/api/auth/verify-firebase-phone",
                                                                 "/api/health",
                                                                 "/api/tracking/public/**",
                                                                 "/api/store/**",

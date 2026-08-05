@@ -14,14 +14,17 @@ dependencies:
   # tracking link (faster-app.org/tracking/public/CODE) uses
   # a real browser path instead of Flutter web's default
   # hash-based URLs (faster-app.org/#/tracking/public/CODE)
-  # ─── Firebase (Phase 2 — phone verification, Phase 4 — push) ──
-  # Phone verification: additional path alongside existing Twilio
-  # OTP flow, not a replacement. Push (FCM): additive alongside
-  # existing WebSocket + Twilio notification channels.
-  # Versions verified against Firebase's official Flutter BoM
-  # 4.11.0 (March 2026) release notes — NOT guessed.
+  # ─── Firebase (Phase 4 — push notifications only) ─
+  # firebase_auth REMOVED — Firebase Phone Auth had an
+  # unfixable, documented reliability issue for Lebanese
+  # numbers (error "auth/error-code:-39", a 503 from
+  # Firebase's own backend, confirmed across multiple real
+  # registration attempts). Twilio SMS is proven 100%
+  # reliable for the same numbers — see AuthService.
+  # firebase_core stays — still needed to initialize FCM
+  # (push notifications), which is unrelated to the phone-
+  # auth SMS problem and has no known issue.
   firebase_core: ^4.6.0
-  firebase_auth: ^6.3.0
   firebase_messaging: ^16.1.2
 
   flutter_web_plugins:
