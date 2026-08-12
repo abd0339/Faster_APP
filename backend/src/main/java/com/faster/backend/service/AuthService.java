@@ -272,12 +272,23 @@ public class AuthService {
 
         otpRepository.save(otp);
 
-        String message = "🔐 *Faster App — Phone Verification*\n\n"
-                + "Hello " + user.getFullName() + ",\n\n"
-                + "Your verification code is:\n\n"
-                + "*" + code + "*\n\n"
-                + "This code expires in " + OTP_EXPIRY_MINUTES + " minutes.\n\n"
-                + "If you did not request this, ignore this message.";
+        // COST FIX: this message used to start with a 🔐 emoji and
+        // contain an em dash (—). Both are outside GSM-7, which
+        // forces the whole SMS into UCS-2 encoding — dropping the
+        // limit from 160 chars to 67 per segment. The old message
+        // (~180 chars) therefore billed as THREE segments, roughly
+        // $1.08 per OTP to Lebanon instead of $0.36.
+        //
+        // This version is plain GSM-7 only (no emoji, no em dash,
+        // no curly quotes) and stays under 160 characters, so it
+        // always bills as a SINGLE segment. Keep it that way:
+        // adding ANY emoji or fancy punctuation here instantly
+        // triples the cost of every registration on the platform.
+        // Verify with Twilio's Message Segment Calculator before
+        // changing this string.
+        String message = "Faster App: your verification code is "
+                + code + ". It expires in " + OTP_EXPIRY_MINUTES
+                + " minutes. If you did not request this, ignore this message.";
 
         communicationService.sendOtpMessage(user.getPhone(), message, channel);
 

@@ -67,7 +67,7 @@ public class CommunicationService {
         @Value("${app.base.url:http://localhost:8080}")
         private String baseUrl;
 
-        @Value("${twilio.default-channel:WHATSAPP}")
+        @Value("${twilio.default-channel:SMS}")
         private String defaultChannelName;
 
         // ─── Twilio credentials — same for both channels ──
@@ -117,12 +117,16 @@ public class CommunicationService {
                                 ? order.getDriver().getVehiclePlate()
                                 : "N/A";
 
-                String message = "🚗 *Faster App — Driver On The Way!*\n\n"
-                                + "Your driver *" + driverName + "* is heading to you.\n"
-                                + "🚘 Vehicle: " + vehicleType + " | Plate: " + plate + "\n\n"
-                                + "📍 Track your order live:\n" + trackingUrl + "\n\n"
-                                + "Order: " + order.getTrackingCode() + "\n"
-                                + "Pay *$" + order.getGrandTotal() + "* cash on arrival.";
+                // COST FIX: GSM-7 only, no emoji. See sendOtp() in
+                // AuthService for the full explanation — any emoji
+                // here forces UCS-2 encoding and multiplies the
+                // segment count (and cost) of every message sent.
+                String message = "Faster App: your driver " + driverName
+                                + " is on the way. Vehicle: " + vehicleType
+                                + ", plate " + plate + ". Order "
+                                + order.getTrackingCode() + ". Pay $"
+                                + order.getGrandTotal() + " cash on arrival. Track: "
+                                + trackingUrl;
 
                 sendMessage(order.getOfflineCustomerPhone(), message,
                                 MessageLog.MessageType.O2O_DRIVER_ASSIGNED,
@@ -133,13 +137,13 @@ public class CommunicationService {
                 if (driver.getPhone() == null)
                         return;
 
-                String message = "💰 *Faster App — Commission Due*\n\n"
-                                + "Hello " + driver.getFullName() + ",\n\n"
-                                + "Your outstanding commission balance is: *$" + amountDue + "*\n\n"
-                                + "Please settle via:\n• OMT\n• WishMoney\n\n"
-                                + "After paying, send your receipt to the admin on "
-                                + "WhatsApp to reactivate your account.\n\n"
-                                + "Thank you for being a Faster driver! 🚀";
+                // COST FIX: GSM-7 only. Note the old version also used
+                // bullet characters, which are outside GSM-7 too.
+                String message = "Faster App: hello " + driver.getFullName()
+                                + ", your outstanding commission is $" + amountDue
+                                + ". Please settle via OMT or WishMoney, then send"
+                                + " your receipt to the admin on WhatsApp to"
+                                + " reactivate your account.";
 
                 sendMessage(driver.getPhone(), message,
                                 MessageLog.MessageType.DRIVER_DEBT_NOTIFICATION,
@@ -150,8 +154,12 @@ public class CommunicationService {
                 if (phone == null || phone.isBlank())
                         return;
 
-                String message = "📢 *Faster App — Announcement*\n\n"
-                                + announcementText + "\n\n— The Faster Team";
+                // COST FIX: GSM-7 only. NOTE: announcementText itself
+                // is admin-supplied — if an admin types emoji into a
+                // broadcast, that message still goes UCS-2 and costs
+                // multiple segments. Worth warning admins in the UI.
+                String message = "Faster App: " + announcementText
+                                + " - The Faster Team";
 
                 sendMessage(phone, message,
                                 MessageLog.MessageType.PLATFORM_ANNOUNCEMENT,
@@ -297,17 +305,20 @@ public class CommunicationService {
                                 ? order.getCreatedAt().format(DateTimeFormatter.ofPattern("hh:mm a"))
                                 : "just now";
 
-                return "👋 *Welcome to Faster App!*\n\n"
-                                + "Your order from *" + merchantName + "* has been placed at "
-                                + createdTime + ".\n\n"
-                                + "─────────────────\n📦 *Order Details*\n─────────────────\n"
-                                + "🔖 Order: *" + order.getTrackingCode() + "*\n"
-                                + "📍 Delivery to: " + area + "\n"
-                                + "💰 Total to pay: *$" + order.getGrandTotal() + "* cash\n\n"
-                                + "📲 *Track your order live:*\n" + trackingUrl + "\n\n"
-                                + "We are finding the nearest driver for you. You will "
-                                + "receive another message when your driver is on the way. 🚗\n\n"
-                                + "— Faster Team";
+                // COST FIX: this was by far the most expensive message
+                // on the platform — multiple emoji PLUS box-drawing
+                // characters (─), all outside GSM-7, forcing UCS-2 at
+                // 67 chars/segment on a ~380 character message. That
+                // billed as roughly SIX segments (~$2.16 to Lebanon)
+                // for every single O2O order placed. This GSM-7
+                // version fits in about two segments.
+                return "Faster App: your order from " + merchantName
+                                + " was placed at " + createdTime + ". Order "
+                                + order.getTrackingCode() + ". Delivery to " + area
+                                + ". Total to pay: $" + order.getGrandTotal()
+                                + " cash. We are finding the nearest driver -"
+                                + " you will get another message when the driver"
+                                + " is on the way. Track: " + trackingUrl;
         }
 
         // ─────────────────────────────────────────────────
@@ -317,7 +328,10 @@ public class CommunicationService {
                 try {
                         return Channel.valueOf(defaultChannelName.toUpperCase());
                 } catch (Exception e) {
-                        return Channel.WHATSAPP;
+                        // Fallback if the configured value is invalid —
+                        // SMS, matching the platform default (WhatsApp
+                        // is blocked by Meta for new contacts).
+                        return Channel.SMS;
                 }
         }
 
