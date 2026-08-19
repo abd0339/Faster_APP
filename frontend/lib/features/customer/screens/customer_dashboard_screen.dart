@@ -234,11 +234,15 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     final deliveryCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     final priceCtrl = TextEditingController();
-    final feeCtrl = TextEditingController(text: '2.00');
 
     bool isDetectingPickup = false;
     bool isCreatingOrder = false;
     double? pickupLat, pickupLng, deliveryLat, deliveryLng;
+
+    // NEW — live server-computed delivery fee (replaces the old
+    // editable, ignored feeCtrl field)
+    double? quotedFee;
+    bool isQuotingFee = false;
 
     showModalBottomSheet(
       context: context,
@@ -249,6 +253,44 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
+          // NEW — fetch the real, server-computed delivery fee once
+          // both pickup and delivery coordinates are known. Called
+          // after GPS detection and after picking either location.
+          // Purely for display: the backend recomputes the fee when
+          // the order is actually created, so a stale or failed
+          // quote here can never affect what the customer is charged.
+          Future<void> fetchDeliveryFee() async {
+            if (pickupLat == null ||
+                pickupLng == null ||
+                deliveryLat == null ||
+                deliveryLng == null) {
+              return;
+            }
+            setSheet(() => isQuotingFee = true);
+            try {
+              final res = await ApiService.instance.post(
+                ApiConstants.quoteDeliveryFee,
+                data: {
+                  'pickupLat': pickupLat,
+                  'pickupLng': pickupLng,
+                  'deliveryLat': deliveryLat,
+                  'deliveryLng': deliveryLng,
+                },
+              );
+              final data = res.data as Map<String, dynamic>;
+              final fee = data['deliveryFee'];
+              setSheet(() {
+                quotedFee = fee is num ? fee.toDouble() : null;
+                isQuotingFee = false;
+              });
+            } catch (_) {
+              // Quote failed — leave the fee blank rather than
+              // showing a wrong number. The order still works;
+              // the real fee comes back on creation.
+              setSheet(() => isQuotingFee = false);
+            }
+          }
+
           // Auto-detect pickup GPS
           Future<void> detectPickup() async {
             setSheet(() => isDetectingPickup = true);
@@ -281,6 +323,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
               }
             } catch (_) {}
             setSheet(() => isDetectingPickup = false);
+            // Pickup coords may now be set — try quoting the fee
+            fetchDeliveryFee();
           }
 
           // Place the order
@@ -298,15 +342,23 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
               return;
             }
             final price = double.tryParse(priceCtrl.text.trim()) ?? 0.0;
-            final fee = double.tryParse(feeCtrl.text.trim()) ?? 2.0;
+            // NOTE: no fee parsed here anymore — the delivery fee is
+            // computed server-side from real distance. The fee field
+            // in the form is display-only (see below).
 
             setSheet(() => isCreatingOrder = true);
             try {
               final res = await ApiService.instance.post(
                 ApiConstants.orders,
                 data: {
+                  // Customer's own declared value for the package
+                  // they're sending. Only matters for the driver's
+                  // cash collection.
                   'totalPrice': price,
-                  'deliveryFee': fee,
+                  // NOTE: deliveryFee is deliberately NOT sent — the
+                  // backend always computes it from real distance via
+                  // PricingService. A client-supplied fee is ignored
+                  // (and would be a C2-style pricing vulnerability).
                   'pickupAddress': pickupCtrl.text.trim(),
                   'pickupLat': pickupLat,
                   'pickupLng': pickupLng,
@@ -452,6 +504,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                               deliveryLat = result.lat;
                               deliveryLng = result.lng;
                             });
+                            // Both coords likely set now — quote the fee
+                            fetchDeliveryFee();
                           },
                         ),
 
@@ -474,15 +528,66 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
+                          // FIX: this used to be an editable "Delivery
+                          // Fee" box, which was misleading — the customer
+                          // could type any number and the server ignored
+                          // it entirely, always computing the fee from
+                          // real distance. Now it DISPLAYS that real
+                          // server-computed fee instead, fetched as soon
+                          // as both pickup and delivery are set.
                           Expanded(
-                            child: AppInput(
-                              controller: feeCtrl,
-                              hint: '2.00',
-                              label: 'Delivery Fee \$',
-                              prefixIcon: Icons.delivery_dining_outlined,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                      decimal: true),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.glassWhite,
+                                borderRadius: BorderRadius.circular(14),
+                                border:
+                                    Border.all(color: AppColors.glassBorder),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Delivery Fee',
+                                      style: AppTextStyles.caption),
+                                  const SizedBox(height: 4),
+                                  if (isQuotingFee)
+                                    const SizedBox(
+                                      height: 18,
+                                      width: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppColors.primary),
+                                    )
+                                  else
+                                    Text(
+                                      quotedFee != null
+                                          ? '\$${quotedFee!.toStringAsFixed(2)}'
+                                          : 'Set both locations',
+                                      style: quotedFee != null
+                                          ? AppTextStyles.headlineSmall
+                                              .copyWith(
+                                                  color: AppColors.accent)
+                                          : AppTextStyles.caption.copyWith(
+                                              color: AppColors.textHint),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 6),
+                        Row(children: [
+                          const Icon(Icons.auto_awesome_rounded,
+                              size: 13, color: AppColors.accent),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Delivery fee is calculated automatically '
+                              'from the real distance.',
+                              style: AppTextStyles.caption
+                                  .copyWith(color: AppColors.accent),
                             ),
                           ),
                         ]),

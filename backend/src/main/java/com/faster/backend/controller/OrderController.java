@@ -55,6 +55,34 @@ public class OrderController {
         }
 
         // ─────────────────────────────────────────────────
+        // POST /api/orders/quote-delivery-fee
+        // A merchant-free fee quote: takes only pickup and
+        // delivery coordinates and returns the server-computed
+        // delivery fee.
+        //
+        // Needed because the quote endpoint above requires a
+        // merchantId (it prices a catalog cart), which Direct
+        // Delivery doesn't have. This lets the customer app show
+        // the REAL distance-based fee before they confirm,
+        // instead of an editable box implying they set it.
+        //
+        // Display convenience only — createOrder() recomputes the
+        // fee from scratch regardless, so this is never trusted.
+        // ─────────────────────────────────────────────────
+        @PostMapping("/api/orders/quote-delivery-fee")
+        public ResponseEntity<?> quoteDeliveryFee(
+                        @RequestBody Map<String, Double> body) {
+
+                java.math.BigDecimal fee = orderService.quoteDeliveryFee(
+                                body.get("pickupLat"),
+                                body.get("pickupLng"),
+                                body.get("deliveryLat"),
+                                body.get("deliveryLng"));
+
+                return ResponseEntity.ok(Map.of("deliveryFee", fee));
+        }
+
+        // ─────────────────────────────────────────────────
         // POST /api/orders
         // Who calls this:
         // MERCHANT → O2O (isO2O: true, offline customer by phone)
@@ -118,6 +146,42 @@ public class OrderController {
                         // the ride fee from pickup→destination distance.
                         order = orderService.createMobilityOrder(
                                         user.getId(),
+                                        req.getPickupLat(),
+                                        req.getPickupLng(),
+                                        req.getPickupAddress(),
+                                        req.getDeliveryLat(),
+                                        req.getDeliveryLng(),
+                                        req.getDeliveryAddress(),
+                                        req.getCustomerNotes());
+
+                } else if (req.getMerchantId() == null) {
+
+                        // ─── DIRECT DELIVERY: customer sends a package ───
+                        // FIX (blocker): this branch did not exist. A
+                        // customer sending a parcel from A to B has NO
+                        // merchant and NO catalog cart, so it fell into
+                        // the store-order branch below and always failed
+                        // with "merchantId is required for LOGISTICS
+                        // orders" — the Direct Delivery feature was
+                        // completely unusable.
+                        //
+                        // Pricing follows the same rule as O2O: the item
+                        // value is the customer's own declared figure
+                        // (it's their package — only they know what it's
+                        // worth), while the delivery fee is ALWAYS
+                        // server-computed from real distance. The client
+                        // can never dictate the fee.
+                        if (req.getTotalPrice() == null
+                                        || req.getTotalPrice()
+                                                        .compareTo(java.math.BigDecimal.ZERO) < 0) {
+                                return ResponseEntity.badRequest()
+                                                .body(Map.of("message",
+                                                                "A valid item value is required"));
+                        }
+
+                        order = orderService.createDirectDeliveryOrder(
+                                        user.getId(),
+                                        req.getTotalPrice(),
                                         req.getPickupLat(),
                                         req.getPickupLng(),
                                         req.getPickupAddress(),

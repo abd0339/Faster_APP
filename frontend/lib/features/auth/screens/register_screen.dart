@@ -86,6 +86,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (state is AuthSuccess) {
           Navigator.pop(context);
         }
+        if (state is OtpRequired) {
+          Navigator.pop(context);
+        }
       },
       builder: (context, state) {
         return Scaffold(

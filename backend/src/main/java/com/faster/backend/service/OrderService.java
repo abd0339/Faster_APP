@@ -247,7 +247,104 @@ public class OrderService {
         }
 
         // ─────────────────────────────────────────────────
-        // CREATE O2O ORDER (Offline Customer by phone)
+        // QUOTE DELIVERY FEE (coordinates only, no merchant)
+        // Used by the customer app's Direct Delivery form to
+        // display the real distance-based fee before the order
+        // is placed. Purely a read — nothing is persisted, and
+        // createDirectDeliveryOrder() recomputes independently.
+        // ─────────────────────────────────────────────────
+        public BigDecimal quoteDeliveryFee(
+                        Double pickupLat, Double pickupLng,
+                        Double deliveryLat, Double deliveryLng) {
+
+                return pricingService.calculateDeliveryFee(
+                                pickupLat, pickupLng, deliveryLat, deliveryLng);
+        }
+
+        // ─────────────────────────────────────────────────
+        // CREATE DIRECT DELIVERY ORDER (customer sends a parcel)
+        // FIX (blocker): this method did not exist, so the
+        // customer "Direct Delivery" feature always failed with
+        // "merchantId is required for LOGISTICS orders".
+        //
+        // This is a customer sending a package from point A to
+        // point B — no merchant, no catalog, no cart. It's the
+        // customer-initiated sibling of an O2O order, and follows
+        // the same pricing rule:
+        //   • itemValue  = customer's own declared figure (it's
+        //     their package; only they know what it's worth, and
+        //     it only matters for the driver's cash collection)
+        //   • deliveryFee = ALWAYS server-computed from real
+        //     distance via PricingService — never client-supplied
+        // ─────────────────────────────────────────────────
+        @Transactional
+        public Order createDirectDeliveryOrder(
+                        Long customerId,
+                        BigDecimal itemValue,
+                        Double pickupLat,
+                        Double pickupLng,
+                        String pickupAddress,
+                        Double deliveryLat,
+                        Double deliveryLng,
+                        String deliveryAddress,
+                        String customerNotes) {
+
+                User customer = getUser(customerId);
+
+                if (itemValue == null) {
+                        itemValue = BigDecimal.ZERO;
+                }
+                itemValue = itemValue.setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
+                                pickupLat, pickupLng, deliveryLat, deliveryLng);
+
+                BigDecimal driverCommission = actualDeliveryFee
+                                .multiply(DRIVER_COMMISSION_RATE)
+                                .setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal grandTotal = itemValue
+                                .add(actualDeliveryFee)
+                                .setScale(2, RoundingMode.HALF_UP);
+
+                Order order = Order.builder()
+                                .trackingCode(generateTrackingCode())
+                                .merchant(null)
+                                .customer(customer)
+                                .orderType(Order.OrderType.LOGISTICS)
+                                .status(Order.OrderStatus.PENDING)
+                                .totalPrice(itemValue)
+                                .deliveryFee(actualDeliveryFee)
+                                .commissionAmount(driverCommission)
+                                .grandTotal(grandTotal)
+                                // No merchant involved, so the driver owes
+                                // nothing to a merchant and there is no
+                                // merchant commission to record.
+                                .driverPaysMerchant(BigDecimal.ZERO)
+                                .merchantCommission(BigDecimal.ZERO)
+                                .pickupLat(pickupLat)
+                                .pickupLng(pickupLng)
+                                .pickupAddress(pickupAddress)
+                                .deliveryLat(deliveryLat)
+                                .deliveryLng(deliveryLng)
+                                .deliveryAddress(deliveryAddress)
+                                .customerNotes(customerNotes)
+                                .build();
+
+                Order saved = orderRepository.save(order);
+
+                notifyNearestDrivers(
+                                saved, pickupLat, pickupLng,
+                                Order.OrderType.LOGISTICS);
+
+                System.out.println(
+                                "📦 DIRECT DELIVERY order: " + saved.getTrackingCode() +
+                                                " | Pickup: " + pickupAddress +
+                                                " | Fee: $" + actualDeliveryFee);
+
+                return saved;
+        }
+
         // FIX (product decision): O2O is a merchant-entered phone
         // order for something that may not map cleanly to catalog
         // items (a custom order, a mix of things, a verbal price).

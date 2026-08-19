@@ -53,6 +53,11 @@ class ApiConstants {
   // ─── Orders ───────────────────────────────────────
   static const String orders = '/api/orders';
 
+  // Coordinates-only delivery fee quote — used by the Direct
+  // Delivery form to show the real distance-based fee before
+  // the customer confirms.
+  static const String quoteDeliveryFee = '/api/orders/quote-delivery-fee';
+
   // NEW — customer submits feedback after delivery confirmation
   static String orderFeedback(int orderId) => '/api/orders/$orderId/feedback';
   static const String driverRating = '/api/driver/rating';
