@@ -4,6 +4,7 @@ import com.faster.backend.entity.MessageLog;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
 import com.faster.backend.repository.MessageLogRepository;
+import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,6 +61,12 @@ public class CommunicationService {
         private final MessageLogRepository messageLogRepository;
         private final RestTemplate restTemplate;
 
+        // NEW: used to check whether an "offline" recipient is really
+        // already a registered user — if so we reach them by FREE push
+        // instead of paid SMS. See sendO2OTrackingLink.
+        private final UserRepository userRepository;
+        private final PushNotificationService pushNotificationService;
+
         public enum Channel {
                 WHATSAPP, SMS
         }
@@ -90,25 +97,91 @@ public class CommunicationService {
         // PUBLIC API — message types the system sends
         // ─────────────────────────────────────────────────
 
+        // ─────────────────────────────────────────────────
+        // O2O TRACKING LINK — push first, SMS as fallback
+        //
+        // The recipient is "offline" only in the sense that the
+        // SENDER typed their phone number instead of picking them
+        // from a list. They may already be a user of this app.
+        //
+        // If they are, we reach them by FCM push — free, and with
+        // live in-app tracking — instead of a ~$0.36 SMS. As the
+        // user base grows the SMS bill SHRINKS rather than rising
+        // with order volume.
+        //
+        // IMPORTANT (deadlock avoided): the push invites the
+        // recipient to SHARE THEIR EXACT LOCATION, but this is
+        // purely optional refinement. The order already has a
+        // destination — the address the sender typed — and a
+        // computed fee. If the recipient ignores the push entirely,
+        // the delivery proceeds normally on the typed address.
+        // Confirmation only makes the fee more accurate; it is
+        // never required for the order to work.
+        // ─────────────────────────────────────────────────
         public void sendO2OTrackingLink(Order order) {
-                if (order.getOfflineCustomerPhone() == null)
+                if (order.getOfflineCustomerPhone() == null
+                                || order.getOfflineCustomerPhone().isBlank())
                         return;
 
-                String trackingUrl = baseUrl + "/tracking/public/" + order.getTrackingCode();
-                String message = buildO2OMessage(order, trackingUrl);
+                String trackingUrl = baseUrl + "/tracking/public/"
+                                + order.getTrackingCode();
 
-                sendMessage(order.getOfflineCustomerPhone(), message,
+                var existingUser = userRepository
+                                .findByPhone(order.getOfflineCustomerPhone());
+
+                if (existingUser.isPresent()) {
+                        User recipient = existingUser.get();
+
+                        // Wording deliberately says "confirm" as an
+                        // optional improvement, not a required step —
+                        // the delivery is already going ahead.
+                        pushNotificationService.sendToUser(
+                                        recipient.getId(),
+                                        "A delivery is on its way to you",
+                                        "Order " + order.getTrackingCode()
+                                                        + " - pay $" + order.getGrandTotal()
+                                                        + " cash. Tap to track, or share your exact"
+                                                        + " location to help your driver find you.",
+                                        Map.of("type", "incoming_delivery",
+                                                        "orderId", String.valueOf(order.getId()),
+                                                        "trackingCode", order.getTrackingCode()));
+
+                        // Logged like any other message so the admin
+                        // audit trail still shows the recipient was
+                        // contacted — just on a different channel.
+                        messageLogRepository.save(MessageLog.builder()
+                                        .recipientPhone(order.getOfflineCustomerPhone())
+                                        .messageType(MessageLog.MessageType.O2O_TRACKING_LINK)
+                                        .provider("fcm")
+                                        .channel("PUSH")
+                                        .messageBody("Incoming delivery push for "
+                                                        + order.getTrackingCode())
+                                        .status(MessageLog.DeliveryStatus.SENT)
+                                        .relatedOrderId(order.getId())
+                                        .trackingCode(order.getTrackingCode())
+                                        .build());
+
+                        log.info("✅ O2O recipient is a registered user - sent FREE "
+                                        + "push instead of SMS (saved ~$0.36)");
+                        return;
+                }
+
+                sendMessage(order.getOfflineCustomerPhone(),
+                                buildO2OMessage(order, trackingUrl),
                                 MessageLog.MessageType.O2O_TRACKING_LINK,
                                 order.getId(), order.getTrackingCode(), defaultChannel());
         }
 
+        // Same push-first rule as the tracking link above.
         public void sendDriverAssignedNotification(Order order) {
-                if (order.getOfflineCustomerPhone() == null)
+                if (order.getOfflineCustomerPhone() == null
+                                || order.getOfflineCustomerPhone().isBlank())
                         return;
                 if (order.getDriver() == null)
                         return;
 
-                String trackingUrl = baseUrl + "/tracking/public/" + order.getTrackingCode();
+                String trackingUrl = baseUrl + "/tracking/public/"
+                                + order.getTrackingCode();
                 String driverName = order.getDriver().getFullName();
                 String vehicleType = order.getDriver().getVehicleType() != null
                                 ? order.getDriver().getVehicleType()
@@ -117,18 +190,27 @@ public class CommunicationService {
                                 ? order.getDriver().getVehiclePlate()
                                 : "N/A";
 
-                // COST FIX: GSM-7 only, no emoji. See sendOtp() in
-                // AuthService for the full explanation — any emoji
-                // here forces UCS-2 encoding and multiplies the
-                // segment count (and cost) of every message sent.
-                String message = "Faster App: your driver " + driverName
-                                + " is on the way. Vehicle: " + vehicleType
-                                + ", plate " + plate + ". Order "
-                                + order.getTrackingCode() + ". Pay $"
-                                + order.getGrandTotal() + " cash on arrival. Track: "
-                                + trackingUrl;
+                var existingUser = userRepository
+                                .findByPhone(order.getOfflineCustomerPhone());
 
-                sendMessage(order.getOfflineCustomerPhone(), message,
+                if (existingUser.isPresent()) {
+                        pushNotificationService.sendToUser(
+                                        existingUser.get().getId(),
+                                        "Your driver is on the way",
+                                        driverName + " (" + vehicleType + ", " + plate
+                                                        + ") is heading to you.",
+                                        Map.of("type", "driver_assigned",
+                                                        "orderId", String.valueOf(order.getId()),
+                                                        "trackingCode", order.getTrackingCode()));
+                        log.info("✅ Driver-assigned push sent free (saved ~$0.36)");
+                        return;
+                }
+
+                // GSM-7, kept short — every ~153 chars adds a segment.
+                sendMessage(order.getOfflineCustomerPhone(),
+                                "Faster App: driver " + driverName + " (" + vehicleType
+                                                + ", " + plate + ") is on the way. Track: "
+                                                + trackingUrl,
                                 MessageLog.MessageType.O2O_DRIVER_ASSIGNED,
                                 order.getId(), order.getTrackingCode(), defaultChannel());
         }

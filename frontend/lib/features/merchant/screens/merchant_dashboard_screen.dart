@@ -551,12 +551,28 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                   'customerNotes': notesCtrl.text.trim(),
                 };
               } else {
-                // Standard order
+                // Standard order (merchant types the address manually)
                 final delivery = deliveryCtrl.text.trim();
-                if (delivery.isEmpty) {
+                final manualPhone = phoneCtrl.text.trim();
+
+                // FIX: this branch used to send no merchantId, so the
+                // backend saved the order with merchant=null and the
+                // merchant recorded as the CUSTOMER — it then vanished
+                // from the merchant's own order list (which filters by
+                // merchant_id). It now routes through the O2O path,
+                // where the merchant is correctly recorded as the
+                // merchant.
+                //
+                // That path sends the customer a tracking-link SMS, so
+                // a phone number is now genuinely required here. It was
+                // optional before, which produced Twilio error 21211
+                // ("The 'To' number is not a valid phone number") on an
+                // empty string.
+                if (delivery.isEmpty || manualPhone.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Enter delivery address'),
+                      content:
+                          Text('Customer phone and delivery address required'),
                       backgroundColor: AppColors.error,
                     ),
                   );
@@ -565,13 +581,17 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                 }
                 body = {
                   'totalPrice': price,
-                  'deliveryFee': fee ?? 2.0,
+                  // deliveryFee deliberately NOT sent — the backend
+                  // always computes it from real distance (C2 rule).
                   'pickupAddress': pickupCtrl.text.trim(),
                   'pickupLat': pickupLat,
                   'pickupLng': pickupLng,
-                  'deliveryAddress': delivery,
+                  'offlineLandmark': delivery,
+                  'deliveryLat': o2oDeliveryLat,
+                  'deliveryLng': o2oDeliveryLng,
                   'orderType': 'LOGISTICS',
-                  'isO2O': false,
+                  'isO2O': true,
+                  'offlineCustomerPhone': manualPhone,
                   'customerNotes': notesCtrl.text.trim(),
                 };
               }
@@ -605,7 +625,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                 );
               }
             }
-            setSheet(() => isCreatingOrder = false);
+            // FIX (crash): the sheet is popped above, so by the time
+            // this runs the StatefulBuilder is disposed and calling
+            // setSheet threw "setState() called after dispose()".
+            if (ctx.mounted) {
+              setSheet(() => isCreatingOrder = false);
+            }
           }
 
           // ─── BUILD SHEET UI ──────────────────────
@@ -1336,3 +1361,4 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     );
   }
 }
+

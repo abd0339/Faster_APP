@@ -38,6 +38,10 @@ public class OrderService {
         private final PushNotificationService pushNotificationService;
 
         private static final BigDecimal DRIVER_COMMISSION_RATE = new BigDecimal("0.20");
+
+        // How long after placing an order a customer may still
+        // cancel it (and only while no driver has accepted).
+        private static final int CANCEL_WINDOW_MINUTES = 10;
         private static final BigDecimal MERCHANT_COMMISSION_RATE = new BigDecimal("0.10");
         private static final double SEARCH_RADIUS_KM = 5.0;
 
@@ -242,6 +246,87 @@ public class OrderService {
                                 "🚗 MOBILITY order: " + saved.getTrackingCode() +
                                                 " | Pickup: " + pickupAddress +
                                                 " | Fee: $" + actualFee);
+
+                return saved;
+        }
+
+        // ─────────────────────────────────────────────────
+        // CANCEL ORDER BY CUSTOMER
+        //
+        // Two rules, BOTH enforced server-side (never trust the
+        // client's idea of whether the button should be enabled):
+        //
+        //   1. Within CANCEL_WINDOW_MINUTES of placing the order.
+        //   2. Only while status is still PENDING — i.e. no driver
+        //      has accepted yet.
+        //
+        // Rule 2 is the one that really matters: once a driver has
+        // accepted, they may already be travelling to the pickup.
+        // Letting a customer cancel at that point wastes the
+        // driver's time and fuel with no compensation, which is
+        // exactly how you lose drivers. After acceptance the
+        // customer must go through the dispute flow instead.
+        //
+        // No commission or ledger entries are touched here because
+        // nothing has been earned yet — commission is only recorded
+        // on delivery.
+        // ─────────────────────────────────────────────────
+        @Transactional
+        public Order cancelOrderByCustomer(Long orderId, Long customerId) {
+
+                Order order = orderRepository.findById(orderId)
+                                .orElseThrow(() -> new NotFoundException("Order not found"));
+
+                // Must be the customer's own order
+                if (order.getCustomer() == null
+                                || !order.getCustomer().getId().equals(customerId)) {
+                        throw new ForbiddenException(
+                                        "You can only cancel your own orders");
+                }
+
+                if (order.getStatus() == Order.OrderStatus.CANCELLED) {
+                        throw new BusinessException("This order is already cancelled");
+                }
+
+                // Rule 2 — a driver has already taken it
+                if (order.getStatus() != Order.OrderStatus.PENDING) {
+                        throw new BusinessException(
+                                        "A driver has already accepted this order, so it "
+                                                        + "can no longer be cancelled. Please contact "
+                                                        + "support if there is a problem.");
+                }
+
+                // Rule 1 — time window
+                if (order.getCreatedAt() != null) {
+                        long minutesElapsed = java.time.Duration.between(
+                                        order.getCreatedAt(), LocalDateTime.now()).toMinutes();
+                        if (minutesElapsed >= CANCEL_WINDOW_MINUTES) {
+                                throw new BusinessException(
+                                                "The " + CANCEL_WINDOW_MINUTES + "-minute cancellation "
+                                                                + "window for this order has passed.");
+                        }
+                }
+
+                order.setStatus(Order.OrderStatus.CANCELLED);
+                Order saved = orderRepository.save(order);
+
+                messagingTemplate.convertAndSend(
+                                "/topic/order/" + saved.getId(),
+                                buildStatusUpdate(saved));
+
+                // Let the merchant know, if this order had one
+                if (saved.getMerchant() != null) {
+                        pushNotificationService.sendToUser(
+                                        saved.getMerchant().getId(),
+                                        "Order cancelled",
+                                        "Order " + saved.getTrackingCode()
+                                                        + " was cancelled by the customer.",
+                                        Map.of("type", "order_cancelled",
+                                                        "orderId", String.valueOf(saved.getId())));
+                }
+
+                System.out.println("🚫 Order " + saved.getTrackingCode()
+                                + " cancelled by customer");
 
                 return saved;
         }
@@ -817,3 +902,4 @@ public class OrderService {
                                 .orElseThrow(() -> new NotFoundException("User not found"));
         }
 }
+

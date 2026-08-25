@@ -60,6 +60,12 @@ class ApiConstants {
 
   // NEW — customer submits feedback after delivery confirmation
   static String orderFeedback(int orderId) => '/api/orders/$orderId/feedback';
+
+  // Customer cancels their own order. Allowed only within 10 minutes
+  // of placing AND only while no driver has accepted — both rules are
+  // enforced server-side, the UI just hides the button when it can't
+  // apply.
+  static String cancelOrder(int orderId) => '/api/orders/$orderId/cancel';
   static const String driverRating = '/api/driver/rating';
 
   static const String merchantOrders = '/api/orders/merchant';

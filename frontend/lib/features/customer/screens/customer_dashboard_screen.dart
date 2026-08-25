@@ -910,6 +910,82 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     if (mounted) setState(() => _ordersLoading = false);
   }
 
+  // ─── CANCEL RULES (mirror of the backend) ─────────
+  // Both conditions must hold for the button to show:
+  //   1. status is still PENDING (no driver has accepted)
+  //   2. fewer than 10 minutes since the order was placed
+  // The backend enforces both independently — this is only to
+  // avoid offering a button that would fail.
+  static const int _cancelWindowMinutes = 10;
+
+  bool _canCancel(Map<String, dynamic> order) {
+    if (order['status'] != 'PENDING') return false;
+    return _minutesLeftToCancel(order) > 0;
+  }
+
+  int _minutesLeftToCancel(Map<String, dynamic> order) {
+    final createdRaw = order['createdAt'];
+    if (createdRaw == null) return 0;
+    final created = DateTime.tryParse(createdRaw.toString());
+    if (created == null) return 0;
+    final elapsed = DateTime.now().difference(created).inMinutes;
+    final left = _cancelWindowMinutes - elapsed;
+    return left > 0 ? left : 0;
+  }
+
+  Future<void> _confirmCancel(Map<String, dynamic> order) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Cancel this order?', style: AppTextStyles.headlineSmall),
+        content: Text(
+          'Order ${order['trackingCode']} will be cancelled. '
+          'This cannot be undone.',
+          style: AppTextStyles.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Keep order',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.textHint)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Cancel order',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ApiService.instance
+          .patch(ApiConstants.cancelOrder(order['id'] as int));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Order cancelled'),
+        backgroundColor: AppColors.accent,
+        behavior: SnackBarBehavior.floating,
+      ));
+      _loadMyOrders();
+    } catch (e) {
+      if (!mounted) return;
+      // Surfaces the backend's own reason — e.g. a driver accepted
+      // between the button rendering and the tap.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ApiService.getErrorMessage(e)),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ));
+      _loadMyOrders();
+    }
+  }
+
   Widget _orderCard(Map<String, dynamic> order) {
     final orderId = order['id'] as int;
     final tracking = order['trackingCode'] as String? ?? '';
@@ -971,6 +1047,37 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             Text('Tap to track live',
                 style:
                     AppTextStyles.caption.copyWith(color: AppColors.primary)),
+            const Spacer(),
+            // NEW — cancel button. Only rendered while BOTH rules
+            // still hold: within the 10-minute window, and no driver
+            // has accepted yet (status still PENDING). The backend
+            // re-checks both regardless — this just avoids showing a
+            // button that would fail.
+            if (_canCancel(order))
+              GestureDetector(
+                onTap: () => _confirmCancel(order),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.close_rounded,
+                        size: 12, color: AppColors.error),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Cancel (${_minutesLeftToCancel(order)}m)',
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ]),
+                ),
+              ),
           ]),
         ],
       ]),

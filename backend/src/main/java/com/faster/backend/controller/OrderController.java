@@ -434,6 +434,27 @@ public class OrderController {
                                 "grandTotal", order.getGrandTotal()));
         }
 
+        // ─────────────────────────────────────────────────
+        // PATCH /api/orders/{orderId}/cancel
+        // Customer cancels their own order. Both rules (10-minute
+        // window, and only before a driver accepts) are enforced in
+        // OrderService — never trust the client's view of whether
+        // the button should have been enabled.
+        // ─────────────────────────────────────────────────
+        @PatchMapping("/api/orders/{orderId}/cancel")
+        public ResponseEntity<?> cancelOrder(
+                        @PathVariable Long orderId,
+                        Authentication auth) {
+
+                User user = getUser(auth);
+                Order order = orderService.cancelOrderByCustomer(orderId, user.getId());
+
+                return ResponseEntity.ok(Map.of(
+                                "message", "Order cancelled",
+                                "trackingCode", order.getTrackingCode(),
+                                "status", order.getStatus()));
+        }
+
         // ─── Helper: get authenticated user ───────────────
         private User getUser(Authentication auth) {
                 String principal = auth.getName();
