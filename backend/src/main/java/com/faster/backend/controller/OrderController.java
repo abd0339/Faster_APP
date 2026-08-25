@@ -152,6 +152,7 @@ public class OrderController {
                                         req.getDeliveryLat(),
                                         req.getDeliveryLng(),
                                         req.getDeliveryAddress(),
+                                        req.getOfflineCustomerPhone(),
                                         req.getCustomerNotes());
 
                 } else if (req.getMerchantId() == null) {
@@ -179,6 +180,17 @@ public class OrderController {
                                                                 "A valid item value is required"));
                         }
 
+                        // The recipient's phone is required: it's how the
+                        // person receiving the parcel is told it's coming
+                        // (free push if they're a user, SMS if not) and how
+                        // the driver reaches them on arrival.
+                        if (req.getOfflineCustomerPhone() == null
+                                        || req.getOfflineCustomerPhone().isBlank()) {
+                                return ResponseEntity.badRequest()
+                                                .body(Map.of("message",
+                                                                "Recipient phone number is required"));
+                        }
+
                         order = orderService.createDirectDeliveryOrder(
                                         user.getId(),
                                         req.getTotalPrice(),
@@ -188,6 +200,7 @@ public class OrderController {
                                         req.getDeliveryLat(),
                                         req.getDeliveryLng(),
                                         req.getDeliveryAddress(),
+                                        req.getOfflineCustomerPhone(),
                                         req.getCustomerNotes());
 
                 } else {

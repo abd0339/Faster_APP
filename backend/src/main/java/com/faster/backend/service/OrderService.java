@@ -200,6 +200,7 @@ public class OrderService {
                         Double deliveryLat,
                         Double deliveryLng,
                         String deliveryAddress,
+                        String recipientPhone,
                         String customerNotes) {
 
                 User customer = getUser(customerId);
@@ -372,6 +373,7 @@ public class OrderService {
                         Double deliveryLat,
                         Double deliveryLng,
                         String deliveryAddress,
+                        String recipientPhone,
                         String customerNotes) {
 
                 User customer = getUser(customerId);
@@ -413,10 +415,22 @@ public class OrderService {
                                 .deliveryLat(deliveryLat)
                                 .deliveryLng(deliveryLng)
                                 .deliveryAddress(deliveryAddress)
+                                // The RECIPIENT's phone — the person receiving the
+                                // parcel, not the sender. Stored in the same field
+                                // O2O uses so the existing notification logic works
+                                // unchanged: if this phone belongs to a registered
+                                // user they get a FREE push, otherwise a paid SMS
+                                // with the tracking link. See CommunicationService
+                                // .sendO2OTrackingLink().
+                                .offlineCustomerPhone(recipientPhone)
                                 .customerNotes(customerNotes)
                                 .build();
 
                 Order saved = orderRepository.save(order);
+
+                // Tell the recipient their parcel is coming (push if
+                // they're a user, SMS if not — handled downstream).
+                communicationService.sendO2OTrackingLink(saved);
 
                 notifyNearestDrivers(
                                 saved, pickupLat, pickupLng,
@@ -902,4 +916,3 @@ public class OrderService {
                                 .orElseThrow(() -> new NotFoundException("User not found"));
         }
 }
-

@@ -234,6 +234,10 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     final deliveryCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     final priceCtrl = TextEditingController();
+    // NEW — the RECIPIENT's phone (person receiving the parcel).
+    // Required: it's how they're told the parcel is coming, and how
+    // the driver reaches them on arrival.
+    final recipientPhoneCtrl = TextEditingController();
 
     bool isDetectingPickup = false;
     bool isCreatingOrder = false;
@@ -341,6 +345,15 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                   backgroundColor: AppColors.error));
               return;
             }
+            if (recipientPhoneCtrl.text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Enter the recipient's phone number"),
+                  backgroundColor: AppColors.error,
+                ),
+              );
+              return;
+            }
             final price = double.tryParse(priceCtrl.text.trim()) ?? 0.0;
             // NOTE: no fee parsed here anymore — the delivery fee is
             // computed server-side from real distance. The fee field
@@ -366,6 +379,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                   'deliveryLat': deliveryLat,
                   'deliveryLng': deliveryLng,
                   'customerNotes': notesCtrl.text.trim(),
+                  'offlineCustomerPhone': recipientPhoneCtrl.text.trim(),
                   'orderType': 'LOGISTICS',
                   'isO2O': false,
                 },
@@ -515,6 +529,28 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                         Text('Order Details',
                             style: AppTextStyles.headlineSmall),
                         const SizedBox(height: 12),
+                        AppInput(
+                          controller: recipientPhoneCtrl,
+                          hint: '+96170123456',
+                          label: "Recipient's Phone",
+                          prefixIcon: Icons.phone_outlined,
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 6),
+                        Row(children: [
+                          const Icon(Icons.info_outline,
+                              size: 13, color: AppColors.textHint),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'We let them know the parcel is coming. If they '
+                              'already use Faster, they get a free app '
+                              'notification instead of an SMS.',
+                              style: AppTextStyles.caption,
+                            ),
+                          ),
+                        ]),
+                        const SizedBox(height: 16),
                         Row(children: [
                           Expanded(
                             child: AppInput(
@@ -567,8 +603,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                                           : 'Set both locations',
                                       style: quotedFee != null
                                           ? AppTextStyles.headlineSmall
-                                              .copyWith(
-                                                  color: AppColors.accent)
+                                              .copyWith(color: AppColors.accent)
                                           : AppTextStyles.caption.copyWith(
                                               color: AppColors.textHint),
                                     ),
@@ -954,8 +989,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text('Cancel order',
-                style: AppTextStyles.bodyMedium
-                    .copyWith(color: AppColors.error)),
+                style:
+                    AppTextStyles.bodyMedium.copyWith(color: AppColors.error)),
           ),
         ],
       ),
@@ -972,7 +1007,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
         backgroundColor: AppColors.accent,
         behavior: SnackBarBehavior.floating,
       ));
-      _loadMyOrders();
+      _loadOrders();
     } catch (e) {
       if (!mounted) return;
       // Surfaces the backend's own reason — e.g. a driver accepted
@@ -982,7 +1017,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
         backgroundColor: AppColors.error,
         behavior: SnackBarBehavior.floating,
       ));
-      _loadMyOrders();
+      _loadOrders();
     }
   }
 
@@ -1057,8 +1092,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
               GestureDetector(
                 onTap: () => _confirmCancel(order),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
@@ -1072,8 +1107,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                     Text(
                       'Cancel (${_minutesLeftToCancel(order)}m)',
                       style: AppTextStyles.caption.copyWith(
-                          color: AppColors.error,
-                          fontWeight: FontWeight.w700),
+                          color: AppColors.error, fontWeight: FontWeight.w700),
                     ),
                   ]),
                 ),
