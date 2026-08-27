@@ -15,6 +15,7 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
 import '../../../shared/widgets/map_picker_screen.dart';
 import '../../auth/bloc/auth_bloc.dart';
@@ -407,7 +408,9 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     // Controllers
     final pickupCtrl = TextEditingController(text: _merchantAddress);
     final deliveryCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
+    // Full E.164 composed by PhoneInputField — the dial code is
+    // selected, never typed, so this is always well-formed.
+    String phoneE164 = '';
     final landmarkCtrl = TextEditingController();
     // NEW — captured when merchant picks the destination on
     // the map instead of only typing a text landmark. Sent as
@@ -478,7 +481,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
 
           // ─── Lookup customer by phone ────────────
           Future<void> lookupCustomer() async {
-            final phone = phoneCtrl.text.trim();
+            final phone = phoneE164;
             if (phone.isEmpty) return;
             setSheet(() {
               isLookingUpPhone = true;
@@ -520,7 +523,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
 
               if (isO2O) {
                 // O2O order
-                final phone = phoneCtrl.text.trim();
+                final phone = phoneE164;
                 final landmark = landmarkCtrl.text.trim();
                 if (phone.isEmpty || landmark.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -553,7 +556,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
               } else {
                 // Standard order (merchant types the address manually)
                 final delivery = deliveryCtrl.text.trim();
-                final manualPhone = phoneCtrl.text.trim();
+                final manualPhone = phoneE164;
 
                 // FIX: this branch used to send no merchantId, so the
                 // backend saved the order with merchant=null and the
@@ -673,7 +676,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                           isO2O = v;
                           foundCustomer = null;
                           deliveryCtrl.clear();
-                          phoneCtrl.clear();
                           landmarkCtrl.clear();
                         }),
                         activeColor: AppColors.accent,
@@ -881,12 +883,9 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                           if (deliveryMode == 'phone') ...[
                             Row(children: [
                               Expanded(
-                                child: AppInput(
-                                  controller: phoneCtrl,
-                                  hint: '+961 70 000 000',
+                                child: PhoneInputField(
                                   label: 'Customer Phone',
-                                  prefixIcon: Icons.phone_outlined,
-                                  keyboardType: TextInputType.phone,
+                                  onChanged: (e164) => phoneE164 = e164,
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -1013,12 +1012,9 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                               style: AppTextStyles.headlineSmall),
                           const SizedBox(height: 12),
 
-                          AppInput(
-                            controller: phoneCtrl,
-                            hint: '+961 70 000 000',
-                            label: 'Customer Phone (WhatsApp)',
-                            prefixIcon: Icons.chat_rounded,
-                            keyboardType: TextInputType.phone,
+                          PhoneInputField(
+                            label: 'Customer Phone',
+                            onChanged: (e164) => phoneE164 = e164,
                           ),
                           const SizedBox(height: 12),
 
@@ -1361,4 +1357,3 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     );
   }
 }
-

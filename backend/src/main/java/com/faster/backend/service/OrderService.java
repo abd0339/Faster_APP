@@ -323,7 +323,8 @@ public class OrderService {
                                         "Order " + saved.getTrackingCode()
                                                         + " was cancelled by the customer.",
                                         Map.of("type", "order_cancelled",
-                                                        "orderId", String.valueOf(saved.getId())));
+                                                        "orderId", String.valueOf(saved.getId()),
+                                                        "trackingCode", saved.getTrackingCode()));
                 }
 
                 System.out.println("🚫 Order " + saved.getTrackingCode()
@@ -586,7 +587,8 @@ public class OrderService {
                                         "Driver on the way! 🚗",
                                         driver.getFullName() + " is heading to you now.",
                                         Map.of("type", "order_status",
-                                                        "orderId", String.valueOf(orderId)));
+                                                        "orderId", String.valueOf(orderId),
+                                                        "trackingCode", saved.getTrackingCode()));
                 }
 
                 if (saved.getOfflineCustomerPhone() != null) {
@@ -677,7 +679,8 @@ public class OrderService {
                                                 "Order " + saved.getTrackingCode()
                                                                 + " — tap to view details.",
                                                 Map.of("type", "order_status",
-                                                                "orderId", String.valueOf(orderId)));
+                                                                "orderId", String.valueOf(orderId),
+                                                                "trackingCode", saved.getTrackingCode()));
                         }
                 }
 

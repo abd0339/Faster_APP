@@ -162,6 +162,9 @@ class FasterApp extends StatelessWidget {
         return bloc;
       },
       child: MaterialApp(
+        // Needed so push-notification taps can navigate — they
+        // fire outside any widget's BuildContext.
+        navigatorKey: navigatorKey,
         title: 'Faster',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,

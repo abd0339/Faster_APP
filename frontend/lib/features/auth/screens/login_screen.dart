@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
@@ -22,6 +23,10 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
+  // Phone mode uses PhoneInputField (dial code selected, not typed)
+  // so the value sent is always clean E.164. Email mode keeps using
+  // _emailController above.
+  String _phoneE164 = '';
   final _passwordController = TextEditingController();
   bool _isEmailMode = true;
   late AnimationController _animController;
@@ -51,9 +56,24 @@ class _LoginScreenState extends State<LoginScreen>
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
+
+    // PhoneInputField isn't a FormField, so it can't take part in
+    // _formKey validation — guard phone mode explicitly here.
+    if (!_isEmailMode && _phoneE164.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Phone number is required'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     context.read<AuthBloc>().add(
           LoginRequested(
-            emailOrPhone: _emailController.text.trim(),
+            emailOrPhone:
+                _isEmailMode ? _emailController.text.trim() : _phoneE164,
             password: _passwordController.text,
             isEmail: _isEmailMode,
           ),
@@ -183,26 +203,31 @@ class _LoginScreenState extends State<LoginScreen>
                                 const SizedBox(height: 20),
 
                                 // ─── Email/Phone ──
-                                AppInput(
-                                  controller: _emailController,
-                                  hint: _isEmailMode
-                                      ? 'name@email.com'
-                                      : '+96170000000',
-                                  prefixIcon: _isEmailMode
-                                      ? Icons.email_outlined
-                                      : Icons.phone_outlined,
-                                  keyboardType: _isEmailMode
-                                      ? TextInputType.emailAddress
-                                      : TextInputType.phone,
-                                  validator: (v) {
-                                    if (v == null || v.isEmpty) {
-                                      return _isEmailMode
-                                          ? 'Email is required'
-                                          : 'Phone is required';
-                                    }
-                                    return null;
-                                  },
-                                ),
+                                // FIX: phone mode used to be free text,
+                                // so a user could type "70123456" and
+                                // login would look up a number that
+                                // doesn't match what was registered
+                                // (stored E.164). Now the dial code is
+                                // selected, matching registration
+                                // exactly. Email mode is unchanged.
+                                if (_isEmailMode)
+                                  AppInput(
+                                    controller: _emailController,
+                                    hint: 'name@email.com',
+                                    prefixIcon: Icons.email_outlined,
+                                    keyboardType: TextInputType.emailAddress,
+                                    validator: (v) {
+                                      if (v == null || v.isEmpty) {
+                                        return 'Email is required';
+                                      }
+                                      return null;
+                                    },
+                                  )
+                                else
+                                  PhoneInputField(
+                                    label: 'Phone Number',
+                                    onChanged: (e164) => _phoneE164 = e164,
+                                  ),
 
                                 const SizedBox(height: 16),
 

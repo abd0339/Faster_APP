@@ -10,7 +10,12 @@ import '../../features/merchant/screens/merchant_dashboard_screen.dart';
 import '../../features/customer/screens/customer_dashboard_screen.dart';
 import '../../features/admin/screens/admin_dashboard_screen.dart';
 import '../../core/constants/app_colors.dart';
+import '../../features/customer/screens/customer_order_tracking_screen.dart';
 import '../services/push_notification_service.dart';
+
+/// Global navigator key — lets a push notification tap navigate
+/// even though it fires outside any widget's BuildContext.
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class AppRouter extends StatelessWidget {
   const AppRouter({super.key});
@@ -30,12 +35,29 @@ class AppRouter extends StatelessWidget {
         if (state is AuthSuccess) {
           PushNotificationService.instance.initialize(
             onNotificationTap: (data) {
-              // Future: route to a specific screen based on
-              // data['type']/data['orderId']. For now, tapping
-              // a push simply opens the app to its normal
-              // dashboard — already a real improvement over
-              // no push at all.
+              // FIX (Finding 1): tapping a push used to do nothing
+              // but log. Order-related pushes now open that order's
+              // tracking screen, where the recipient can follow the
+              // delivery and — for an incoming_delivery — optionally
+              // share their exact location.
               debugPrint('📬 Notification tapped: $data');
+
+              final orderIdRaw = data['orderId'];
+              final trackingCodeRaw = data['trackingCode'];
+              if (orderIdRaw == null || trackingCodeRaw == null) return;
+              final orderId = int.tryParse(orderIdRaw.toString());
+              if (orderId == null) return;
+
+              // Pushed on top of whatever dashboard the user is on,
+              // so backing out returns them where they were.
+              navigatorKey.currentState?.push(
+                MaterialPageRoute(
+                  builder: (_) => CustomerOrderTrackingScreen(
+                    orderId: orderId,
+                    trackingCode: trackingCodeRaw.toString(),
+                  ),
+                ),
+              );
             },
           );
         }

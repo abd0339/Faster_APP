@@ -12,6 +12,7 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
@@ -237,7 +238,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
     // NEW — the RECIPIENT's phone (person receiving the parcel).
     // Required: it's how they're told the parcel is coming, and how
     // the driver reaches them on arrival.
-    final recipientPhoneCtrl = TextEditingController();
+    // Full E.164 composed by PhoneInputField — never typed raw.
+    String recipientPhoneE164 = '';
 
     bool isDetectingPickup = false;
     bool isCreatingOrder = false;
@@ -345,7 +347,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                   backgroundColor: AppColors.error));
               return;
             }
-            if (recipientPhoneCtrl.text.trim().isEmpty) {
+            if (recipientPhoneE164.isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text("Enter the recipient's phone number"),
@@ -379,7 +381,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                   'deliveryLat': deliveryLat,
                   'deliveryLng': deliveryLng,
                   'customerNotes': notesCtrl.text.trim(),
-                  'offlineCustomerPhone': recipientPhoneCtrl.text.trim(),
+                  'offlineCustomerPhone': recipientPhoneE164,
                   'orderType': 'LOGISTICS',
                   'isO2O': false,
                 },
@@ -529,12 +531,9 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                         Text('Order Details',
                             style: AppTextStyles.headlineSmall),
                         const SizedBox(height: 12),
-                        AppInput(
-                          controller: recipientPhoneCtrl,
-                          hint: '+96170123456',
+                        PhoneInputField(
                           label: "Recipient's Phone",
-                          prefixIcon: Icons.phone_outlined,
-                          keyboardType: TextInputType.phone,
+                          onChanged: (e164) => recipientPhoneE164 = e164,
                         ),
                         const SizedBox(height: 6),
                         Row(children: [

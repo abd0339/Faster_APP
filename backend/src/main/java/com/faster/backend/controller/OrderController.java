@@ -468,6 +468,53 @@ public class OrderController {
                                 "status", order.getStatus()));
         }
 
+        // ─────────────────────────────────────────────────
+        // PATCH /api/orders/{orderId}/confirm-my-location
+        // The recipient (a registered user) optionally shares their
+        // exact location. See OrderService.confirmRecipientLocation
+        // for why this is optional and how ownership is verified.
+        // ─────────────────────────────────────────────────
+        @PatchMapping("/api/orders/{orderId}/confirm-my-location")
+        public ResponseEntity<?> confirmMyLocation(
+                        @PathVariable Long orderId,
+                        @RequestBody Map<String, Double> body,
+                        Authentication auth) {
+
+                User user = getUser(auth);
+                Order order = orderService.confirmRecipientLocation(
+                                orderId, user.getPhone(),
+                                body.get("lat"), body.get("lng"));
+
+                return ResponseEntity.ok(Map.of(
+                                "message", "Delivery location confirmed",
+                                "trackingCode", order.getTrackingCode(),
+                                "deliveryFee", order.getDeliveryFee(),
+                                "grandTotal", order.getGrandTotal()));
+        }
+
+        // PATCH /api/orders/{orderId}/confirm-my-location
+        // Optional: the recipient shares their exact location to
+        // refine the fee and drop point. See the service method
+        // for why this must never be required — the sender's
+        // address remains the destination if they never tap.
+        @PatchMapping("/api/orders/{orderId}/confirm-my-location")
+        public ResponseEntity<?> confirmMyLocation(
+                        @PathVariable Long orderId,
+                        @RequestBody Map<String, Double> body,
+                        Authentication auth) {
+
+                User user = getUser(auth);
+                Order order = orderService.confirmRecipientLocation(
+                                orderId, user.getPhone(),
+                                body.get("lat"), body.get("lng"));
+
+                return ResponseEntity.ok(Map.of(
+                                "message", "Delivery location confirmed",
+                                "trackingCode", order.getTrackingCode(),
+                                "deliveryFee", order.getDeliveryFee(),
+                                "grandTotal", order.getGrandTotal()));
+        }
+
         // ─── Helper: get authenticated user ───────────────
         private User getUser(Authentication auth) {
                 String principal = auth.getName();

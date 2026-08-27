@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
@@ -19,7 +20,10 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
+  // Holds the full E.164 number composed by PhoneInputField
+  // (e.g. "+96170123456"). The user never types the dial code —
+  // it's selected — so this is always well-formed or empty.
+  String _phoneE164 = '';
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   String _selectedRole = 'CUSTOMER';
@@ -48,7 +52,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -56,10 +59,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
+
+    // PhoneInputField isn't a FormField, so it can't take part in
+    // _formKey validation — guard here instead. It emits an empty
+    // string until a national number is entered.
+    if (_phoneE164.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Phone number is required'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     context.read<AuthBloc>().add(
           RegisterRequested(
             fullName: _nameController.text.trim(),
-            phone: _phoneController.text.trim(),
+            phone: _phoneE164,
             email: _emailController.text.trim().toLowerCase(),
             password: _passwordController.text,
             role: _selectedRole,
@@ -186,17 +204,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           },
                         ),
                         const SizedBox(height: 16),
-                        AppInput(
-                          controller: _phoneController,
-                          hint: '+96170000000',
-                          prefixIcon: Icons.phone_outlined,
-                          keyboardType: TextInputType.phone,
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return 'Phone is required';
-                            }
-                            return null;
-                          },
+                        // FIX: was a free-text field where users typed
+                        // things like "70123456" or "0096170123456".
+                        // normalizePhone() turned those into invalid
+                        // numbers and Twilio rejected them (error
+                        // 21211) — a paid API call wasted and an OTP
+                        // that never arrived, with no clear reason
+                        // shown to the user. The dial code is now
+                        // chosen, not typed, so this is always E.164.
+                        PhoneInputField(
+                          label: 'Phone Number',
+                          onChanged: (e164) => _phoneE164 = e164,
                         ),
                         const SizedBox(height: 16),
                         AppInput(
