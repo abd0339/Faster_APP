@@ -257,9 +257,9 @@ public class OrderService {
         // Two rules, BOTH enforced server-side (never trust the
         // client's idea of whether the button should be enabled):
         //
-        //   1. Within CANCEL_WINDOW_MINUTES of placing the order.
-        //   2. Only while status is still PENDING — i.e. no driver
-        //      has accepted yet.
+        // 1. Within CANCEL_WINDOW_MINUTES of placing the order.
+        // 2. Only while status is still PENDING — i.e. no driver
+        // has accepted yet.
         //
         // Rule 2 is the one that really matters: once a driver has
         // accepted, they may already be travelling to the pickup.
@@ -358,11 +358,11 @@ public class OrderService {
         // point B — no merchant, no catalog, no cart. It's the
         // customer-initiated sibling of an O2O order, and follows
         // the same pricing rule:
-        //   • itemValue  = customer's own declared figure (it's
-        //     their package; only they know what it's worth, and
-        //     it only matters for the driver's cash collection)
-        //   • deliveryFee = ALWAYS server-computed from real
-        //     distance via PricingService — never client-supplied
+        // • itemValue = customer's own declared figure (it's
+        // their package; only they know what it's worth, and
+        // it only matters for the driver's cash collection)
+        // • deliveryFee = ALWAYS server-computed from real
+        // distance via PricingService — never client-supplied
         // ─────────────────────────────────────────────────
         @Transactional
         public Order createDirectDeliveryOrder(
@@ -757,6 +757,59 @@ public class OrderService {
                                 .findByTrackingCode(trackingCode)
                                 .orElseThrow(() -> new NotFoundException(
                                                 "Order not found. Check your tracking code."));
+        }
+
+        // ─────────────────────────────────────────────────
+        // CONFIRM RECIPIENT LOCATION
+        // ─────────────────────────────────────────────────
+        @Transactional
+        public Order confirmRecipientLocation(
+                        Long orderId, String recipientPhone, Double lat, Double lng) {
+
+                if (lat == null || lng == null) {
+                        throw new BusinessException("Both lat and lng are required");
+                }
+
+                Order order = orderRepository.findById(orderId)
+                                .orElseThrow(() -> new NotFoundException("Order not found"));
+
+                if (order.getStatus() == Order.OrderStatus.DELIVERED
+                                || order.getStatus() == Order.OrderStatus.CANCELLED) {
+                        throw new BusinessException(
+                                        "This order is " + order.getStatus()
+                                                        + " — location can no longer be updated");
+                }
+
+                order.setDeliveryLat(lat);
+                order.setDeliveryLng(lng);
+
+                // Recompute delivery fee and totals based on the confirmed recipient location
+                BigDecimal newDeliveryFee = pricingService.calculateDeliveryFee(
+                                order.getPickupLat(), order.getPickupLng(), lat, lng);
+
+                BigDecimal newDriverCommission = newDeliveryFee
+                                .multiply(DRIVER_COMMISSION_RATE)
+                                .setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal newGrandTotal = order.getTotalPrice()
+                                .add(newDeliveryFee)
+                                .setScale(2, RoundingMode.HALF_UP);
+
+                order.setDeliveryFee(newDeliveryFee);
+                order.setCommissionAmount(newDriverCommission);
+                order.setGrandTotal(newGrandTotal);
+
+                Order saved = orderRepository.save(order);
+
+                messagingTemplate.convertAndSend(
+                                "/topic/order/" + saved.getId(),
+                                buildStatusUpdate(saved));
+
+                System.out.println(
+                                "📍 Recipient confirmed location for order " + orderId
+                                                + " — delivery fee recalculated to $" + newDeliveryFee);
+
+                return saved;
         }
 
         // ─────────────────────────────────────────────────
