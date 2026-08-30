@@ -33,32 +33,63 @@ class _CustomerOrderTrackingScreenState
   // reconnect re-delivering the same DELIVERED status).
   bool _feedbackPromptShown = false;
 
-  final _statusSteps = [
-    'PENDING',
-    'ACCEPTED',
-    'PREPARING',
-    'READY_FOR_PICKUP',
-    'PICKED_UP',
-    'DELIVERED',
-  ];
+  // FIX: rides used to show delivery wording — a MOBILITY order
+  // displayed "Preparing" and "Ready", which makes no sense for a
+  // passenger trip (nothing is being prepared, and the customer IS
+  // the cargo). Rides also never pass through PREPARING or
+  // READY_FOR_PICKUP at all, so those steps sat permanently grey
+  // in the timeline, making the ride look stuck.
+  //
+  // Labels, icons AND the step list are now chosen by order type.
+  bool get _isRide => _order?['orderType'] == 'MOBILITY';
 
-  final _statusLabels = {
-    'PENDING': 'Order Placed',
-    'ACCEPTED': 'Driver Assigned',
-    'PREPARING': 'Preparing',
-    'READY_FOR_PICKUP': 'Ready',
-    'PICKED_UP': 'On the Way',
-    'DELIVERED': 'Delivered',
-  };
+  List<String> get _statusSteps => _isRide
+      ? const [
+          'PENDING',
+          'ACCEPTED',
+          'PICKED_UP',
+          'DELIVERED',
+        ]
+      : const [
+          'PENDING',
+          'ACCEPTED',
+          'PREPARING',
+          'READY_FOR_PICKUP',
+          'PICKED_UP',
+          'DELIVERED',
+        ];
 
-  final _statusIcons = {
-    'PENDING': Icons.receipt_outlined,
-    'ACCEPTED': Icons.delivery_dining_outlined,
-    'PREPARING': Icons.restaurant_menu_outlined,
-    'READY_FOR_PICKUP': Icons.inventory_2_outlined,
-    'PICKED_UP': Icons.directions_bike_outlined,
-    'DELIVERED': Icons.check_circle_outlined,
-  };
+  Map<String, String> get _statusLabels => _isRide
+      ? const {
+          'PENDING': 'Ride Requested',
+          'ACCEPTED': 'Driver Assigned',
+          'PICKED_UP': 'On the Way',
+          'DELIVERED': 'Arrived',
+        }
+      : const {
+          'PENDING': 'Order Placed',
+          'ACCEPTED': 'Driver Assigned',
+          'PREPARING': 'Preparing',
+          'READY_FOR_PICKUP': 'Ready',
+          'PICKED_UP': 'On the Way',
+          'DELIVERED': 'Delivered',
+        };
+
+  Map<String, IconData> get _statusIcons => _isRide
+      ? const {
+          'PENDING': Icons.hail_rounded,
+          'ACCEPTED': Icons.person_pin_circle_outlined,
+          'PICKED_UP': Icons.directions_car_outlined,
+          'DELIVERED': Icons.flag_outlined,
+        }
+      : const {
+          'PENDING': Icons.receipt_outlined,
+          'ACCEPTED': Icons.delivery_dining_outlined,
+          'PREPARING': Icons.restaurant_menu_outlined,
+          'READY_FOR_PICKUP': Icons.inventory_2_outlined,
+          'PICKED_UP': Icons.directions_bike_outlined,
+          'DELIVERED': Icons.check_circle_outlined,
+        };
 
   @override
   void initState() {
