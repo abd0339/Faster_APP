@@ -773,6 +773,21 @@ public class OrderService {
                 Order order = orderRepository.findById(orderId)
                                 .orElseThrow(() -> new NotFoundException("Order not found"));
 
+                // SECURITY (added): the recipientPhone argument comes from
+                // the CALLER'S OWN authenticated account (see
+                // OrderController.confirmMyLocation, which passes
+                // user.getPhone(), never a value from the request body).
+                // Without this check any logged-in user could POST an
+                // arbitrary orderId and move somebody else's delivery to
+                // their own location — redirecting a stranger's parcel and
+                // altering what that person is charged.
+                if (order.getOfflineCustomerPhone() == null
+                                || recipientPhone == null
+                                || !order.getOfflineCustomerPhone().equals(recipientPhone)) {
+                        throw new ForbiddenException(
+                                        "This delivery is not addressed to you");
+                }
+
                 if (order.getStatus() == Order.OrderStatus.DELIVERED
                                 || order.getStatus() == Order.OrderStatus.CANCELLED) {
                         throw new BusinessException(
