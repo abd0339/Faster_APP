@@ -4,6 +4,8 @@ import com.faster.backend.dto.AuthResponse;
 import com.faster.backend.dto.LoginRequest;
 import com.faster.backend.dto.RegisterRequest;
 import com.faster.backend.service.AuthService;
+import com.faster.backend.service.TokenBlacklistService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final TokenBlacklistService tokenBlacklistService;
 
     // ─── POST /api/auth/register ──────────────────────
     // Returns requiresOtp=true, no token
@@ -64,6 +67,26 @@ public class AuthController {
             @Valid @RequestBody ResendOtpRequest request) {
         return ResponseEntity.ok(
             authService.resendOtp(request.getPhone(), request.getChannel()));
+    }
+
+    // ─── POST /api/auth/logout ────────────────────────
+    // M5: revokes the caller's token so it stops working
+    // immediately, instead of remaining valid for up to ten more
+    // days. The Flutter app already clears local storage on
+    // logout; this makes the server agree.
+    //
+    // Deliberately tolerant: a missing or malformed header still
+    // returns 200. Logout should never fail — the client is
+    // signing out either way, and an error here would just leave
+    // the user stuck on a screen they're trying to leave.
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            tokenBlacklistService.blacklist(authHeader.substring(7));
+        }
+        return ResponseEntity.ok(
+                java.util.Map.of("message", "Signed out successfully"));
     }
 
     // ─── Inner DTOs ───────────────────────────────────

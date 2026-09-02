@@ -58,6 +58,25 @@ public class JwtUtil {
         return parseClaims(token).get("role", String.class);
     }
 
+    /**
+     * Milliseconds until this token expires naturally, or 0 if it
+     * has already expired / can't be read.
+     *
+     * Used by the logout blacklist: a revoked token only needs to be
+     * remembered until its own expiry, after which it's rejected by
+     * signature validation anyway. That keeps the blacklist small and
+     * self-cleaning instead of growing forever.
+     */
+    public long getRemainingValidityMillis(String token) {
+        try {
+            java.util.Date expiry = parseClaims(token).getExpiration();
+            long remaining = expiry.getTime() - System.currentTimeMillis();
+            return remaining > 0 ? remaining : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     public boolean validateToken(String token) {
         try {
             parseClaims(token);
