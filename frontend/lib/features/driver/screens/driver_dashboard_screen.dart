@@ -739,7 +739,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                         Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              StatusBadge(status: order['status'] ?? ''),
+                              StatusBadge(
+                                status: order['status'] ?? '',
+                                isRide: order['orderType'] == 'MOBILITY',
+                              ),
                               const SizedBox(height: 4),
                               Text('\$${order['grandTotal'] ?? 0}',
                                   style: AppTextStyles.priceSmall),
@@ -1072,7 +1075,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                                         style: AppTextStyles.labelLarge
                                             .copyWith(
                                                 color: AppColors.primary)),
-                                    StatusBadge(status: order['status'] ?? ''),
+                                    StatusBadge(
+                                      status: order['status'] ?? '',
+                                      isRide: order['orderType'] == 'MOBILITY',
+                                    ),
                                   ]),
                               const SizedBox(height: 8),
                               Text('Pickup: ${order['pickupAddress'] ?? 'N/A'}',

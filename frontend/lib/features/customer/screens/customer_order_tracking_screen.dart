@@ -285,7 +285,10 @@ class _CustomerOrderTrackingScreenState
                               style: AppTextStyles.headlineLarge,
                             ),
                             const SizedBox(height: 4),
-                            StatusBadge(status: _currentStatus),
+                            StatusBadge(
+                              status: _currentStatus,
+                              isRide: _isRide,
+                            ),
                           ]),
                         ),
 

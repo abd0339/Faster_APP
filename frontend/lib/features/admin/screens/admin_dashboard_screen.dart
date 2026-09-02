@@ -1139,7 +1139,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   style: AppTextStyles.labelLarge
                       .copyWith(color: AppColors.primary)),
               const Spacer(),
-              StatusBadge(status: status),
+              StatusBadge(
+                status: status,
+                isRide: order['orderType'] == 'MOBILITY',
+              ),
             ]),
             const SizedBox(height: 8),
             Row(children: [

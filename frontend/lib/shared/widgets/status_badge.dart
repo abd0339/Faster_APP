@@ -10,7 +10,14 @@ class StatusBadge extends StatelessWidget {
     super.key,
     required this.status,
     this.fontSize = 11,
+    this.isRide = false,
   });
+
+  /// When true the labels use ride wording. A passenger trip has no
+  /// "Preparing" stage and the customer isn't cargo, so "Delivered"
+  /// and "On the way" read wrongly. Defaults to false so every
+  /// existing usage keeps its delivery wording unchanged.
+  final bool isRide;
 
   Color get _color {
     switch (status.toUpperCase()) {
@@ -40,6 +47,24 @@ class StatusBadge extends StatelessWidget {
   }
 
   String get _label {
+    if (isRide) {
+      switch (status.toUpperCase()) {
+        case 'PENDING':
+          return '⏳ Ride requested';
+        case 'ACCEPTED':
+          return '✅ Driver assigned';
+        case 'PICKED_UP':
+          return '🚗 On the way';
+        case 'DELIVERED':
+          return '🏁 Arrived';
+        case 'CANCELLED':
+          return '❌ Cancelled';
+        case 'DISPUTED':
+          return '⚠️ Disputed';
+      }
+      // PREPARING / READY_FOR_PICKUP never occur on a ride, so any
+      // other value falls through to the shared labels below.
+    }
     switch (status.toUpperCase()) {
       case 'PENDING':
         return '⏳ Pending';
