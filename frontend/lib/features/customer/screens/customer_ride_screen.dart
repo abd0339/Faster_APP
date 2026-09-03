@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
-import '../../../core/constants/app_config.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../shared/widgets/glass_card.dart';
@@ -575,7 +574,6 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                 hint: 'Where are you going?',
                 label: 'Destination',
                 prefixIcon: Icons.flag_rounded,
-                apiKey: AppConfig.googlePlacesKey,
                 onPlaceSelected: (result) {
                   _dropoffCtrl.text = result.address;
                   _dropoffLat = result.lat;

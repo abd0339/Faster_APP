@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart' as dio;
 import 'package:latlong2/latlong.dart';
-import 'package:faster_app/core/constants/app_config.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -978,7 +977,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                             GooglePlacesSearchField(
                               hint: 'Delivery address (area / landmark)',
                               label: 'Delivery Address',
-                              apiKey: AppConfig.googlePlacesKey,
                               controller: deliveryCtrl,
                               maxLines: 2,
                               onPlaceSelected: (result) {
@@ -994,7 +992,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                             GooglePlacesSearchField(
                               hint: 'Street, building, area...',
                               label: 'Delivery Address',
-                              apiKey: AppConfig.googlePlacesKey,
                               controller: deliveryCtrl,
                               maxLines: 2,
                               onPlaceSelected: (result) {

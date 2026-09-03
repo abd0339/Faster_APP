@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
+import '../../core/constants/api_constants.dart';
+import '../../core/services/api_service.dart';
 import 'package:latlong2/latlong.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -34,7 +35,6 @@ class GooglePlacesSearchField extends StatefulWidget {
   final String hint;
   final String label;
   final IconData prefixIcon;
-  final String apiKey;
   final ValueChanged<PlaceResult> onPlaceSelected;
   final TextEditingController? controller;
   final int maxLines;
@@ -45,7 +45,6 @@ class GooglePlacesSearchField extends StatefulWidget {
     super.key,
     required this.hint,
     required this.label,
-    required this.apiKey,
     required this.onPlaceSelected,
     this.prefixIcon = Icons.location_on_outlined,
     this.controller,
@@ -65,16 +64,18 @@ class _GooglePlacesSearchFieldState extends State<GooglePlacesSearchField> {
   List<Map<String, dynamic>> _predictions = [];
   bool _isSearching = false;
   bool _showDropdown = false;
-  final _dio = dio.Dio();
-
-  bool get _hasApiKey =>
-      widget.apiKey.isNotEmpty &&
-      widget.apiKey != 'YOUR_GOOGLE_PLACES_KEY_HERE';
-
-  static const _autocompleteUrl =
-      'https://maps.googleapis.com/maps/api/place/autocomplete/json';
-  static const _detailsUrl =
-      'https://maps.googleapis.com/maps/api/place/details/json';
+  // H5 FIX: this widget used to call Google directly with an API
+  // key passed in from the Flutter bundle. Anything in a web bundle
+  // is public — the key was readable in DevTools and usable to run
+  // up charges on our Google billing account.
+  //
+  // It now calls OUR backend, which holds the key server-side and
+  // forwards the request. The key is no longer in the app at all.
+  // Requests go through ApiService so they carry the user's JWT,
+  // which also stops anonymous scrapers burning our quota.
+  //
+  // The response shape is unchanged (the proxy passes Google's JSON
+  // straight through), so the parsing below still works as-is.
 
   @override
   void initState() {
@@ -91,7 +92,6 @@ class _GooglePlacesSearchFieldState extends State<GooglePlacesSearchField> {
 
   void _onChanged(String value) {
     setState(() {});
-    if (!_hasApiKey) return;
     _debounce?.cancel();
     if (value.length < 3) {
       setState(() {
@@ -106,16 +106,12 @@ class _GooglePlacesSearchFieldState extends State<GooglePlacesSearchField> {
   }
 
   Future<void> _searchPlaces(String query) async {
-    if (!_hasApiKey || !mounted) return;
+    if (!mounted) return;
     setState(() => _isSearching = true);
     try {
-      final r = await _dio.get(_autocompleteUrl, queryParameters: {
-        'input': query,
-        'key': widget.apiKey,
-        'components': 'country:lb',
-        'language': 'en',
-        'types': 'geocode|establishment',
-      });
+      final r = await ApiService.instance.get(
+        '${ApiConstants.placesAutocomplete}?input=${Uri.encodeComponent(query)}',
+      );
       if (!mounted) return;
       final preds =
           (r.data['predictions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
@@ -136,11 +132,9 @@ class _GooglePlacesSearchFieldState extends State<GooglePlacesSearchField> {
 
   Future<PlaceResult> _getPlaceDetails(String placeId, String desc) async {
     try {
-      final r = await _dio.get(_detailsUrl, queryParameters: {
-        'place_id': placeId,
-        'key': widget.apiKey,
-        'fields': 'geometry,formatted_address',
-      });
+      final r = await ApiService.instance.get(
+        '${ApiConstants.placesDetails}?placeId=${Uri.encodeComponent(placeId)}',
+      );
       final result = r.data['result'] as Map<String, dynamic>?;
       final loc = result?['geometry']?['location'];
       return PlaceResult(

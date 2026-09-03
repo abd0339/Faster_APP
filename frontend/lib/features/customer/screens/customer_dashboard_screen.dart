@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
-import '../../../core/constants/app_config.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../shared/widgets/glass_card.dart';
@@ -511,7 +510,6 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                         GooglePlacesSearchField(
                           hint: 'Where to deliver?',
                           label: 'Delivery Address',
-                          apiKey: AppConfig.googlePlacesKey,
                           controller: deliveryCtrl,
                           maxLines: 2,
                           onPlaceSelected: (result) {

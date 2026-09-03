@@ -8,15 +8,15 @@ class AppConfig {
       dotenv.env['BACKEND_URL'] ?? 'http://localhost:8080';
 
   // ─── Google Places API Key ─────────────────────────
-  static String get googlePlacesKey =>
-      dotenv.env['GOOGLE_PLACES_API_KEY'] ?? '';
+  // H5 REMOVED: the Places key must never be in the client bundle
+  // again — anything shipped to a browser is public. Address search
+  // goes through /api/places/* on the backend, which holds the key.
 
   // ─── Admin WhatsApp ────────────────────────────────
   static String get adminWhatsApp =>
       dotenv.env['ADMIN_WHATSAPP'] ?? '96100000000';
 
   // ─── Is Google Places enabled? ────────────────────
-  static bool get hasGooglePlaces => googlePlacesKey.isNotEmpty;
 
   // ─── Commission rates ──────────────────────────────
   static double get driverCommissionRate =>

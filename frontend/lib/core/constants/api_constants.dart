@@ -54,6 +54,11 @@ class ApiConstants {
       '/api/admin/drivers/$driverId/documents/$docType';
 
   // ─── Orders ───────────────────────────────────────
+  // H5: address search now goes through OUR backend, which holds
+  // the Google key server-side. The key is no longer in this app.
+  static const String placesAutocomplete = '/api/places/autocomplete';
+  static const String placesDetails = '/api/places/details';
+
   static const String orders = '/api/orders';
 
   // Coordinates-only delivery fee quote — used by the Direct

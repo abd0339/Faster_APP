@@ -77,6 +77,8 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
       TWILIO_DEFAULT_CHANNEL: ${TWILIO_DEFAULT_CHANNEL}
+      # H5: Places key moved out of the Flutter bundle to here
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY}
     volumes:
       # Persist user-uploaded PUBLIC images outside the container
       - uploads_data:/app/uploads
