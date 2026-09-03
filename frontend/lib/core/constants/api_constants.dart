@@ -22,6 +22,9 @@ class ApiConstants {
   static const String login = '/api/auth/login';
   static const String verifyOtp = '/api/auth/verify-otp';
   static const String resendOtp = '/api/auth/resend-otp';
+  // M5: revokes the token server-side so it stops working straight
+  // away rather than staying valid for the rest of its 10-day life.
+  static const String logout = '/api/auth/logout';
 
   // ─── Merchant ─────────────────────────────────────
   static const String categories = '/api/merchant/categories';

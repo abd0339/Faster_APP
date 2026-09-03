@@ -147,6 +147,16 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     // once signed out. Wrapped internally so any failure
     // here never blocks the actual logout below.
     await PushNotificationService.instance.unregister();
+
+    // M5: tell the server to revoke this token before we drop it.
+    // Must run BEFORE clearAll(), since the request needs the token
+    // that clearAll() is about to delete. Wrapped so a network
+    // failure can never trap the user in a logged-in state — local
+    // sign-out proceeds regardless.
+    try {
+      await ApiService.instance.post(ApiConstants.logout);
+    } catch (_) {}
+
     await StorageService.instance.clearAll();
     emit(AuthLoggedOut());
   }
