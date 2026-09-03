@@ -365,9 +365,8 @@ class _GooglePlacesSearchFieldState extends State<GooglePlacesSearchField> {
                 size: 12, color: AppColors.textHint),
             const SizedBox(width: 4),
             Text(
-              _hasApiKey
-                  ? 'Type to search or tap 🗺 to pick on map'
-                  : 'Type your address or tap 🗺 to pick on map',
+              'Type to search or tap 🗺 to pick on map'
+              'Type your address or tap 🗺 to pick on map',
               style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
             ),
           ]),
