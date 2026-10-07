@@ -1,8 +1,11 @@
 package com.faster.backend.config;
 
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
 
 // ─────────────────────────────────────────────────────
 // RestTemplateConfig
@@ -12,24 +15,24 @@ import org.springframework.web.client.RestTemplate;
 // to Twilio and Vonage APIs without adding
 // their heavy SDKs to pom.xml.
 //
-// In production you can configure timeouts here:
-//   connectTimeout = 5 seconds
-//   readTimeout    = 10 seconds
+// Timeouts are required, not optional: a bare
+// `new RestTemplate()` uses SimpleClientHttpRequestFactory
+// with connectTimeout/readTimeout = 0, which means INFINITE,
+// not "sensible default". Every outbound call runs on a
+// Tomcat worker thread (200 by default); if Twilio or Google
+// stops responding without closing the socket, that worker
+// is parked forever. Enough of those and the backend stops
+// answering anything — including /api/health — and needs a
+// container restart to recover.
 // ─────────────────────────────────────────────────────
 @Configuration
 public class RestTemplateConfig {
 
     @Bean
-    public RestTemplate restTemplate() {
-        // Simple factory — add timeout config here
-        // if needed in production:
-        //
-        // HttpComponentsClientHttpRequestFactory factory =
-        //     new HttpComponentsClientHttpRequestFactory();
-        // factory.setConnectTimeout(5000);
-        // factory.setReadTimeout(10000);
-        // return new RestTemplate(factory);
-
-        return new RestTemplate();
+    public RestTemplate restTemplate(RestTemplateBuilder builder) {
+        return builder
+                .setConnectTimeout(Duration.ofSeconds(5))
+                .setReadTimeout(Duration.ofSeconds(10))
+                .build();
     }
 }

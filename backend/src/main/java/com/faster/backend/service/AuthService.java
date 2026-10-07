@@ -15,6 +15,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -34,6 +38,7 @@ public class AuthService {
     private static final int OTP_EXPIRY_MINUTES = 10;
     private static final int OTP_MAX_ATTEMPTS = 3;
     private static final SecureRandom RANDOM = new SecureRandom();
+    private final OtpRateLimitService otpRateLimitService;
 
     // ─────────────────────────────────────────────────
     // REGISTER
@@ -127,6 +132,7 @@ public class AuthService {
         userRepository.save(user);
 
         otpRepository.deleteAllByUserId(user.getId());
+        otpRateLimitService.clear(phone); 
 
         log.info("✅ Phone verified for user {} ({})", user.getFullName(), phone);
 
@@ -272,20 +278,23 @@ public class AuthService {
 
         otpRepository.save(otp);
 
-        // COST FIX: this message used to start with a 🔐 emoji and
-        // contain an em dash (—). Both are outside GSM-7, which
-        // forces the whole SMS into UCS-2 encoding — dropping the
-        // limit from 160 chars to 67 per segment. The old message
-        // (~180 chars) therefore billed as THREE segments, roughly
-        // $1.08 per OTP to Lebanon instead of $0.36.
-        //
-        // This version is plain GSM-7 only (no emoji, no em dash,
-        // no curly quotes) and stays under 160 characters, so it
-        // always bills as a SINGLE segment. Keep it that way:
-        // adding ANY emoji or fancy punctuation here instantly
-        // triples the cost of every registration on the platform.
-        // Verify with Twilio's Message Segment Calculator before
-        // changing this string.
+        // Record/check the rate limit only AFTER the OTP row is
+        // actually persisted. The Redis writes inside checkAndRecord
+        // are not part of this JPA transaction, so if they ran first
+        // and otpRepository.save() then failed, the DB insert would
+        // roll back while the Redis cooldown/day-count stayed
+        // committed — burning a real attempt for an OTP that was
+        // never created. Running it after the save means a save
+        // failure never touches Redis at all.
+        otpRateLimitService.checkAndRecord(
+                user.getPhone(), resolveClientIp());
+
+        // COST FIX: GSM-7 only — no emoji, no em dash, no curly
+        // quotes. Any of those forces the whole SMS into UCS-2,
+        // dropping the limit from 160 chars/segment to 67 and
+        // tripling the Twilio cost (OTP: $0.36 -> $1.08). Keep this
+        // message plain ASCII and under 160 characters; verify with
+        // Twilio's Message Segment Calculator before changing it.
         String message = "Faster App: your verification code is "
                 + code + ". It expires in " + OTP_EXPIRY_MINUTES
                 + " minutes. If you did not request this, ignore this message.";
@@ -296,9 +305,6 @@ public class AuthService {
                 channel, maskPhone(user.getPhone()), user.getFullName());
     }
 
-    // Accepts "SMS" / "WHATSAPP" (case-insensitive), defaults
-    // to WhatsApp for null/blank/unrecognized values — never
-    // throws, since a typo here should never block a resend.
     // Accepts "SMS" / "WHATSAPP" (case-insensitive), defaults
     // to SMS — the only channel proven reliable for Lebanese
     // numbers (WhatsApp requires a Meta-approved Message
@@ -320,5 +326,38 @@ public class AuthService {
         if (phone == null || phone.length() < 6)
             return "***";
         return phone.substring(0, 4) + "***" + phone.substring(phone.length() - 4);
+    }
+
+    private String resolveClientIp() {
+        try {
+            RequestAttributes attrs =
+                    RequestContextHolder.getRequestAttributes();
+
+            if (!(attrs instanceof ServletRequestAttributes servletAttrs)) {
+                return null;
+            }
+
+            HttpServletRequest request = servletAttrs.getRequest();
+
+            String forwarded = request.getHeader("X-Forwarded-For");
+            if (forwarded != null && !forwarded.isBlank()) {
+                // nginx is the only reverse proxy in front of this
+                // service and appends the real client IP with
+                // $proxy_add_x_forwarded_for — it does NOT overwrite
+                // a client-supplied header, so "client, proxy1, ..."
+                // may start with attacker-chosen entries. Only the
+                // LAST entry (the one nginx itself added) is trusted;
+                // taking the first would let anyone spoof a fresh IP
+                // on every request and bypass the per-IP daily cap.
+                String[] parts = forwarded.split(",");
+                return parts[parts.length - 1].trim();
+            }
+
+            return request.getRemoteAddr();
+
+        } catch (Exception e) {
+            // Never fail an OTP send because the IP could not be read.
+            return null;
+        }
     }
 }
