@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:latlong2/latlong.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/map_picker_screen.dart';
 
 class MerchantScheduleScreen extends StatefulWidget {
   const MerchantScheduleScreen({super.key});
@@ -53,6 +55,13 @@ class _MerchantScheduleScreenState extends State<MerchantScheduleScreen> {
   bool _isSaving = false;
   Map<String, dynamic>? _storeStatus;
 
+  // ─── Store location (used for real distance-based
+  // delivery pricing instead of the flat min-fee) ────
+  double? _storeLat;
+  double? _storeLng;
+  String? _storeAddress;
+  bool _isSavingLocation = false;
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +88,7 @@ class _MerchantScheduleScreenState extends State<MerchantScheduleScreen> {
       final results = await Future.wait([
         ApiService.instance.get(ApiConstants.schedule),
         ApiService.instance.get('${ApiConstants.schedule}/status'),
+        ApiService.instance.get(ApiConstants.merchantLocation),
       ]);
 
       if (!mounted) return;
@@ -99,8 +109,15 @@ class _MerchantScheduleScreenState extends State<MerchantScheduleScreen> {
         };
       }
 
+      final location = results[2].data as Map<String, dynamic>?;
+
       setState(() {
         _storeStatus = results[1].data as Map<String, dynamic>?;
+        _storeLat = (location?['storeLatitude'] as num?)?.toDouble();
+        _storeLng = (location?['storeLongitude'] as num?)?.toDouble();
+        _storeAddress = (location?['storeAddress'] as String?)?.isNotEmpty == true
+            ? location!['storeAddress'] as String
+            : null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -154,6 +171,50 @@ class _MerchantScheduleScreenState extends State<MerchantScheduleScreen> {
     });
     if (!kIsWeb) HapticFeedback.selectionClick();
     _showSuccess('Applied to all open days');
+  }
+
+  // ─── STORE LOCATION — map pin, used server-side as the
+  // pickup point for real distance-based delivery fees ──
+  Future<void> _pickStoreLocation() async {
+    final result = await Navigator.push<MapPickResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapPickerScreen(
+          title: 'Set Store Location',
+          confirmLabel: 'Save Store Location',
+          initialLocation: _storeLat != null && _storeLng != null
+              ? LatLng(_storeLat!, _storeLng!)
+              : null,
+        ),
+        fullscreenDialog: true,
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    setState(() => _isSavingLocation = true);
+    try {
+      await ApiService.instance.put(
+        ApiConstants.merchantLocation,
+        data: {
+          'latitude': result.lat,
+          'longitude': result.lng,
+          'address': result.address,
+        },
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _storeLat = result.lat;
+        _storeLng = result.lng;
+        _storeAddress = result.address;
+      });
+      _showSuccess('Store location saved!');
+    } catch (e) {
+      if (mounted) _showError(ApiService.getErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _isSavingLocation = false);
+    }
   }
 
   // ─── BUILD ────────────────────────────────────────
@@ -231,6 +292,10 @@ class _MerchantScheduleScreenState extends State<MerchantScheduleScreen> {
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
       child: Column(
         children: [
+          // ─── Store location card ───────────
+          _buildStoreLocationCard(),
+          const SizedBox(height: 20),
+
           // ─── Quick apply card ──────────────
           _buildQuickApplyCard(),
           const SizedBox(height: 20),
@@ -246,6 +311,65 @@ class _MerchantScheduleScreenState extends State<MerchantScheduleScreen> {
             icon: Icons.save_outlined,
             isLoading: _isSaving,
             onPressed: _saveSchedule,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── STORE LOCATION CARD ──────────────────────────
+  Widget _buildStoreLocationCard() {
+    final hasLocation = _storeLat != null && _storeLng != null;
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.storefront_rounded,
+                color: AppColors.primary, size: 18),
+            const SizedBox(width: 8),
+            Text('Store Location', style: AppTextStyles.headlineSmall),
+          ]),
+          const SizedBox(height: 4),
+          Text(
+            hasLocation
+                ? 'Delivery fees are calculated from this pickup point.'
+                : 'Not set yet — orders are charged a flat minimum '
+                    'delivery fee until you set your store\'s pin.',
+            style: AppTextStyles.bodyMedium,
+          ),
+          const SizedBox(height: 12),
+          if (hasLocation)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.glassWhite,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Row(children: [
+                const Icon(Icons.location_on_rounded,
+                    color: AppColors.accent, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _storeAddress ??
+                        '${_storeLat!.toStringAsFixed(5)}, '
+                            '${_storeLng!.toStringAsFixed(5)}',
+                    style: AppTextStyles.caption,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ]),
+            ),
+          AppButton(
+            label: hasLocation ? 'Update Store Location' : 'Set Store Location',
+            icon: Icons.map_rounded,
+            isLoading: _isSavingLocation,
+            onPressed: _pickStoreLocation,
           ),
         ],
       ),

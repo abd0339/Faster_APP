@@ -32,6 +32,7 @@ class ApiConstants {
   static const String schedule = '/api/merchant/schedule';
   static const String offers = '/api/merchant/offers';
   static const String scheduleBulk = '/api/merchant/schedule/bulk';
+  static const String merchantLocation = '/api/merchant/location';
   static String customerLookup(String phone) =>
       '/api/merchant/customer/lookup?phone=${Uri.encodeComponent(phone)}';
 

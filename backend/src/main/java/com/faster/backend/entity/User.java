@@ -88,6 +88,15 @@ public class User {
     private String vehicleType; // MOTO / CAR / TOKTOK
     private String vehiclePlate;
 
+    // ─── Merchant store location (Role.MERCHANT only) ─
+    // Null until the merchant sets it via
+    // PUT /api/merchant/location. PricingService falls
+    // back to the flat minimum delivery fee while this
+    // is null — see PricingService.calculateDeliveryFee().
+    private Double storeLatitude;
+    private Double storeLongitude;
+    private String storeAddress;
+
     // ─── Document paths (PRIVATE storage — never public) ─
     // These store a RELATIVE path under the private upload
     // root (e.g. "drivers/42/profile-<uuid>.jpg"), never a

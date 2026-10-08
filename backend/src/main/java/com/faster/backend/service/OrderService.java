@@ -102,9 +102,22 @@ public class OrderService {
                         Double pickupLat, Double pickupLng,
                         Double deliveryLat, Double deliveryLng) {
 
+                User merchant = getUser(merchantId);
+
+                // Pickup for a store order is always the STORE's
+                // location, never a client-supplied value — same
+                // C2 rule as pricing itself. Falls back to whatever
+                // was passed in (normally null from the storefront
+                // flow) only while the merchant hasn't set one yet;
+                // PricingService then applies its flat min-fee.
+                Double effectivePickupLat = merchant.getStoreLatitude() != null
+                                ? merchant.getStoreLatitude() : pickupLat;
+                Double effectivePickupLng = merchant.getStoreLongitude() != null
+                                ? merchant.getStoreLongitude() : pickupLng;
+
                 BigDecimal totalPrice = pricingService.calculateItemsTotal(merchantId, items);
                 BigDecimal deliveryFee = pricingService.calculateDeliveryFee(
-                                pickupLat, pickupLng, deliveryLat, deliveryLng);
+                                effectivePickupLat, effectivePickupLng, deliveryLat, deliveryLng);
                 BigDecimal grandTotal = totalPrice.add(deliveryFee)
                                 .setScale(2, RoundingMode.HALF_UP);
 
@@ -134,10 +147,19 @@ public class OrderService {
                 User merchant = getUser(merchantId);
                 User customer = getUser(customerId);
 
+                // Same store-location resolution as quoteLogisticsOrder()
+                // above — see comment there. Keep in sync.
+                Double effectivePickupLat = merchant.getStoreLatitude() != null
+                                ? merchant.getStoreLatitude() : pickupLat;
+                Double effectivePickupLng = merchant.getStoreLongitude() != null
+                                ? merchant.getStoreLongitude() : pickupLng;
+                String effectivePickupAddress = merchant.getStoreAddress() != null
+                                ? merchant.getStoreAddress() : pickupAddress;
+
                 BigDecimal totalPrice = pricingService.calculateItemsTotal(merchantId, items);
 
                 BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
-                                pickupLat, pickupLng, deliveryLat, deliveryLng);
+                                effectivePickupLat, effectivePickupLng, deliveryLat, deliveryLng);
 
                 BigDecimal driverCommission = actualDeliveryFee
                                 .multiply(DRIVER_COMMISSION_RATE)
@@ -163,9 +185,9 @@ public class OrderService {
                                 .grandTotal(grandTotal)
                                 .driverPaysMerchant(totalPrice)
                                 .merchantCommission(merchantCommission)
-                                .pickupLat(pickupLat)
-                                .pickupLng(pickupLng)
-                                .pickupAddress(pickupAddress)
+                                .pickupLat(effectivePickupLat)
+                                .pickupLng(effectivePickupLng)
+                                .pickupAddress(effectivePickupAddress)
                                 .deliveryLat(deliveryLat)
                                 .deliveryLng(deliveryLng)
                                 .deliveryAddress(deliveryAddress)
@@ -177,7 +199,7 @@ public class OrderService {
                 pricingService.decrementStockForOrder(items);
 
                 notifyNearestDrivers(
-                                saved, pickupLat, pickupLng,
+                                saved, effectivePickupLat, effectivePickupLng,
                                 Order.OrderType.LOGISTICS);
 
                 System.out.println(
