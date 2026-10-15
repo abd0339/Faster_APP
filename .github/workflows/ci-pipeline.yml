@@ -158,6 +158,12 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           source: "frontend/build/web/*"
           target: "/opt/faster-app/frontend/build/web"
+          # Confirmed by direct inspection: without this, the tool
+          # preserves the full source path, landing files at
+          # .../web/frontend/build/web/... instead of .../web/
+          # directly, so nginx kept serving the old build. "frontend",
+          # "build", "web" = 3 leading segments to strip.
+          strip_components: 3
           overwrite: true
 
       - name: Deploy to VPS via SSH
