@@ -79,6 +79,15 @@ jobs:
         working-directory: frontend
         run: flutter pub get
 
+      - name: Create placeholder .env
+        working-directory: frontend
+        # pubspec.yaml declares .env as a bundled asset (flutter_dotenv),
+        # but .env is gitignored (it holds secrets) so it doesn't exist
+        # in a fresh checkout. The web release build doesn't actually
+        # read it — real values come from --dart-define below — it just
+        # needs to EXIST or Flutter's asset bundler fails the build.
+        run: touch .env
+
       - name: Build Flutter web
         working-directory: frontend
         run: |
