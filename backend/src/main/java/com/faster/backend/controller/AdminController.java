@@ -150,6 +150,15 @@ public class AdminController {
                                 adminService.getDisputedOrders());
         }
 
+        // GET /api/admin/orders/price-flagged
+        // O2O orders with a suspiciously low manual price (M3 fix) —
+        // a review queue, not a block. See PricingService.validateO2OPrice().
+        @GetMapping("/orders/price-flagged")
+        public ResponseEntity<List<Order>> getPriceFlaggedOrders() {
+                return ResponseEntity.ok(
+                                adminService.getPriceFlaggedOrders());
+        }
+
         // GET /api/admin/orders/active
         @GetMapping("/orders/active")
         public ResponseEntity<List<Order>> getActiveOrders() {
@@ -270,7 +279,7 @@ public class AdminController {
                 User user = userRepository
                                 .findByEmail(principal)
                                 .orElseGet(() -> userRepository.findByPhone(principal)
-                                                .orElseThrow(() -> new RuntimeException(
+                                                .orElseThrow(() -> new NotFoundException(
                                                                 "Admin not found")));
                 return user.getId();
         }
@@ -294,7 +303,7 @@ public class AdminController {
         public ResponseEntity<?> approveDriver(
                         @PathVariable Long id) {
                 User driver = userRepository.findById(id)
-                                .orElseThrow(() -> new RuntimeException("Driver not found"));
+                                .orElseThrow(() -> new NotFoundException("Driver not found"));
                 driver.setVerificationStatus(
                                 User.DriverVerificationStatus.APPROVED);
                 userRepository.save(driver);
@@ -309,7 +318,7 @@ public class AdminController {
                         @PathVariable Long id,
                         @RequestParam String reason) {
                 User driver = userRepository.findById(id)
-                                .orElseThrow(() -> new RuntimeException("Driver not found"));
+                                .orElseThrow(() -> new NotFoundException("Driver not found"));
                 driver.setVerificationStatus(
                                 User.DriverVerificationStatus.REJECTED);
                 userRepository.save(driver);

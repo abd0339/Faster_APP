@@ -47,10 +47,10 @@ public class AuthService {
     public AuthResponse register(RegisterRequest request) {
 
         if (userRepository.existsByPhone(request.getPhone())) {
-            throw new RuntimeException("Phone number is already registered");
+            throw new BusinessException("Phone number is already registered");
         }
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email address is already registered");
+            throw new BusinessException("Email address is already registered");
         }
 
         User user = User.builder()
@@ -94,26 +94,26 @@ public class AuthService {
     public AuthResponse verifyOtp(String phone, String code) {
 
         User user = userRepository.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "No account found with this phone number"));
 
         if (Boolean.TRUE.equals(user.getIsPhoneVerified())) {
-            throw new RuntimeException("Phone number is already verified");
+            throw new BusinessException("Phone number is already verified");
         }
 
         OtpVerification otp = otpRepository
                 .findTopByUserIdAndIsUsedFalseOrderByCreatedAtDesc(user.getId())
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "No active OTP found. Request a new code."));
 
         if (LocalDateTime.now().isAfter(otp.getExpiresAt())) {
             otpRepository.deleteAllByUserId(user.getId());
-            throw new RuntimeException("Code has expired. Request a new one.");
+            throw new BusinessException("Code has expired. Request a new one.");
         }
 
         if (otp.getAttempts() >= OTP_MAX_ATTEMPTS) {
             otpRepository.deleteAllByUserId(user.getId());
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Too many wrong attempts. Request a new code.");
         }
 
@@ -121,7 +121,7 @@ public class AuthService {
             otp.setAttempts(otp.getAttempts() + 1);
             otpRepository.save(otp);
             int remaining = OTP_MAX_ATTEMPTS - otp.getAttempts();
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Wrong code. " + remaining + " attempt(s) remaining.");
         }
 
@@ -165,11 +165,11 @@ public class AuthService {
     public AuthResponse resendOtp(String phone, String channel) {
 
         User user = userRepository.findByPhone(phone)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "No account found with this phone number"));
 
         if (Boolean.TRUE.equals(user.getIsPhoneVerified())) {
-            throw new RuntimeException("Phone number is already verified");
+            throw new BusinessException("Phone number is already verified");
         }
 
         CommunicationService.Channel resolvedChannel = resolveChannel(channel);
@@ -200,30 +200,30 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
 
         if (request.getEmail() == null && request.getPhone() == null) {
-            throw new RuntimeException("Please provide your email or phone number");
+            throw new BusinessException("Please provide your email or phone number");
         }
 
         User user;
         if (request.getEmail() != null && !request.getEmail().isBlank()) {
             user = userRepository.findByEmail(request.getEmail().toLowerCase())
-                    .orElseThrow(() -> new RuntimeException(
+                    .orElseThrow(() -> new NotFoundException(
                             "No account found with this email address"));
         } else {
             user = userRepository.findByPhone(request.getPhone())
-                    .orElseThrow(() -> new RuntimeException(
+                    .orElseThrow(() -> new NotFoundException(
                             "No account found with this phone number"));
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Incorrect password. Please try again");
+            throw new BusinessException("Incorrect password. Please try again");
         }
 
         if (Boolean.FALSE.equals(user.getIsActive())) {
-            throw new RuntimeException("This account has been deactivated. Contact support");
+            throw new BusinessException("This account has been deactivated. Contact support");
         }
 
         if (Boolean.TRUE.equals(user.getIsBlocked())) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Your account has been paused by admin. "
                             + "Please settle your outstanding commission "
                             + "via OMT or WishMoney, then contact admin.");

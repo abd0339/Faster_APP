@@ -2,6 +2,7 @@ package com.faster.backend.controller;
 
 import com.faster.backend.dto.DeviceTokenRequest;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.service.PushNotificationService;
 import lombok.RequiredArgsConstructor;
@@ -60,7 +61,7 @@ public class DeviceTokenController {
         String principal = auth.getName();
         User user = userRepository.findByEmail(principal)
                 .orElseGet(() -> userRepository.findByPhone(principal)
-                        .orElseThrow(() -> new RuntimeException("User not found")));
+                        .orElseThrow(() -> new NotFoundException("User not found")));
         return user.getId();
     }
 }

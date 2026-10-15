@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.faster.backend.entity.Category;
 import com.faster.backend.entity.Item;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.CategoryRepository;
 import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.UserRepository;
@@ -88,7 +89,7 @@ public class ItemService {
             MultipartFile image) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Item not found"));
 
         // Delete old image if exists
@@ -113,7 +114,7 @@ public class ItemService {
             Long itemId) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Item not found"));
 
         item.setIsAvailable(!item.getIsAvailable());
@@ -129,7 +130,7 @@ public class ItemService {
             int hours) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Item not found"));
 
         item.setIsSnoozed(true);
@@ -147,7 +148,7 @@ public class ItemService {
             Long itemId) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Item not found"));
 
         item.setIsSnoozed(false);
@@ -168,7 +169,7 @@ public class ItemService {
     public Item getItem(Long merchantId, Long itemId) {
         return itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Item not found"));
     }
 
@@ -185,7 +186,7 @@ public class ItemService {
 
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Item not found"));
 
         if (name != null && !name.isBlank()) {
@@ -220,7 +221,7 @@ public class ItemService {
             Long itemId) {
         Item item = itemRepository
                 .findByIdAndMerchantId(itemId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Item not found"));
 
         // Delete image from disk
@@ -262,7 +263,7 @@ public class ItemService {
     // ─── Helpers ──────────────────────────────────────
     private User getMerchant(Long merchantId) {
         return userRepository.findById(merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Merchant not found"));
     }
 
@@ -271,7 +272,7 @@ public class ItemService {
         return categoryRepository
                 .findByIdAndMerchantId(
                         categoryId, merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Category not found or doesn't " +
                                 "belong to this merchant"));
     }

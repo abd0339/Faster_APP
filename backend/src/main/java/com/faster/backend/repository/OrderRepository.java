@@ -57,6 +57,11 @@ public interface OrderRepository
     List<Order> findByStatusInOrderByCreatedAtDesc(
             List<Order.OrderStatus> statuses);
 
+    // ─── O2O orders with a suspiciously low manual price ─
+    // (M3 fix) — review queue, not a block. See PricingService
+    // .validateO2OPrice() and OrderService.createO2OOrder().
+    List<Order> findByIsPriceFlaggedTrueOrderByCreatedAtDesc();
+
     // ─── Find pending orders for a merchant ───────────
     @Query("SELECT o FROM Order o " +
            "WHERE o.status = 'PENDING' " +

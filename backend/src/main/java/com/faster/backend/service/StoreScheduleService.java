@@ -2,6 +2,7 @@ package com.faster.backend.service;
 
 import com.faster.backend.entity.StoreSchedule;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.StoreScheduleRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +32,7 @@ public class StoreScheduleService {
             Boolean isClosed) {
 
         User merchant = userRepository.findById(merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                     "Merchant not found"));
 
         // Update if exists, create if not

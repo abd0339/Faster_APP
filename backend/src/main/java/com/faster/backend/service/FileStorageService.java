@@ -1,5 +1,6 @@
 package com.faster.backend.service;
 
+import com.faster.backend.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -96,7 +97,7 @@ public class FileStorageService {
             return "/" + uploadDir + "/" + subFolder + "/" + fileName;
 
         } catch (IOException e) {
-            throw new RuntimeException("Failed to save image");
+            throw new BusinessException("Failed to save image");
         }
     }
 
@@ -170,7 +171,7 @@ public class FileStorageService {
             return subFolder + "/" + entityId + "/" + fileName;
 
         } catch (IOException e) {
-            throw new RuntimeException("Failed to save document");
+            throw new BusinessException("Failed to save document");
         }
     }
 

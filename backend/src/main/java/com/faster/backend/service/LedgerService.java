@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.faster.backend.entity.LedgerEntry;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.LedgerRepository;
 import com.faster.backend.repository.UserRepository;
 
@@ -152,16 +154,16 @@ public class LedgerService {
 
         User driver = userRepository
                 .findById(driverId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Driver not found"));
 
         if (driver.getRole() != User.Role.DRIVER) {
-            throw new RuntimeException("User is not a driver");
+            throw new BusinessException("User is not a driver");
         }
 
         if (amountPaid == null ||
                 amountPaid.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Payment amount must be greater than 0");
         }
 
@@ -375,12 +377,12 @@ public class LedgerService {
 
         User merchant = userRepository
                 .findById(merchantId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Merchant not found"));
 
         if (amountPaid == null ||
                 amountPaid.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Payment amount must be greater than 0");
         }
 
@@ -436,7 +438,7 @@ public class LedgerService {
     public Map<String, Object> getDriverDebtSummary(Long driverId) {
         User driver = userRepository.findById(driverId)
                 .orElseThrow(() ->
-                        new RuntimeException("Driver not found"));
+                        new NotFoundException("Driver not found"));
 
         BigDecimal debt = driver.getDebtAmount() != null
                 ? driver.getDebtAmount()

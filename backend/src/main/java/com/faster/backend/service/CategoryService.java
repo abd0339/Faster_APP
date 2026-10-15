@@ -2,6 +2,8 @@ package com.faster.backend.service;
 
 import com.faster.backend.entity.Category;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.CategoryRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +29,7 @@ public class CategoryService {
         // Check duplicate — ACTIVE rows only
         if (categoryRepository
                 .existsByNameAndMerchantIdAndIsActiveTrue(name, merchantId)) {
-            throw new RuntimeException(
+            throw new BusinessException(
                 "Category '" + name + "' already exists");
         }
 
@@ -74,7 +76,7 @@ public class CategoryService {
 
         Category category = categoryRepository
                 .findByIdAndMerchantId(categoryId, merchantId)
-                .orElseThrow(() -> new RuntimeException("Category not found"));
+                .orElseThrow(() -> new NotFoundException("Category not found"));
 
         if (name != null && !name.isBlank()) {
             // Check name clash only against OTHER active categories
@@ -82,7 +84,7 @@ public class CategoryService {
                     .existsByNameAndMerchantIdAndIsActiveTrue(name, merchantId)
                     && !category.getName().equals(name);
             if (nameClash) {
-                throw new RuntimeException(
+                throw new BusinessException(
                     "Category '" + name + "' already exists");
             }
             category.setName(name);
@@ -105,7 +107,7 @@ public class CategoryService {
     public void deleteCategory(Long merchantId, Long categoryId) {
         Category category = categoryRepository
                 .findByIdAndMerchantId(categoryId, merchantId)
-                .orElseThrow(() -> new RuntimeException("Category not found"));
+                .orElseThrow(() -> new NotFoundException("Category not found"));
 
         categoryRepository.delete(category);
     }
@@ -113,6 +115,6 @@ public class CategoryService {
     // ─── Helper ───────────────────────────────────────
     private User getMerchant(Long merchantId) {
         return userRepository.findById(merchantId)
-                .orElseThrow(() -> new RuntimeException("Merchant not found"));
+                .orElseThrow(() -> new NotFoundException("Merchant not found"));
     }
 }

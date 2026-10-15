@@ -5,6 +5,7 @@ import com.faster.backend.dto.OrderRequest;
 import com.faster.backend.dto.OrderStatusRequest;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.service.OrderService;
@@ -245,7 +246,7 @@ public class OrderController {
 
                 User user = getUser(auth);
                 Order order = orderRepository.findById(id)
-                                .orElseThrow(() -> new RuntimeException("Order not found"));
+                                .orElseThrow(() -> new NotFoundException("Order not found"));
 
                 boolean isMerchant = order.getMerchant() != null &&
                                 order.getMerchant().getId().equals(user.getId());
@@ -496,7 +497,7 @@ public class OrderController {
                 String principal = auth.getName();
                 return userRepository.findByEmail(principal)
                                 .orElseGet(() -> userRepository.findByPhone(principal)
-                                                .orElseThrow(() -> new RuntimeException(
+                                                .orElseThrow(() -> new NotFoundException(
                                                                 "User not found")));
         }
 }

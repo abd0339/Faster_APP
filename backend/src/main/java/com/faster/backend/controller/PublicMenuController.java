@@ -3,6 +3,7 @@ package com.faster.backend.controller;
 import com.faster.backend.dto.PublicMenuDTO;
 import com.faster.backend.entity.Category;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.service.MenuCacheService;
 import com.faster.backend.service.OfferService;
@@ -60,7 +61,7 @@ public class PublicMenuController {
                         @PathVariable Long merchantId) {
 
                 userRepository.findById(merchantId)
-                                .orElseThrow(() -> new RuntimeException(
+                                .orElseThrow(() -> new NotFoundException(
                                                 "Store not found"));
 
                 List<Category> rawCategories = menuCacheService

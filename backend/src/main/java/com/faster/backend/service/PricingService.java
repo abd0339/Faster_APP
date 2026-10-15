@@ -47,6 +47,20 @@ public class PricingService {
     @Value("${pricing.delivery.min-fee:1.50}")
     private BigDecimal deliveryMinFee;
 
+    // ─── O2O manual price guardrails (M3 fix) ────────
+    // O2O keeps manual price entry (phone orders can include
+    // off-catalog items — see Order.isPriceFlagged), but these
+    // bound it: hard-reject obvious typos/fraud, soft-flag
+    // anything merely low for admin review.
+    @Value("${pricing.o2o.min-price:1.00}")
+    private BigDecimal o2oMinPrice;
+
+    @Value("${pricing.o2o.max-price:1000.00}")
+    private BigDecimal o2oMaxPrice;
+
+    @Value("${pricing.o2o.review-threshold:5.00}")
+    private BigDecimal o2oReviewThreshold;
+
     // ─── Ride fee (MOBILITY) — distance-based ────────
     @Value("${pricing.ride.base-fee:1.50}")
     private BigDecimal rideBaseFee;
@@ -172,6 +186,39 @@ public class PricingService {
                         line.getItemId(), line.getQuantity());
             }
         }
+    }
+
+    // ─────────────────────────────────────────────────
+    // O2O MANUAL PRICE CHECK (M3 fix)
+    // Hard-rejects values that can only be a typo or an
+    // attempt to dodge commission (e.g. $0.01). Returns a
+    // non-null reason string when the price is merely LOW
+    // enough to deserve a human look, without blocking the
+    // order — callers should flag it (Order.isPriceFlagged)
+    // rather than reject it. Returns null when the price
+    // needs no review.
+    // ─────────────────────────────────────────────────
+    public String validateO2OPrice(BigDecimal totalPrice) {
+
+        if (totalPrice.compareTo(o2oMinPrice) < 0) {
+            throw new BusinessException(
+                    "Order price must be at least $" + o2oMinPrice);
+        }
+
+        if (totalPrice.compareTo(o2oMaxPrice) > 0) {
+            throw new BusinessException(
+                    "Order price of $" + totalPrice
+                    + " looks like a mistake (over $" + o2oMaxPrice
+                    + "). Double-check the amount.");
+        }
+
+        if (totalPrice.compareTo(o2oReviewThreshold) < 0) {
+            return "O2O price $" + totalPrice
+                    + " is below the $" + o2oReviewThreshold
+                    + " review threshold";
+        }
+
+        return null;
     }
 
     // ─────────────────────────────────────────────────

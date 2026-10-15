@@ -2,6 +2,7 @@ package com.faster.backend.controller;
 
 import com.faster.backend.entity.MessageLog;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.MessageLogRepository;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.service.CommunicationService;
@@ -47,7 +48,7 @@ public class CommunicationController {
 
         User driver = userRepository.findById(driverId)
                 .orElseThrow(() ->
-                        new RuntimeException("Driver not found"));
+                        new NotFoundException("Driver not found"));
 
         if (driver.getRole() != User.Role.DRIVER) {
             return ResponseEntity.badRequest()

@@ -3,6 +3,7 @@ package com.faster.backend.controller;
 import com.faster.backend.dto.CategoryRequest;
 import com.faster.backend.entity.Category;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.service.CategoryService;
 import jakarta.validation.Valid;
@@ -89,7 +90,7 @@ public class CategoryController {
                 .orElseGet(() ->
                     userRepository.findByPhone(phone)
                         .orElseThrow(() ->
-                            new RuntimeException(
+                            new NotFoundException(
                                 "User not found")));
         return user.getId();
     }

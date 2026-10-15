@@ -9,6 +9,7 @@ import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
 
         private final OrderRepository orderRepository;
@@ -499,6 +501,17 @@ public class OrderService {
                 }
                 totalPrice = totalPrice.setScale(2, RoundingMode.HALF_UP);
 
+                // M3 fix — still manual (see the comment above this
+                // method), but bounded: hard-rejects an obvious typo
+                // or commission-dodge attempt, soft-flags anything
+                // merely low for admin review via
+                // GET /api/admin/orders/price-flagged.
+                String priceFlagReason = pricingService.validateO2OPrice(totalPrice);
+                if (priceFlagReason != null) {
+                        log.warn("O2O price flagged for review — order by merchant {}: {}",
+                                        merchantId, priceFlagReason);
+                }
+
                 BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
                                 pickupLat, pickupLng, deliveryLat, deliveryLng);
 
@@ -535,6 +548,8 @@ public class OrderService {
                                 .deliveryLat(deliveryLat)
                                 .deliveryLng(deliveryLng)
                                 .deliveryAddress(offlineLandmark)
+                                .isPriceFlagged(priceFlagReason != null)
+                                .priceFlagReason(priceFlagReason)
                                 .build();
 
                 Order saved = orderRepository.save(order);

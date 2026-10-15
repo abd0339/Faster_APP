@@ -56,6 +56,18 @@ public class Order {
         private String offlineCustomerPhone;
         private String offlineCustomerLandmark;
 
+        // ─── O2O price review flag (M3 fix) ──────────────
+        // O2O totalPrice is still manually entered by the
+        // merchant (phone orders can include off-catalog
+        // items, so full catalog recompute isn't viable) —
+        // see PricingService.validateO2OPrice(). This is a
+        // review flag, not a block: a suspiciously low price
+        // still goes through, but shows up in
+        // GET /api/admin/orders/price-flagged for manual review.
+        @Builder.Default
+        private Boolean isPriceFlagged = false;
+        private String priceFlagReason;
+
         // ─── Order type ───────────────────────────────────
         @Enumerated(EnumType.STRING)
         @Column(nullable = false)

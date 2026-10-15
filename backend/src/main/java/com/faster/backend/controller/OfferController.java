@@ -3,6 +3,7 @@ package com.faster.backend.controller;
 import com.faster.backend.dto.OfferRequest;
 import com.faster.backend.entity.Offer;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.service.OfferService;
 import jakarta.validation.Valid;
@@ -129,7 +130,7 @@ public class OfferController {
                 .orElseGet(() ->
                     userRepository.findByPhone(principal)
                         .orElseThrow(() ->
-                            new RuntimeException(
+                            new NotFoundException(
                                 "User not found")))
                 .getId();
     }

@@ -25,7 +25,11 @@ public class FileStorageConfig implements WebMvcConfigurer {
             createDir(uploadDir + "/items");
             createDir(uploadDir + "/offers");
         } catch (IOException e) {
-            throw new RuntimeException(
+            // Startup-time failure, not a request — never reaches
+            // GlobalExceptionHandler, so this isn't one of the
+            // NotFound/Forbidden/Business HTTP exceptions. Same
+            // fail-fast-at-boot pattern as JwtUtil.init().
+            throw new IllegalStateException(
                 "Could not create upload directories: "
                 + e.getMessage());
         }

@@ -4,6 +4,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -26,14 +28,14 @@ public class DriverService {
 
         // Check if driver is blocked (debt >= $20)
         if (Boolean.TRUE.equals(driver.getIsBlocked())) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Your account is paused due to unpaid " +
                             "commission. Please settle via " +
                             "OMT or WishMoney.");
         }
         // Check if driver is verified by admin
         if (driver.getVerificationStatus() != User.DriverVerificationStatus.APPROVED) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Your account is pending verification. " +
                             "Please complete your profile and wait " +
                             "for admin approval.");
@@ -45,7 +47,7 @@ public class DriverService {
             driverMode = User.DriverMode
                     .valueOf(mode.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Invalid mode. Use: PEOPLE, " +
                             "PACKAGE, or HYBRID");
         }
@@ -86,7 +88,7 @@ public class DriverService {
         User driver = getDriver(driverId);
 
         if (!driver.getIsOnline()) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "You must be online to switch mode");
         }
 
@@ -95,7 +97,7 @@ public class DriverService {
             driverMode = User.DriverMode
                     .valueOf(newMode.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Invalid mode. Use: PEOPLE, " +
                             "PACKAGE, or HYBRID");
         }
@@ -118,10 +120,10 @@ public class DriverService {
     private User getDriver(Long driverId) {
         User driver = userRepository
                 .findById(driverId)
-                .orElseThrow(() -> new RuntimeException("Driver not found"));
+                .orElseThrow(() -> new NotFoundException("Driver not found"));
 
         if (driver.getRole() != User.Role.DRIVER) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "User is not a driver");
         }
 

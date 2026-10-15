@@ -5,6 +5,8 @@ import com.faster.backend.dto.AdminUserResponse;
 import com.faster.backend.entity.LedgerEntry;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.LedgerRepository;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
@@ -142,7 +144,7 @@ public class AdminService {
 
     public AdminUserResponse getUserById(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
         return AdminUserResponse.from(user);
     }
 
@@ -151,7 +153,7 @@ public class AdminService {
     @Transactional
     public AdminUserResponse blockUser(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
         user.setIsBlocked(true);
         userRepository.save(user);
         return AdminUserResponse.from(user);
@@ -161,7 +163,7 @@ public class AdminService {
     @Transactional
     public AdminUserResponse unblockUser(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
         user.setIsBlocked(false);
         userRepository.save(user);
         return AdminUserResponse.from(user);
@@ -171,7 +173,7 @@ public class AdminService {
     @Transactional
     public AdminUserResponse deactivateUser(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new NotFoundException("User not found"));
         user.setIsActive(false);
         userRepository.save(user);
         return AdminUserResponse.from(user);
@@ -189,6 +191,12 @@ public class AdminService {
     public List<Order> getDisputedOrders() {
         return orderRepository.findByStatusOrderByCreatedAtDesc(
                 Order.OrderStatus.DISPUTED);
+    }
+
+    // ─── O2O orders with a suspiciously low manual price ─
+    // (M3 fix) — review queue, not a block.
+    public List<Order> getPriceFlaggedOrders() {
+        return orderRepository.findByIsPriceFlaggedTrueOrderByCreatedAtDesc();
     }
 
     // ─── All in-progress orders ───────────────────────
@@ -210,11 +218,11 @@ public class AdminService {
     public Order resolveDispute(Long orderId,
                                 Order.OrderStatus resolution) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Order not found"));
 
         if (order.getStatus() != Order.OrderStatus.DISPUTED) {
-            throw new RuntimeException(
+            throw new BusinessException(
                     "Order is not in disputed state");
         }
 
@@ -251,7 +259,7 @@ public class AdminService {
     // ─── Get driver debt details ──────────────────────
     public AdminUserResponse getDriverDebtDetails(Long driverId) {
         User driver = userRepository.findById(driverId)
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NotFoundException(
                         "Driver not found"));
         return AdminUserResponse.from(driver);
     }

@@ -3,6 +3,7 @@ package com.faster.backend.service;
 import com.faster.backend.entity.MessageLog;
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
 import com.faster.backend.repository.MessageLogRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -355,14 +356,14 @@ public class CommunicationService {
 
                 Map<?, ?> responseBody = response.getBody();
                 if (responseBody == null || responseBody.get("sid") == null) {
-                        throw new RuntimeException(
+                        throw new BusinessException(
                                         "Twilio returned empty response: " + response.getStatusCode());
                 }
 
                 Object errorCode = responseBody.get("error_code");
                 if (errorCode != null) {
                         Object errorMsg = responseBody.get("error_message");
-                        throw new RuntimeException(
+                        throw new BusinessException(
                                         "Twilio error " + errorCode + ": " + errorMsg);
                 }
 

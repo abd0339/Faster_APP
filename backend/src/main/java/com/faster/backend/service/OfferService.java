@@ -4,6 +4,7 @@ import com.faster.backend.entity.Category;
 import com.faster.backend.entity.Item;
 import com.faster.backend.entity.Offer;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.CategoryRepository;
 import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.OfferRepository;
@@ -44,7 +45,7 @@ public class OfferService {
 
         User merchant = userRepository.findById(merchantId)
                 .orElseThrow(() ->
-                    new RuntimeException("Merchant not found"));
+                    new NotFoundException("Merchant not found"));
 
         Offer offer = Offer.builder()
                 .merchant(merchant)
@@ -93,7 +94,7 @@ public class OfferService {
         Offer offer = offerRepository
                 .findByIdAndMerchantId(offerId, merchantId)
                 .orElseThrow(() ->
-                    new RuntimeException("Offer not found"));
+                    new NotFoundException("Offer not found"));
 
         if (title != null && !title.isBlank()) {
             offer.setTitle(title);
@@ -142,7 +143,7 @@ public class OfferService {
         Offer offer = offerRepository
                 .findByIdAndMerchantId(offerId, merchantId)
                 .orElseThrow(() ->
-                    new RuntimeException("Offer not found"));
+                    new NotFoundException("Offer not found"));
 
         if (offer.getImageUrl() != null) {
             fileStorageService.deleteImage(offer.getImageUrl());
@@ -173,7 +174,7 @@ public class OfferService {
         Offer offer = offerRepository
                 .findByIdAndMerchantId(offerId, merchantId)
                 .orElseThrow(() ->
-                    new RuntimeException("Offer not found"));
+                    new NotFoundException("Offer not found"));
         offer.setIsActive(!offer.getIsActive());
         return offerRepository.save(offer);
     }
@@ -184,7 +185,7 @@ public class OfferService {
         Offer offer = offerRepository
                 .findByIdAndMerchantId(offerId, merchantId)
                 .orElseThrow(() ->
-                    new RuntimeException("Offer not found"));
+                    new NotFoundException("Offer not found"));
         if (offer.getImageUrl() != null) {
             fileStorageService.deleteImage(offer.getImageUrl());
         }
