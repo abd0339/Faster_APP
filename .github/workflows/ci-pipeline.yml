@@ -131,6 +131,35 @@ jobs:
           name: flutter-web
           path: frontend/build/web/
 
+      # ─────────────────────────────────────────────────
+      # Transfer the Flutter web build to the VPS.
+      #
+      # docker-compose.prod.yml mounts /opt/faster-app/frontend/build/web
+      # straight into nginx (read-only, no build step on the VPS side) —
+      # so the CI-built artifact has to physically land there. Previously
+      # this job built it, uploaded it as an artifact... and never sent
+      # it anywhere, so frontend deploys stayed manual (scp) even after
+      # a green CI run. This step is the missing piece.
+      #
+      # Deliberately NOT using rm:true here — this directory is
+      # actively bind-mounted (read-only) into the live nginx
+      # container. rm:true deletes and recreates the directory
+      # itself before uploading, which risks decoupling Docker's
+      # bind mount from the new directory (serving empty/404 until
+      # a container restart) on a path we can't safely test ahead
+      # of time. overwrite:true updates files in place instead — a
+      # few harmless stale leftover files beat a broken live site.
+      # ─────────────────────────────────────────────────
+      - name: Copy Flutter web build to VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "frontend/build/web/*"
+          target: "/opt/faster-app/frontend/build/web"
+          overwrite: true
+
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
