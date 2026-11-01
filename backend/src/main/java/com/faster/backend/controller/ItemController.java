@@ -3,9 +3,7 @@ package com.faster.backend.controller;
 import com.faster.backend.dto.ItemRequest;
 import com.faster.backend.dto.SnoozeRequest;
 import com.faster.backend.entity.Item;
-import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.ItemService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +21,7 @@ import java.util.Map;
 public class ItemController {
 
     private final ItemService itemService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
 
     // ─── POST /api/merchant/items ─────────────────────
     @PostMapping
@@ -31,7 +29,7 @@ public class ItemController {
             @Valid @RequestBody ItemRequest request,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
 
         Item item = itemService.createItem(
                 merchantId,
@@ -53,7 +51,7 @@ public class ItemController {
     public ResponseEntity<List<Item>> getItems(
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         return ResponseEntity.ok(
             itemService.getMerchantItems(merchantId));
     }
@@ -64,7 +62,7 @@ public class ItemController {
             @PathVariable Long id,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         return ResponseEntity.ok(
             itemService.getItem(merchantId, id));
     }
@@ -76,7 +74,7 @@ public class ItemController {
             @RequestBody ItemRequest request,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
 
         Item updated = itemService.updateItem(
                 merchantId,
@@ -97,7 +95,7 @@ public class ItemController {
             @PathVariable Long id,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         itemService.deleteItem(merchantId, id);
 
         return ResponseEntity.ok(
@@ -111,7 +109,7 @@ public class ItemController {
             @PathVariable Long id,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         Item item = itemService
             .toggleAvailability(merchantId, id);
 
@@ -128,7 +126,7 @@ public class ItemController {
             @Valid @RequestBody SnoozeRequest request,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         Item item = itemService.snoozeItem(
             merchantId, id, request.getHours());
 
@@ -145,7 +143,7 @@ public class ItemController {
             @PathVariable Long id,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         itemService.unsnoozeItem(merchantId, id);
 
         return ResponseEntity.ok(
@@ -159,7 +157,7 @@ public class ItemController {
             @RequestParam("image") MultipartFile image,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         Item item = itemService.uploadItemImage(
             merchantId, id, image);
 
@@ -167,18 +165,5 @@ public class ItemController {
             "message", "Image uploaded successfully",
             "imageUrl", item.getImageUrl()
         ));
-    }
-
-    // ─── Helper ───────────────────────────────────────
-    private Long getMerchantId(Authentication auth) {
-        String principal = auth.getName();
-        User user = userRepository
-                .findByEmail(principal)
-                .orElseGet(() ->
-                    userRepository.findByPhone(principal)
-                        .orElseThrow(() ->
-                            new NotFoundException(
-                                "User not found")));
-        return user.getId();
     }
 }

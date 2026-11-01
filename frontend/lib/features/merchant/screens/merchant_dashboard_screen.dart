@@ -911,7 +911,19 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                             ]),
                             if (foundCustomer != null) ...[
                               const SizedBox(height: 10),
-                              foundCustomer!.isEmpty
+                              // FIX (review 2026-11-01): the backend
+                              // never errors for "not registered" —
+                              // it returns 200 {"found": false, ...},
+                              // which lands in the SAME success path
+                              // as a real match. foundCustomer is
+                              // therefore never empty either way, so
+                              // checking .isEmpty here always picked
+                              // the "found" branch, even for phone
+                              // numbers with no account — merchants
+                              // saw "Customer Found" and skipped
+                              // sending the WhatsApp tracking link,
+                              // and the customer never got notified.
+                              foundCustomer!['found'] != true
                                   ? Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(

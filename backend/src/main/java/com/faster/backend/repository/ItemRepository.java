@@ -32,6 +32,12 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
         Optional<Item> findByIdAndMerchantId(
                         Long id, Long merchantId);
 
+        // ─── Bulk find, scoped to merchant — used when linking
+        // items to an offer, so a merchant can't link another
+        // merchant's items by guessing/incrementing IDs.
+        List<Item> findByIdInAndMerchantId(
+                        List<Long> ids, Long merchantId);
+
         // ─── Search items by name (for customer search) ───
         @Query("SELECT i FROM Item i " +
                         "WHERE i.merchant.id = :merchantId " +
@@ -70,4 +76,11 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
         // ─── Count items per merchant ─────────────────────
         long countByMerchantId(Long merchantId);
+
+        // ─── Is this category still in use? ──────────────
+        // Used by CategoryService.deleteCategory to reject the
+        // delete with a clean error instead of letting the FK
+        // constraint (Item.category is non-nullable) surface as a
+        // raw, unhandled 500.
+        boolean existsByCategoryId(Long categoryId);
 }

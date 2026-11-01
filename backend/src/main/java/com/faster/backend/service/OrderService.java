@@ -41,6 +41,21 @@ public class OrderService {
 
         private static final BigDecimal DRIVER_COMMISSION_RATE = new BigDecimal("0.20");
 
+        // Design-pattern-review finding (2026-11-01): this exact
+        // multiply+round was copy-pasted at all 4 order-creation call
+        // sites plus both delivery-fee-recalculation call sites (6
+        // total) — a rate or rounding-mode change had to land in all
+        // 6 correctly, and nothing enforced that it did. Deliberately
+        // NOT unifying the surrounding grandTotal/totalPrice assembly
+        // the same way — those genuinely differ per order type (e.g.
+        // MOBILITY has no separate item total), so forcing one shared
+        // shape there would be the wrong kind of simplification.
+        private BigDecimal calculateDriverCommission(BigDecimal deliveryFee) {
+                return deliveryFee
+                                .multiply(DRIVER_COMMISSION_RATE)
+                                .setScale(2, RoundingMode.HALF_UP);
+        }
+
         // How long after placing an order a customer may still
         // cancel it (and only while no driver has accepted).
         private static final int CANCEL_WINDOW_MINUTES = 10;
@@ -163,9 +178,7 @@ public class OrderService {
                 BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
                                 effectivePickupLat, effectivePickupLng, deliveryLat, deliveryLng);
 
-                BigDecimal driverCommission = actualDeliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal driverCommission = calculateDriverCommission(actualDeliveryFee);
 
                 BigDecimal grandTotal = totalPrice
                                 .add(actualDeliveryFee)
@@ -204,10 +217,8 @@ public class OrderService {
                                 saved, effectivePickupLat, effectivePickupLng,
                                 Order.OrderType.LOGISTICS);
 
-                System.out.println(
-                                "📦 LOGISTICS order: " + saved.getTrackingCode() +
-                                                " | Merchant: " + merchantId +
-                                                " | Total: $" + grandTotal);
+                log.info("📦 LOGISTICS order: {} | Merchant: {} | Total: ${}",
+                                saved.getTrackingCode(), merchantId, grandTotal);
 
                 return saved;
         }
@@ -232,9 +243,7 @@ public class OrderService {
                 BigDecimal actualFee = pricingService.calculateRideFee(
                                 pickupLat, pickupLng, deliveryLat, deliveryLng);
 
-                BigDecimal driverCommission = actualFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal driverCommission = calculateDriverCommission(actualFee);
 
                 BigDecimal totalPrice = BigDecimal.ZERO
                                 .setScale(2, RoundingMode.HALF_UP);
@@ -267,10 +276,8 @@ public class OrderService {
                                 saved, pickupLat, pickupLng,
                                 Order.OrderType.MOBILITY);
 
-                System.out.println(
-                                "🚗 MOBILITY order: " + saved.getTrackingCode() +
-                                                " | Pickup: " + pickupAddress +
-                                                " | Fee: $" + actualFee);
+                log.info("🚗 MOBILITY order: {} | Pickup: {} | Fee: ${}",
+                                saved.getTrackingCode(), pickupAddress, actualFee);
 
                 return saved;
         }
@@ -351,8 +358,7 @@ public class OrderService {
                                                         "trackingCode", saved.getTrackingCode()));
                 }
 
-                System.out.println("🚫 Order " + saved.getTrackingCode()
-                                + " cancelled by customer");
+                log.info("🚫 Order {} cancelled by customer", saved.getTrackingCode());
 
                 return saved;
         }
@@ -411,9 +417,7 @@ public class OrderService {
                 BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
                                 pickupLat, pickupLng, deliveryLat, deliveryLng);
 
-                BigDecimal driverCommission = actualDeliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal driverCommission = calculateDriverCommission(actualDeliveryFee);
 
                 BigDecimal grandTotal = itemValue
                                 .add(actualDeliveryFee)
@@ -461,10 +465,8 @@ public class OrderService {
                                 saved, pickupLat, pickupLng,
                                 Order.OrderType.LOGISTICS);
 
-                System.out.println(
-                                "📦 DIRECT DELIVERY order: " + saved.getTrackingCode() +
-                                                " | Pickup: " + pickupAddress +
-                                                " | Fee: $" + actualDeliveryFee);
+                log.info("📦 DIRECT DELIVERY order: {} | Pickup: {} | Fee: ${}",
+                                saved.getTrackingCode(), pickupAddress, actualDeliveryFee);
 
                 return saved;
         }
@@ -515,9 +517,7 @@ public class OrderService {
                 BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
                                 pickupLat, pickupLng, deliveryLat, deliveryLng);
 
-                BigDecimal driverCommission = actualDeliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal driverCommission = calculateDriverCommission(actualDeliveryFee);
 
                 BigDecimal grandTotal = totalPrice
                                 .add(actualDeliveryFee)
@@ -839,9 +839,7 @@ public class OrderService {
                 BigDecimal newDeliveryFee = pricingService.calculateDeliveryFee(
                                 order.getPickupLat(), order.getPickupLng(), lat, lng);
 
-                BigDecimal newDriverCommission = newDeliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal newDriverCommission = calculateDriverCommission(newDeliveryFee);
 
                 BigDecimal newGrandTotal = order.getTotalPrice()
                                 .add(newDeliveryFee)
@@ -857,9 +855,8 @@ public class OrderService {
                                 "/topic/order/" + saved.getId(),
                                 buildStatusUpdate(saved));
 
-                System.out.println(
-                                "📍 Recipient confirmed location for order " + orderId
-                                                + " — delivery fee recalculated to $" + newDeliveryFee);
+                log.info("📍 Recipient confirmed location for order {} — delivery fee recalculated to ${}",
+                                orderId, newDeliveryFee);
 
                 return saved;
         }
@@ -905,9 +902,7 @@ public class OrderService {
                 BigDecimal newDeliveryFee = pricingService.calculateDeliveryFee(
                                 order.getPickupLat(), order.getPickupLng(), lat, lng);
 
-                BigDecimal newDriverCommission = newDeliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal newDriverCommission = calculateDriverCommission(newDeliveryFee);
 
                 BigDecimal newGrandTotal = order.getTotalPrice()
                                 .add(newDeliveryFee)
@@ -924,9 +919,8 @@ public class OrderService {
                                 "/topic/order/" + saved.getId(),
                                 buildStatusUpdate(saved));
 
-                System.out.println(
-                                "📍 Location confirmed for " + trackingCode
-                                                + " — delivery fee recalculated to $" + newDeliveryFee);
+                log.info("📍 Location confirmed for {} — delivery fee recalculated to ${}",
+                                trackingCode, newDeliveryFee);
 
                 return saved;
         }
@@ -979,9 +973,8 @@ public class OrderService {
                                 "/topic/driver/" + driverId,
                                 buildOrderNotification(order)));
 
-                System.out.println(
-                                "📡 Pinged " + nearbyDrivers.size() +
-                                                " drivers for " + order.getTrackingCode());
+                log.info("📡 Pinged {} drivers for {}",
+                                nearbyDrivers.size(), order.getTrackingCode());
         }
 
         private String generateTrackingCode() {

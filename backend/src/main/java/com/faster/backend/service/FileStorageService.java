@@ -1,6 +1,7 @@
 package com.faster.backend.service;
 
 import com.faster.backend.exception.BusinessException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -38,6 +39,7 @@ import java.util.UUID;
  *     document uploads — see Faster_Logistics_File_Storage_Architecture.md.
  */
 @Service
+@Slf4j
 public class FileStorageService {
 
     @Value("${app.upload.dir}")
@@ -109,12 +111,12 @@ public class FileStorageService {
             Path filePath = Paths.get(relative).toAbsolutePath().normalize();
 
             if (!filePath.startsWith(root)) {
-                System.err.println("Refusing to delete path outside upload root: " + imageUrl);
+                log.warn("Refusing to delete path outside upload root: {}", imageUrl);
                 return;
             }
             Files.deleteIfExists(filePath);
         } catch (IOException e) {
-            System.err.println("Could not delete image: " + imageUrl);
+            log.error("Could not delete image: {}", imageUrl);
         }
     }
 
@@ -217,12 +219,12 @@ public class FileStorageService {
             Path filePath = root.resolve(relativePath).normalize();
 
             if (!filePath.startsWith(root)) {
-                System.err.println("Refusing to delete path outside private root: " + relativePath);
+                log.warn("Refusing to delete path outside private root: {}", relativePath);
                 return;
             }
             Files.deleteIfExists(filePath);
         } catch (IOException e) {
-            System.err.println("Could not delete private document: " + relativePath);
+            log.error("Could not delete private document: {}", relativePath);
         }
     }
 

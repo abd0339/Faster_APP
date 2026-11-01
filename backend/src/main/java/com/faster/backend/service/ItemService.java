@@ -18,7 +18,9 @@ import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ItemService {
@@ -255,8 +257,7 @@ public class ItemService {
     public void autoUnsnooze() {
         int count = itemRepository.unsnoozeExpiredItems();
         if (count > 0) {
-            System.out.println(
-                    "Auto-unsnoozed " + count + " items");
+            log.info("Auto-unsnoozed {} items", count);
         }
     }
 

@@ -1,7 +1,6 @@
 package com.faster.backend.controller;
 
-import com.faster.backend.entity.User;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.PlacesRateLimitService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +45,7 @@ public class PlacesProxyController {
 
     private final RestTemplate restTemplate;
     private final PlacesRateLimitService placesRateLimitService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
 
     @Value("${google.places.api-key:}")
     private String placesApiKey;
@@ -74,7 +73,7 @@ public class PlacesProxyController {
             @RequestParam(required = false) String language,
             Authentication auth) {
 
-        placesRateLimitService.checkAndRecord(getUserId(auth));
+        placesRateLimitService.checkAndRecord(authResolver.resolveIdOrNull(auth));
 
         if (placesApiKey.isBlank()) {
             log.error("google.places.api-key is not configured — "
@@ -131,7 +130,7 @@ public class PlacesProxyController {
             @RequestParam(required = false) String fields,
             Authentication auth) {
 
-        placesRateLimitService.checkAndRecord(getUserId(auth));
+        placesRateLimitService.checkAndRecord(authResolver.resolveIdOrNull(auth));
 
         if (placesApiKey.isBlank()) {
             return ResponseEntity.status(503).body(Map.of(
@@ -171,18 +170,5 @@ public class PlacesProxyController {
     // fixes the query string.
     private URI buildUri(UriComponentsBuilder builder) {
         return builder.encode().build().toUri();
-    }
-
-    // §2.4 fix — resolves the authenticated caller for the per-user
-    // Places spend cap. Returns null (never blocks) if the principal
-    // can't be resolved — the endpoint is already authenticated, so
-    // this is belt-and-braces, not the primary guard.
-    private Long getUserId(Authentication auth) {
-        if (auth == null) return null;
-        String principal = auth.getName();
-        return userRepository.findByEmail(principal)
-                .or(() -> userRepository.findByPhone(principal))
-                .map(User::getId)
-                .orElse(null);
     }
 }

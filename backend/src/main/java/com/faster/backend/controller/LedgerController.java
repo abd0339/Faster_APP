@@ -3,8 +3,7 @@ package com.faster.backend.controller;
 import com.faster.backend.dto.LedgerResponse;
 import com.faster.backend.entity.LedgerEntry;
 import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.LedgerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +20,7 @@ import java.util.stream.Collectors;
 public class LedgerController {
 
     private final LedgerService ledgerService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
 
     // ─── GET /api/ledger/my ───────────────────────────
     // Driver or merchant sees own ledger history
@@ -29,7 +28,7 @@ public class LedgerController {
     public ResponseEntity<List<LedgerResponse>>
             getMyLedger(Authentication auth) {
 
-        User user = getUser(auth);
+        User user = authResolver.resolve(auth);
         List<LedgerEntry> entries;
 
         if (user.getRole() == User.Role.DRIVER) {
@@ -57,7 +56,7 @@ public class LedgerController {
     public ResponseEntity<?> getMyDebt(
             Authentication auth) {
 
-        User user = getUser(auth);
+        User user = authResolver.resolve(auth);
 
         if (user.getRole() != User.Role.DRIVER) {
             return ResponseEntity.badRequest().body(
@@ -68,17 +67,5 @@ public class LedgerController {
         return ResponseEntity.ok(
             ledgerService.getDriverDebtSummary(
                 user.getId()));
-    }
-
-    // ─── Helper ───────────────────────────────────────
-    private User getUser(Authentication auth) {
-        String principal = auth.getName();
-        return userRepository
-                .findByEmail(principal)
-                .orElseGet(() ->
-                    userRepository.findByPhone(principal)
-                        .orElseThrow(() ->
-                            new NotFoundException(
-                                "User not found")));
     }
 }

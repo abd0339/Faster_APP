@@ -1,5 +1,6 @@
 package com.faster.backend.exception;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -97,7 +99,7 @@ public class GlobalExceptionHandler {
             Exception ex) {
 
         // Log it internally but don't expose to client
-        System.err.println("Unexpected error: " + ex.getMessage());
+        log.error("Unexpected error: {}", ex.getMessage(), ex);
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of(

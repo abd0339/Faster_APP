@@ -1,6 +1,7 @@
 package com.faster.backend.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.geo.Distance;
 import org.springframework.data.geo.GeoResults;
 import org.springframework.data.geo.Metrics;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class LocationService {
 
     private final RedisTemplate<String, Object> redisTemplate;
@@ -128,6 +130,20 @@ public class LocationService {
     }
 
     // ─── Core GeoSearch logic (Spring Data Redis 3.x) ─
+    //
+    // FIX (review 2026-11-01): Redis GEO entries have no per-member
+    // TTL — only DRIVER_STATUS (set in driverOnline/updateLocation)
+    // expires after 10 minutes of inactivity. A driver whose app
+    // crashes or loses network without calling driverOffline leaves
+    // a GPS entry that stays matchable here FOREVER, even though
+    // isDriverOnline() correctly reports them offline. Dispatch would
+    // keep assigning new orders to a driver who will never see them.
+    // Fetching a wider raw candidate set (30, not just the final 10)
+    // before filtering keeps real dispatch quality up even when
+    // several of the nearest candidates turn out to be stale.
+    private static final int RAW_CANDIDATE_LIMIT = 30;
+    private static final int RESULT_LIMIT = 10;
+
     private List<Long> searchNearby(
             String geoKey,
             double lat, double lng,
@@ -146,23 +162,32 @@ public class LocationService {
                         .newGeoSearchArgs()
                         .includeDistance()
                         .sortAscending()
-                        .limit(10)
+                        .limit(RAW_CANDIDATE_LIMIT)
                 );
 
             if (results != null) {
-                results.getContent().forEach(result -> {
+                for (var result : results.getContent()) {
+                    if (driverIds.size() >= RESULT_LIMIT) break;
+
                     RedisGeoCommands.GeoLocation<String> location =
                         result.getContent();
-                    if (location.getName() != null) {
-                        driverIds.add(
-                            Long.parseLong(location.getName()));
-                    }
-                });
+                    if (location.getName() == null) continue;
+
+                    Long driverId = Long.parseLong(location.getName());
+
+                    // Stale geoset entry — the driver's status key
+                    // expired (crash/disconnect without a clean
+                    // goOffline), so this coordinate can't be trusted.
+                    // Skip rather than dispatch to a driver who will
+                    // never receive the order.
+                    if (!isDriverOnline(driverId)) continue;
+
+                    driverIds.add(driverId);
+                }
             }
 
         } catch (Exception e) {
-            System.err.println(
-                "GeoSearch error: " + e.getMessage());
+            log.error("GeoSearch error: {}", e.getMessage());
         }
 
         return driverIds;

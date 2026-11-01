@@ -22,9 +22,11 @@ import com.faster.backend.repository.LedgerRepository;
 import com.faster.backend.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class LedgerService {
 
     private final LedgerRepository ledgerRepository;
@@ -51,20 +53,32 @@ public class LedgerService {
     @Transactional
     public LedgerEntry recordDriverCommission(Order order) {
 
-        // Prevent double-recording if called twice for same order
+        if (order.getDriver() == null) return null;
+
+        // Locked fetch, not the lazy-loaded order.getDriver() — holds
+        // the row lock until commit, so a concurrent commission/
+        // settlement call for the SAME driver blocks until this
+        // transaction finishes instead of racing on debtAmount. Two
+        // concurrent calls for the SAME order share the same driver,
+        // so they share this lock too — which is what makes the
+        // duplicate-recording check below race-free rather than a
+        // plain check-then-act.
+        User driver = userRepository.findByIdForUpdate(order.getDriver().getId())
+                .orElseThrow(() -> new NotFoundException("Driver not found"));
+
+        // Prevent double-recording if called twice for same order.
+        // Evaluated AFTER acquiring the lock above — see the comment
+        // there for why that ordering is what makes this check safe
+        // under concurrency instead of just narrowing the window.
         if (ledgerRepository.existsByOrderIdAndCategory(
                 order.getId(),
                 LedgerEntry.EntryCategory.DRIVER_COMMISSION)) {
             // Already recorded — return silently, do not throw
             // This is a safety guard, not an error state
-            System.out.println(
-                    "⚠️ Commission already recorded for order "
-                    + order.getTrackingCode() + " — skipping.");
+            log.warn("Commission already recorded for order {} — skipping.",
+                    order.getTrackingCode());
             return null;
         }
-
-        User driver = order.getDriver();
-        if (driver == null) return null;
 
         // Commission = 20% of delivery fee
         BigDecimal commission = order.getDeliveryFee()
@@ -131,11 +145,8 @@ public class LedgerService {
                         "message", "Driver " + driver.getFullName()
                                 + " now owes $" + newDebt));
 
-        System.out.println(
-                "💰 Commission $" + commission
-                + " recorded for driver " + driver.getFullName()
-                + " | Total debt: $" + newDebt
-                + " | Order: " + order.getTrackingCode());
+        log.info("💰 Commission ${} recorded for driver {} | Total debt: ${} | Order: {}",
+                commission, driver.getFullName(), newDebt, order.getTrackingCode());
 
         return entry;
     }
@@ -152,8 +163,11 @@ public class LedgerService {
             String paymentReference,
             Long adminId) {
 
+        // Locked fetch — see recordDriverCommission for why this
+        // specific row lock is what prevents a concurrent commission
+        // recording for this driver from racing with this settlement.
         User driver = userRepository
-                .findById(driverId)
+                .findByIdForUpdate(driverId)
                 .orElseThrow(() -> new NotFoundException(
                         "Driver not found"));
 
@@ -215,11 +229,8 @@ public class LedgerService {
                         "amountPaid", amountPaid,
                         "remainingDebt", newBalance));
 
-        System.out.println(
-                "✅ Driver " + driver.getFullName()
-                + " settled $" + amountPaid
-                + " | Remaining debt: $" + newBalance
-                + " | Ref: " + paymentReference);
+        log.info("✅ Driver {} settled ${} | Remaining debt: ${} | Ref: {}",
+                driver.getFullName(), amountPaid, newBalance, paymentReference);
 
         return saved;
     }
@@ -260,8 +271,7 @@ public class LedgerService {
             }
         }
 
-        System.out.println(
-                "📊 Daily driver debt summary sent to admin dashboard");
+        log.info("📊 Daily driver debt summary sent to admin dashboard");
     }
 
     // ─────────────────────────────────────────────────
@@ -287,9 +297,8 @@ public class LedgerService {
                 recordMerchantDailyCommission(
                         merchant, startOfDay, endOfDay);
             } catch (Exception e) {
-                System.err.println(
-                        "Failed to record commission for merchant "
-                        + merchant.getId() + ": " + e.getMessage());
+                log.error("Failed to record commission for merchant {}: {}",
+                        merchant.getId(), e.getMessage());
             }
         }
     }
@@ -312,6 +321,17 @@ public class LedgerService {
                 dailySales.compareTo(BigDecimal.ZERO) == 0) {
             return null; // No sales that day — nothing to record
         }
+
+        // Locked fetch — merchant balance has no dedicated column
+        // (it's derived from the latest ledger row), so there's
+        // nothing to row-lock that the balance read actually depends
+        // on. Locking the merchant's own User row anyway turns it
+        // into a per-merchant mutex: a concurrent settleMerchantCommission
+        // call for the SAME merchant blocks until this transaction
+        // commits, instead of both reading the same "latest balance"
+        // and one silently overwriting the other's effect.
+        userRepository.findByIdForUpdate(merchant.getId())
+                .orElseThrow(() -> new NotFoundException("Merchant not found"));
 
         // Commission = 10% of daily sales
         BigDecimal commission = dailySales
@@ -357,10 +377,8 @@ public class LedgerService {
                                 + " owes $" + commission
                                 + " (10% of $" + dailySales + ")"));
 
-        System.out.println(
-                "🏪 Merchant " + merchant.getFullName()
-                + " commission: $" + commission
-                + " (10% of $" + dailySales + " sales)");
+        log.info("🏪 Merchant {} commission: ${} (10% of ${} sales)",
+                merchant.getFullName(), commission, dailySales);
 
         return saved;
     }
@@ -375,8 +393,11 @@ public class LedgerService {
             String paymentReference,
             Long adminId) {
 
+        // Locked fetch — see recordMerchantDailyCommission for why
+        // this row lock is the mutex that keeps this settlement from
+        // racing a concurrent commission recording for this merchant.
         User merchant = userRepository
-                .findById(merchantId)
+                .findByIdForUpdate(merchantId)
                 .orElseThrow(() -> new NotFoundException(
                         "Merchant not found"));
 

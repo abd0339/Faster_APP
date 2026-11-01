@@ -1,36 +1,26 @@
 package com.faster.backend.config;
 
-import com.faster.backend.security.JwtUtil;
+import com.faster.backend.security.StompChannelInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
-import org.springframework.messaging.simp.stomp.StompCommand;
-import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.support.ChannelInterceptor;
-import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.messaging.simp.config.ChannelRegistration;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.web.socket.config.annotation.*;
-
-
-import java.util.List;
 
 /**
  * WebSocket / STOMP configuration.
  *
  * FIXES:
- *  - (HIGH) The STOMP CONNECT frame is now authenticated with the same JWT as
- *    the REST API. Previously the socket endpoint was in the permitAll list and
- *    there was NO channel interceptor, so:
- *      * the driver.location handler received a null/empty Authentication and
- *        silently dropped every GPS update (functional bug), and
- *      * any anonymous client could open a socket and subscribe to /topic/**,
- *        reading other users' order-status and driver notifications.
- *    The interceptor sets the authenticated principal so @MessageMapping methods
- *    receive a real Authentication and downstream authorization works.
+ *  - (HIGH) The STOMP CONNECT (and its protocol alias STOMP) frame is now
+ *    authenticated with the same JWT as the REST API, including the
+ *    token-blacklist and isBlocked re-checks JwtAuthFilter does on every
+ *    REST request. Every SUBSCRIBE is also authorized against its
+ *    destination (own driver/merchant topic, or a party to the order;
+ *    /topic/admin/** is admin-only). See StompChannelInterceptor for the
+ *    full rationale — this used to only gate CONNECT and only checked
+ *    authentication, never authorization, which left real holes (anonymous
+ *    STOMP-frame connections, and any authenticated user reading any other
+ *    user's or admin's topics).
  *
  *  - (MEDIUM) setAllowedOriginPatterns("*") is replaced with the configured
  *    front-end origins.
@@ -43,7 +33,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    private final JwtUtil jwtUtil;
+    private final StompChannelInterceptor stompChannelInterceptor;
 
     @org.springframework.beans.factory.annotation.Value(
             "${app.cors.allowed-origins:http://localhost:*}")
@@ -67,32 +57,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(new ChannelInterceptor() {
-            @Override
-            public Message<?> preSend(Message<?> message, MessageChannel channel) {
-                StompHeaderAccessor accessor = MessageHeaderAccessor
-                        .getAccessor(message, StompHeaderAccessor.class);
-
-                if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-                    String bearer = accessor.getFirstNativeHeader("Authorization");
-                    if (bearer != null && bearer.startsWith("Bearer ")) {
-                        String token = bearer.substring(7);
-                        if (jwtUtil.validateToken(token)) {
-                            String email = jwtUtil.getEmailFromToken(token);
-                            String role = jwtUtil.getRoleFromToken(token);
-                            var auth = new UsernamePasswordAuthenticationToken(
-                                    email, null,
-                                    List.of(new SimpleGrantedAuthority("ROLE_" + role)));
-                            accessor.setUser(auth);
-                        } else {
-                            throw new IllegalArgumentException("Invalid or missing WS token");
-                        }
-                    } else {
-                        throw new IllegalArgumentException("Missing Authorization header on CONNECT");
-                    }
-                }
-                return message;
-            }
-        });
+        registration.interceptors(stompChannelInterceptor);
     }
 }

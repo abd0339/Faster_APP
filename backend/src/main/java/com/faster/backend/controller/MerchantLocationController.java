@@ -2,8 +2,7 @@ package com.faster.backend.controller;
 
 import com.faster.backend.dto.MerchantLocationRequest;
 import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.MerchantLocationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +18,7 @@ import java.util.Map;
 public class MerchantLocationController {
 
     private final MerchantLocationService locationService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
 
     // ─── PUT /api/merchant/location ───────────────────
     // One-time (or whenever the store moves) map-pin set.
@@ -31,7 +30,7 @@ public class MerchantLocationController {
             @Valid @RequestBody MerchantLocationRequest req,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         User merchant = locationService.setLocation(
                 merchantId, req.getLatitude(), req.getLongitude(), req.getAddress());
 
@@ -45,7 +44,7 @@ public class MerchantLocationController {
     // ─── GET /api/merchant/location ───────────────────
     @GetMapping
     public ResponseEntity<?> getLocation(Authentication auth) {
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         User merchant = locationService.getLocation(merchantId);
 
         return ResponseEntity.ok(Map.of(
@@ -53,17 +52,5 @@ public class MerchantLocationController {
                 "storeLongitude", merchant.getStoreLongitude(),
                 "storeAddress", merchant.getStoreAddress() != null
                         ? merchant.getStoreAddress() : ""));
-    }
-
-    // ─── Helper ───────────────────────────────────────
-    private Long getMerchantId(Authentication auth) {
-        String principal = auth.getName();
-        return userRepository.findByEmail(principal)
-                .orElseGet(() ->
-                        userRepository.findByPhone(principal)
-                                .orElseThrow(() ->
-                                        new NotFoundException(
-                                                "User not found")))
-                .getId();
     }
 }

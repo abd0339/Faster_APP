@@ -4,12 +4,14 @@ import com.faster.backend.entity.Category;
 import com.faster.backend.entity.Item;
 import com.faster.backend.entity.Offer;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.BusinessException;
 import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.CategoryRepository;
 import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.OfferRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,10 +20,12 @@ import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OfferService {
 
     private final OfferRepository offerRepository;
@@ -62,19 +66,42 @@ public class OfferService {
 
         // ─── Link categories ──────────────────────────
         if (categoryIds != null && !categoryIds.isEmpty()) {
-            List<Category> cats = categoryRepository
-                .findAllById(categoryIds);
-            offer.setAppliedToCategories(cats);
+            offer.setAppliedToCategories(resolveOwnedCategories(merchantId, categoryIds));
         }
 
         // ─── Link specific items ──────────────────────
         if (itemIds != null && !itemIds.isEmpty()) {
-            List<Item> items = itemRepository
-                .findAllById(itemIds);
-            offer.setAppliedToItems(items);
+            offer.setAppliedToItems(resolveOwnedItems(merchantId, itemIds));
         }
 
         return offerRepository.save(offer);
+    }
+
+    // ─── Ownership-scoped bulk lookups ────────────────
+    // M3-style fix: findAllById(ids) has no merchant filter at all,
+    // so a merchant could link another merchant's categories/items
+    // to their own offer just by guessing/incrementing IDs. These
+    // resolve through the merchant-scoped repository methods instead,
+    // and reject the whole request (not just silently drop the bad
+    // ones) if any requested id doesn't actually belong to this
+    // merchant — a merchant silently getting fewer links than they
+    // asked for, with no error, is its own kind of confusing bug.
+    private List<Category> resolveOwnedCategories(Long merchantId, List<Long> categoryIds) {
+        List<Category> found = categoryRepository.findByIdInAndMerchantId(categoryIds, merchantId);
+        if (found.size() != new HashSet<>(categoryIds).size()) {
+            throw new BusinessException(
+                    "One or more categories were not found in your store");
+        }
+        return found;
+    }
+
+    private List<Item> resolveOwnedItems(Long merchantId, List<Long> itemIds) {
+        List<Item> found = itemRepository.findByIdInAndMerchantId(itemIds, merchantId);
+        if (found.size() != new HashSet<>(itemIds).size()) {
+            throw new BusinessException(
+                    "One or more items were not found in your store");
+        }
+        return found;
     }
 
     // ─── Update ───────────────────────────────────────
@@ -121,7 +148,7 @@ public class OfferService {
             offer.setAppliedToCategories(
                 categoryIds.isEmpty()
                     ? new ArrayList<>()
-                    : categoryRepository.findAllById(categoryIds));
+                    : resolveOwnedCategories(merchantId, categoryIds));
         }
 
         // ─── Update items ─────────────────────────────
@@ -129,7 +156,7 @@ public class OfferService {
             offer.setAppliedToItems(
                 itemIds.isEmpty()
                     ? new ArrayList<>()
-                    : itemRepository.findAllById(itemIds));
+                    : resolveOwnedItems(merchantId, itemIds));
         }
 
         return offerRepository.save(offer);
@@ -199,8 +226,7 @@ public class OfferService {
         int count = offerRepository
             .expireOldOffers(LocalDateTime.now());
         if (count > 0) {
-            System.out.println(
-                "Auto-expired " + count + " offers");
+            log.info("Auto-expired {} offers", count);
         }
     }
 }

@@ -1,9 +1,7 @@
 package com.faster.backend.controller;
 
 import com.faster.backend.dto.DeviceTokenRequest;
-import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.PushNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +23,7 @@ import java.util.Map;
 public class DeviceTokenController {
 
     private final PushNotificationService pushNotificationService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
 
     // ─── POST /api/devices/register ───────────────────
     @PostMapping("/register")
@@ -33,7 +31,7 @@ public class DeviceTokenController {
             @jakarta.validation.Valid @RequestBody DeviceTokenRequest req,
             Authentication auth) {
 
-        Long userId = getUserId(auth);
+        Long userId = authResolver.resolveId(auth);
         pushNotificationService.registerDevice(
                 userId, req.getFcmToken(), req.getPlatform());
 
@@ -51,17 +49,9 @@ public class DeviceTokenController {
             @RequestParam String fcmToken,
             Authentication auth) {
 
-        Long userId = getUserId(auth);
+        Long userId = authResolver.resolveId(auth);
         pushNotificationService.unregisterDevice(userId, fcmToken);
 
         return ResponseEntity.ok(Map.of("message", "Device unregistered"));
-    }
-
-    private Long getUserId(Authentication auth) {
-        String principal = auth.getName();
-        User user = userRepository.findByEmail(principal)
-                .orElseGet(() -> userRepository.findByPhone(principal)
-                        .orElseThrow(() -> new NotFoundException("User not found")));
-        return user.getId();
     }
 }

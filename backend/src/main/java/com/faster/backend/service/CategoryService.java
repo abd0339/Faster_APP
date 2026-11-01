@@ -5,6 +5,7 @@ import com.faster.backend.entity.User;
 import com.faster.backend.exception.BusinessException;
 import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.CategoryRepository;
+import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final UserRepository userRepository;
+    private final ItemRepository itemRepository;
 
     // ─── Create ───────────────────────────────────────
     @Transactional
@@ -108,6 +110,17 @@ public class CategoryService {
         Category category = categoryRepository
                 .findByIdAndMerchantId(categoryId, merchantId)
                 .orElseThrow(() -> new NotFoundException("Category not found"));
+
+        // FIX (review 2026-11-01): Item.category is a non-nullable FK
+        // with no cascade configured, so deleting a category that
+        // still has items used to hit the DB and throw an unhandled
+        // DataIntegrityViolationException — a raw 500 instead of a
+        // clear, actionable error.
+        if (itemRepository.existsByCategoryId(categoryId)) {
+            throw new BusinessException(
+                    "Cannot delete a category that still has items. "
+                    + "Move or delete its items first.");
+        }
 
         categoryRepository.delete(category);
     }

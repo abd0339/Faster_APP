@@ -235,24 +235,9 @@ public class PricingService {
     public BigDecimal calculateDeliveryFee(
             Double pickupLat, Double pickupLng,
             Double deliveryLat, Double deliveryLng) {
-
-        if (pickupLat == null || pickupLng == null
-                || deliveryLat == null || deliveryLng == null) {
-            return deliveryMinFee.setScale(2, RoundingMode.HALF_UP);
-        }
-
-        double distanceKm = haversineKm(
-                pickupLat, pickupLng, deliveryLat, deliveryLng);
-
-        BigDecimal fee = deliveryBaseFee.add(
-                deliveryRatePerKm.multiply(
-                        BigDecimal.valueOf(distanceKm)));
-
-        if (fee.compareTo(deliveryMinFee) < 0) {
-            fee = deliveryMinFee;
-        }
-
-        return fee.setScale(2, RoundingMode.HALF_UP);
+        return calculateDistanceFee(
+                pickupLat, pickupLng, deliveryLat, deliveryLng,
+                deliveryBaseFee, deliveryRatePerKm, deliveryMinFee);
     }
 
     // ─────────────────────────────────────────────────
@@ -262,21 +247,41 @@ public class PricingService {
     public BigDecimal calculateRideFee(
             Double pickupLat, Double pickupLng,
             Double deliveryLat, Double deliveryLng) {
+        return calculateDistanceFee(
+                pickupLat, pickupLng, deliveryLat, deliveryLng,
+                rideBaseFee, rideRatePerKm, rideMinFee);
+    }
+
+    // ─────────────────────────────────────────────────
+    // Shared distance-fee calculation (design-pattern-review
+    // finding, 2026-11-01): calculateDeliveryFee and calculateRideFee
+    // used to be two structurally identical methods differing only
+    // by which (baseFee, ratePerKm, minFee) triple they used — a bug
+    // fix to the clamping/rounding logic had to land in both, and a
+    // future fee tier would naturally have been a third copy. Base
+    // fee + rate*distance, floored at minFee, rounded HALF_UP to 2dp;
+    // falls back to minFee alone if either coordinate pair is missing
+    // (see the class-level comment on calculateDeliveryFee above for
+    // why that's an intentional fallback, not a silent gap).
+    // ─────────────────────────────────────────────────
+    private BigDecimal calculateDistanceFee(
+            Double pickupLat, Double pickupLng,
+            Double deliveryLat, Double deliveryLng,
+            BigDecimal baseFee, BigDecimal ratePerKm, BigDecimal minFee) {
 
         if (pickupLat == null || pickupLng == null
                 || deliveryLat == null || deliveryLng == null) {
-            return rideMinFee.setScale(2, RoundingMode.HALF_UP);
+            return minFee.setScale(2, RoundingMode.HALF_UP);
         }
 
         double distanceKm = haversineKm(
                 pickupLat, pickupLng, deliveryLat, deliveryLng);
 
-        BigDecimal fee = rideBaseFee.add(
-                rideRatePerKm.multiply(
-                        BigDecimal.valueOf(distanceKm)));
+        BigDecimal fee = baseFee.add(
+                ratePerKm.multiply(BigDecimal.valueOf(distanceKm)));
 
-        if (fee.compareTo(rideMinFee) < 0) {
-            fee = rideMinFee;
+        if (fee.compareTo(minFee) < 0) {
+            fee = minFee;
         }
 
         return fee.setScale(2, RoundingMode.HALF_UP);

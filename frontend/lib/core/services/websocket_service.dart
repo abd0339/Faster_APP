@@ -15,6 +15,17 @@ class WebSocketService {
 
   final Map<String, StompUnsubscribe> _subscriptions = {};
 
+  // ─── Active callbacks, keyed by destination ───────
+  // FIX (review 2026-11-01): _onDisconnect used to clear
+  // _subscriptions and nothing else, so the automatic STOMP
+  // reconnect (5s later) came back with zero live subscriptions —
+  // _onConnect only ever re-applies from _pendingSubscriptions,
+  // which was only ever populated by subscribing WHILE disconnected.
+  // A topic that was already successfully subscribed had nowhere to
+  // go. This map keeps the original onUpdate callback for every
+  // currently-active destination so _onDisconnect can re-queue them.
+  final Map<String, void Function(Map<String, dynamic>)> _activeCallbacks = {};
+
   // ─── Pending subscriptions ────────────────────────
   // If connect() hasn't finished yet, subscriptions are
   // queued here and re-applied once the socket connects.
@@ -82,7 +93,17 @@ class WebSocketService {
   void _onDisconnect(StompFrame frame) {
     _isConnected = false;
     _isConnecting = false;
+
+    // Re-queue every subscription that was active at disconnect time
+    // so the automatic reconnect's _onConnect actually re-establishes
+    // them, instead of coming back up silently subscribed to nothing.
+    for (final entry in _activeCallbacks.entries) {
+      _pendingSubscriptions.removeWhere((p) => p.destination == entry.key);
+      _pendingSubscriptions.add(_PendingSubscription(entry.key, entry.value));
+    }
+
     _subscriptions.clear();
+    _activeCallbacks.clear();
     print('❌ WebSocket disconnected — will reconnect in 5s');
   }
 
@@ -140,6 +161,7 @@ class WebSocketService {
     );
 
     _subscriptions[destination] = unsubscribe;
+    _activeCallbacks[destination] = onUpdate;
   }
 
   // ─── Send driver GPS via WebSocket ────────────────
@@ -157,14 +179,22 @@ class WebSocketService {
   void unsubscribe(String destination) {
     _subscriptions[destination]?.call();
     _subscriptions.remove(destination);
+    _activeCallbacks.remove(destination);
+    _pendingSubscriptions.removeWhere((p) => p.destination == destination);
   }
 
   // ─── Disconnect ───────────────────────────────────
   void disconnect() {
     _subscriptions.forEach((_, unsub) => unsub());
-    _subscriptions.clear();
-    _pendingSubscriptions.clear();
     _client?.deactivate();
+    // Clear AFTER deactivate(): if it synchronously triggers
+    // _onDisconnect, that handler now re-queues active callbacks
+    // into _pendingSubscriptions for the auto-reconnect case — which
+    // is exactly what we DON'T want for a deliberate disconnect, so
+    // this has to run last to win.
+    _subscriptions.clear();
+    _activeCallbacks.clear();
+    _pendingSubscriptions.clear();
     _isConnected = false;
     _isConnecting = false;
   }

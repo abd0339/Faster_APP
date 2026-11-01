@@ -2,9 +2,7 @@ package com.faster.backend.controller;
 
 import com.faster.backend.dto.CategoryRequest;
 import com.faster.backend.entity.Category;
-import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.CategoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,14 +19,14 @@ import java.util.Map;
 public class CategoryController {
 
     private final CategoryService categoryService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
     // ─── POST /api/merchant/categories ───────────────
     @PostMapping
     public ResponseEntity<?> createCategory(
             @Valid @RequestBody CategoryRequest request,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
 
         Category category = categoryService.createCategory(
                 merchantId,
@@ -44,7 +42,7 @@ public class CategoryController {
     public ResponseEntity<List<Category>> getCategories(
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         return ResponseEntity.ok(
             categoryService.getCategories(merchantId));
     }
@@ -56,7 +54,7 @@ public class CategoryController {
             @Valid @RequestBody CategoryRequest request,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
 
         Category updated = categoryService.updateCategory(
                 merchantId,
@@ -75,23 +73,11 @@ public class CategoryController {
             @PathVariable Long id,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         categoryService.deleteCategory(merchantId, id);
 
         return ResponseEntity.ok(
             Map.of("message",
                    "Category deleted successfully"));
-    }
-
-    // ─── Helper: extract merchant ID from JWT ────────
-    private Long getMerchantId(Authentication auth) {
-        String phone = auth.getName();
-        User user = userRepository.findByEmail(phone)
-                .orElseGet(() ->
-                    userRepository.findByPhone(phone)
-                        .orElseThrow(() ->
-                            new NotFoundException(
-                                "User not found")));
-        return user.getId();
     }
 }

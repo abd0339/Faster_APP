@@ -37,6 +37,17 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
   bool _isDetectingLocation = false;
   bool _isQuoting = false;
 
+  // FIX (review 2026-11-01): _fetchQuote fires on every +/- tap and
+  // address change with no debounce, so rapid taps start multiple
+  // concurrent requests. Nothing previously dropped a response that
+  // no longer matched the current inputs, so an out-of-order network
+  // reply could overwrite the displayed price with a stale one (e.g.
+  // the qty=2 quote landing after the qty=3 quote, showing a lower
+  // "Total you pay" than what Place Order will actually charge).
+  // Each call captures the current counter value; a response only
+  // gets applied if no newer call has started since.
+  int _quoteRequestId = 0;
+
   // ─── Server-computed pricing (never client-computed) ──
   // Populated by _fetchQuote(). Until the first quote comes
   // back these are null and the UI shows a loading state
@@ -144,6 +155,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
     if (cart.isEmpty || cart.merchantId == null) return;
 
     if (!mounted) return;
+    final requestId = ++_quoteRequestId;
     setState(() {
       _isQuoting = true;
       _quoteError = null;
@@ -159,20 +171,25 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
           'deliveryLng': _deliveryLng,
         },
       );
+      // A newer _fetchQuote call has started since this one — its
+      // inputs are stale, so its response must not overwrite the
+      // (possibly already-updated) displayed price.
+      if (!mounted || requestId != _quoteRequestId) return;
       final data = res.data as Map<String, dynamic>;
-      if (!mounted) return;
       setState(() {
         _serverTotalPrice = (data['totalPrice'] as num).toDouble();
         _serverDeliveryFee = (data['deliveryFee'] as num).toDouble();
         _serverGrandTotal = (data['grandTotal'] as num).toDouble();
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && requestId == _quoteRequestId) {
         setState(
             () => _quoteError = 'Could not calculate price. Pull to refresh.');
       }
     } finally {
-      if (mounted) setState(() => _isQuoting = false);
+      if (mounted && requestId == _quoteRequestId) {
+        setState(() => _isQuoting = false);
+      }
     }
   }
 

@@ -93,6 +93,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     VerifyOtpRequested event,
     Emitter<AuthState> emit,
   ) async {
+    // FIX (review 2026-11-01): capture the fullName BEFORE emitting
+    // AuthLoading — that emit overwrites `state`, so the catch block
+    // below can no longer read it from the (now-gone) OtpRequired
+    // state. Needed to re-emit OtpRequired on failure instead of
+    // AuthFailure (see below).
+    final previousFullName = state is OtpRequired ? (state as OtpRequired).fullName : '';
+
     emit(AuthLoading());
     try {
       final res = await ApiService.instance.post(
@@ -107,7 +114,22 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       // Backend returns token after successful OTP
       await _saveAndEmitSuccess(data, emit);
     } catch (e) {
-      emit(AuthFailure(ApiService.getErrorMessage(e)));
+      // FIX (review 2026-11-01): used to emit AuthFailure, which the
+      // router maps straight to LoginScreen — so a single mistyped
+      // digit tore down the whole OtpScreen (entered digits,
+      // countdown, phone context) and bounced the user back to the
+      // login form, contradicting the screen's own "3 attempts"
+      // copy. Re-emitting OtpRequired keeps the router on OtpScreen;
+      // it already listens for OtpRequired.message and shows it as
+      // a snackbar (same mechanism it uses for "new code sent"), so
+      // the error still reaches the user, just without leaving the
+      // screen.
+      emit(OtpRequired(
+        phone: event.phone,
+        fullName: previousFullName,
+        message: ApiService.getErrorMessage(e),
+        isError: true,
+      ));
     }
   }
 
@@ -116,6 +138,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     ResendOtpRequested event,
     Emitter<AuthState> emit,
   ) async {
+    // Same reasoning as _onVerifyOtp: capture fullName before
+    // AuthLoading overwrites `state`, so a failure below can still
+    // re-emit OtpRequired instead of bouncing to LoginScreen (e.g.
+    // hitting the resend cooldown/rate limit shouldn't throw the user
+    // out of the OTP flow any more than a wrong digit should).
+    final previousFullName = state is OtpRequired ? (state as OtpRequired).fullName : '';
+
     emit(AuthLoading());
     try {
       final res = await ApiService.instance.post(
@@ -134,7 +163,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         message: data['message'] ?? 'New code sent.',
       ));
     } catch (e) {
-      emit(AuthFailure(ApiService.getErrorMessage(e)));
+      emit(OtpRequired(
+        phone: event.phone,
+        fullName: previousFullName,
+        message: ApiService.getErrorMessage(e),
+        isError: true,
+      ));
     }
   }
 
@@ -166,24 +200,37 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     CheckAuthStatus event,
     Emitter<AuthState> emit,
   ) async {
-    final isLoggedIn = await StorageService.instance.isLoggedIn();
-    if (!isLoggedIn) {
-      emit(AuthLoggedOut());
-      return;
-    }
-    final role = await StorageService.instance.getRole();
-    final fullName = await StorageService.instance.getFullName();
-    final email = await StorageService.instance.getEmail();
-    final phone = await StorageService.instance.getPhone();
-    final token = await StorageService.instance.getToken();
+    // FIX (review 2026-11-01): this used to have no error handling at
+    // all. flutter_secure_storage can throw (e.g. PlatformException
+    // BAD_DECRYPT) when the Android Keystore key backing it becomes
+    // invalid — a real case after an OS upgrade or restoring the app
+    // from a device backup. With no catch, no state was ever emitted
+    // and the app stayed on the splash screen (AuthInitial maps to
+    // _SplashLoader in app_router.dart) forever, with no recovery
+    // except uninstalling. Falling back to AuthLoggedOut on any read
+    // failure at least gets the user to a login screen they can act on.
+    try {
+      final isLoggedIn = await StorageService.instance.isLoggedIn();
+      if (!isLoggedIn) {
+        emit(AuthLoggedOut());
+        return;
+      }
+      final role = await StorageService.instance.getRole();
+      final fullName = await StorageService.instance.getFullName();
+      final email = await StorageService.instance.getEmail();
+      final phone = await StorageService.instance.getPhone();
+      final token = await StorageService.instance.getToken();
 
-    emit(AuthSuccess(
-      token: token ?? '',
-      role: role ?? '',
-      fullName: fullName ?? '',
-      email: email ?? '',
-      phone: phone ?? '',
-    ));
+      emit(AuthSuccess(
+        token: token ?? '',
+        role: role ?? '',
+        fullName: fullName ?? '',
+        email: email ?? '',
+        phone: phone ?? '',
+      ));
+    } catch (_) {
+      emit(AuthLoggedOut());
+    }
   }
 
   // ─── Save auth data and emit AuthSuccess ──────────
@@ -191,19 +238,32 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Map<String, dynamic> data,
     Emitter<AuthState> emit,
   ) async {
+    // FIX (review 2026-11-01): token/role/fullName used to be passed
+    // straight into non-nullable String parameters. If the backend
+    // response were ever missing one of these keys (a contract
+    // change, a partial response), the implicit null-to-String cast
+    // threw a raw Dart type error that surfaced to the user as the
+    // AuthFailure message — e.g. "type 'Null' is not a subtype of
+    // type 'String'" — instead of a clean, actionable message.
+    final token = data['token'] ?? '';
+    final role = data['role'] ?? '';
+    final fullName = data['fullName'] ?? '';
+    final email = data['email'] ?? '';
+    final phone = data['phone'] ?? '';
+
     await StorageService.instance.saveAuthData(
-      token: data['token'],
-      role: data['role'],
-      fullName: data['fullName'],
-      email: data['email'] ?? '',
-      phone: data['phone'] ?? '',
+      token: token,
+      role: role,
+      fullName: fullName,
+      email: email,
+      phone: phone,
     );
     emit(AuthSuccess(
-      token: data['token'],
-      role: data['role'],
-      fullName: data['fullName'],
-      email: data['email'] ?? '',
-      phone: data['phone'] ?? '',
+      token: token,
+      role: role,
+      fullName: fullName,
+      email: email,
+      phone: phone,
     ));
   }
 }

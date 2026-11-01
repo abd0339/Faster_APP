@@ -9,6 +9,7 @@ import com.faster.backend.entity.User;
 import com.faster.backend.exception.BusinessException;
 import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.AdminService;
 import com.faster.backend.service.FileStorageService;
 import com.faster.backend.service.LedgerService;
@@ -34,6 +35,7 @@ public class AdminController {
         private final UserRepository userRepository;
         private final FileStorageService fileStorageService;
         private final com.faster.backend.service.OrderFeedbackService feedbackService;
+        private final AuthenticatedUserResolver authResolver;
 
         private static final java.util.Set<String> VALID_DOC_TYPES = java.util.Set.of(
                         "PROFILE_PHOTO",
@@ -228,7 +230,7 @@ public class AdminController {
                         @Valid @RequestBody DebtSettlementRequest request,
                         Authentication auth) {
 
-                Long adminId = getAdminId(auth);
+                Long adminId = authResolver.resolveId(auth);
 
                 LedgerEntry entry = adminService
                                 .settleDriverDebt(
@@ -255,7 +257,7 @@ public class AdminController {
                         @Valid @RequestBody DebtSettlementRequest request,
                         Authentication auth) {
 
-                Long adminId = getAdminId(auth);
+                Long adminId = authResolver.resolveId(auth);
 
                 LedgerEntry entry = adminService
                                 .settleMerchantCommission(
@@ -274,16 +276,6 @@ public class AdminController {
         }
 
         // ─── Helper ───────────────────────────────────────
-        private Long getAdminId(Authentication auth) {
-                String principal = auth.getName();
-                User user = userRepository
-                                .findByEmail(principal)
-                                .orElseGet(() -> userRepository.findByPhone(principal)
-                                                .orElseThrow(() -> new NotFoundException(
-                                                                "Admin not found")));
-                return user.getId();
-        }
-
         // ─── GET /api/admin/drivers/pending ──────────────────
         // Admin sees drivers waiting for verification
         @GetMapping("/drivers/pending")
@@ -407,7 +399,7 @@ public class AdminController {
         public ResponseEntity<?> resolveFeedback(
                         @PathVariable Long id,
                         Authentication auth) {
-                Long adminId = getAdminId(auth);
+                Long adminId = authResolver.resolveId(auth);
                 feedbackService.resolveFeedback(id, adminId);
                 return ResponseEntity.ok(Map.of(
                                 "message", "Feedback marked as resolved"));

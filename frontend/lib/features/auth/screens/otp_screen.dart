@@ -166,10 +166,20 @@ class _OtpScreenState extends State<OtpScreen>
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ));
         } else if (state is OtpRequired && state.message.isNotEmpty) {
-          // Resend confirmation from the backend
+          // A wrong/expired code re-emits OtpRequired (isError: true)
+          // instead of AuthFailure, specifically so the router keeps
+          // showing this screen instead of bouncing to LoginScreen —
+          // but it still needs the same clear-and-refocus + red
+          // styling AuthFailure used to give. A plain resend
+          // confirmation ("New code sent") keeps the lighter accent
+          // styling and leaves whatever's typed alone.
+          if (state.isError) {
+            for (final c in _controllers) c.clear();
+            _focusNodes[0].requestFocus();
+          }
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(state.message),
-            backgroundColor: AppColors.accent,
+            backgroundColor: state.isError ? AppColors.error : AppColors.accent,
             behavior: SnackBarBehavior.floating,
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

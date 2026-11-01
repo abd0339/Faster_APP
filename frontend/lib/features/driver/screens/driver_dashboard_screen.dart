@@ -33,6 +33,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   bool _isLoading = false;
   bool _isTogglingStatus = false;
   bool _isUpdatingOrder = false;
+  bool _isAcceptingOrder = false;
 
   // ─── Critical flags to prevent race conditions ────
   // Prevents GPS stream and WS callbacks from firing
@@ -316,8 +317,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
 
   // ─── ACCEPT ORDER ─────────────────────────────────
   Future<void> _acceptOrder(int orderId) async {
-    if (_disposed || !mounted) return;
+    // FIX (review 2026-11-01): unlike every other action button on
+    // this screen (_isUpdatingOrder, _isPlacingOrder on the cart
+    // screen), this had no re-entrancy guard — only _disposed/mounted
+    // were checked. A fast double-tap could fire two accept requests
+    // for the same order before the first response/rebuild removed
+    // the button.
+    if (_disposed || !mounted || _isAcceptingOrder) return;
     setState(() {
+      _isAcceptingOrder = true;
       _showIncomingOrder = false;
       _incomingOrder = null;
     });
@@ -327,6 +335,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       if (mounted) _showSuccess('Order accepted!');
     } catch (e) {
       if (mounted) _showError(ApiService.getErrorMessage(e));
+    } finally {
+      if (mounted && !_disposed) setState(() => _isAcceptingOrder = false);
     }
   }
 
@@ -977,6 +987,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                   icon: Icons.check_rounded,
                   color: AppColors.accent,
                   textColor: AppColors.background,
+                  isLoading: _isAcceptingOrder,
                   onPressed: () => _acceptOrder(orderId),
                 ),
                 const SizedBox(height: 12),

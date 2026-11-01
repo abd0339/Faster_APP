@@ -2,9 +2,7 @@ package com.faster.backend.controller;
 
 import com.faster.backend.dto.StoreScheduleRequest;
 import com.faster.backend.entity.StoreSchedule;
-import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.StoreScheduleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +19,7 @@ import java.util.Map;
 public class StoreScheduleController {
 
     private final StoreScheduleService scheduleService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
 
     // ─── POST /api/merchant/schedule (single day) ────
     @PostMapping
@@ -29,7 +27,7 @@ public class StoreScheduleController {
             @Valid @RequestBody StoreScheduleRequest req,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         StoreSchedule schedule = scheduleService.setSchedule(
                 merchantId,
                 req.getDayOfWeek(),
@@ -47,7 +45,7 @@ public class StoreScheduleController {
             @RequestBody List<StoreScheduleRequest> requests,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
 
         for (StoreScheduleRequest req : requests) {
             if (req.getDayOfWeek() == null) continue;
@@ -69,7 +67,7 @@ public class StoreScheduleController {
     @GetMapping
     public ResponseEntity<List<StoreSchedule>> getSchedule(
             Authentication auth) {
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         return ResponseEntity.ok(
             scheduleService.getSchedule(merchantId));
     }
@@ -78,7 +76,7 @@ public class StoreScheduleController {
     @GetMapping("/status")
     public ResponseEntity<?> getStoreStatus(
             Authentication auth) {
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         boolean isOpen = scheduleService
             .isStoreOpenNow(merchantId);
         return ResponseEntity.ok(Map.of(
@@ -87,17 +85,5 @@ public class StoreScheduleController {
                 ? "Store is currently open"
                 : "Store is currently closed"
         ));
-    }
-
-    // ─── Helper ───────────────────────────────────────
-    private Long getMerchantId(Authentication auth) {
-        String principal = auth.getName();
-        return userRepository.findByEmail(principal)
-                .orElseGet(() ->
-                    userRepository.findByPhone(principal)
-                        .orElseThrow(() ->
-                            new NotFoundException(
-                                "User not found")))
-                .getId();
     }
 }

@@ -2,9 +2,7 @@ package com.faster.backend.controller;
 
 import com.faster.backend.dto.OfferRequest;
 import com.faster.backend.entity.Offer;
-import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.OfferService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +20,7 @@ import java.util.Map;
 public class OfferController {
 
     private final OfferService offerService;
-    private final UserRepository userRepository;
+    private final AuthenticatedUserResolver authResolver;
 
     // ─── POST /api/merchant/offers ────────────────────
     @PostMapping
@@ -30,7 +28,7 @@ public class OfferController {
             @Valid @RequestBody OfferRequest req,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         Offer offer = offerService.createOffer(
                 merchantId,
                 req.getTitle(),
@@ -53,7 +51,7 @@ public class OfferController {
             @Valid @RequestBody OfferRequest req,
             Authentication auth) {
 
-        Long merchantId = getMerchantId(auth);
+        Long merchantId = authResolver.resolveId(auth);
         Offer offer = offerService.updateOffer(
                 merchantId,
                 id,
@@ -75,7 +73,7 @@ public class OfferController {
     public ResponseEntity<List<Offer>> getAllOffers(
             Authentication auth) {
         return ResponseEntity.ok(
-            offerService.getAllOffers(getMerchantId(auth)));
+            offerService.getAllOffers(authResolver.resolveId(auth)));
     }
 
     // ─── GET /api/merchant/offers/live ────────────────
@@ -83,7 +81,7 @@ public class OfferController {
     public ResponseEntity<List<Offer>> getLiveOffers(
             Authentication auth) {
         return ResponseEntity.ok(
-            offerService.getLiveOffers(getMerchantId(auth)));
+            offerService.getLiveOffers(authResolver.resolveId(auth)));
     }
 
     // ─── PATCH /api/merchant/offers/{id}/toggle ───────
@@ -92,7 +90,7 @@ public class OfferController {
             @PathVariable Long id,
             Authentication auth) {
         Offer offer = offerService
-            .toggleOffer(getMerchantId(auth), id);
+            .toggleOffer(authResolver.resolveId(auth), id);
         return ResponseEntity.ok(Map.of(
             "message", "Offer status updated",
             "isActive", offer.getIsActive()
@@ -106,7 +104,7 @@ public class OfferController {
             @RequestParam("image") MultipartFile image,
             Authentication auth) {
         Offer offer = offerService
-            .uploadOfferImage(getMerchantId(auth), id, image);
+            .uploadOfferImage(authResolver.resolveId(auth), id, image);
         return ResponseEntity.ok(Map.of(
             "message", "Offer image uploaded",
             "imageUrl", offer.getImageUrl()
@@ -118,20 +116,8 @@ public class OfferController {
     public ResponseEntity<?> deleteOffer(
             @PathVariable Long id,
             Authentication auth) {
-        offerService.deleteOffer(getMerchantId(auth), id);
+        offerService.deleteOffer(authResolver.resolveId(auth), id);
         return ResponseEntity.ok(Map.of(
             "message", "Offer deleted successfully"));
-    }
-
-    // ─── Helper ───────────────────────────────────────
-    private Long getMerchantId(Authentication auth) {
-        String principal = auth.getName();
-        return userRepository.findByEmail(principal)
-                .orElseGet(() ->
-                    userRepository.findByPhone(principal)
-                        .orElseThrow(() ->
-                            new NotFoundException(
-                                "User not found")))
-                .getId();
     }
 }

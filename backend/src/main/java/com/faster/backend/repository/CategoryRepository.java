@@ -23,6 +23,12 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
         Optional<Category> findByIdAndMerchantId(
                         Long id, Long merchantId);
 
+        // ─── Bulk find, scoped to merchant — used when linking
+        // categories to an offer, so a merchant can't link another
+        // merchant's categories by guessing/incrementing IDs.
+        List<Category> findByIdInAndMerchantId(
+                        List<Long> ids, Long merchantId);
+
         // ─── Find by name + merchant (any status) ─────────
         Optional<Category> findByNameAndMerchantId(
                         String name, Long merchantId);

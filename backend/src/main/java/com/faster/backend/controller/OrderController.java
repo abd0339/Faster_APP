@@ -7,7 +7,7 @@ import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
 import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.OrderRepository;
-import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,8 +23,8 @@ import java.util.Map;
 public class OrderController {
 
         private final OrderService orderService;
-        private final UserRepository userRepository;
         private final OrderRepository orderRepository;
+        private final AuthenticatedUserResolver authResolver;
 
         // ─────────────────────────────────────────────────
         // POST /api/orders/quote
@@ -102,7 +102,7 @@ public class OrderController {
                         @Valid @RequestBody OrderRequest req,
                         Authentication auth) {
 
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
                 Order order;
 
                 // ─── O2O: Merchant creates for offline customer ──
@@ -244,7 +244,7 @@ public class OrderController {
                         @PathVariable Long id,
                         Authentication auth) {
 
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
                 Order order = orderRepository.findById(id)
                                 .orElseThrow(() -> new NotFoundException("Order not found"));
 
@@ -272,7 +272,7 @@ public class OrderController {
                         @PathVariable Long id,
                         Authentication auth) {
 
-                User driver = getUser(auth);
+                User driver = authResolver.resolve(auth);
 
                 if (driver.getRole() != User.Role.DRIVER) {
                         return ResponseEntity.status(403)
@@ -302,7 +302,7 @@ public class OrderController {
                         @Valid @RequestBody OrderStatusRequest req,
                         Authentication auth) {
 
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
 
                 if (req.getStatus() == Order.OrderStatus.DISPUTED) {
                         if (req.getDisputeReason() == null
@@ -331,7 +331,7 @@ public class OrderController {
         @GetMapping("/api/orders/merchant")
         public ResponseEntity<List<Order>> getMerchantOrders(
                         Authentication auth) {
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
                 return ResponseEntity.ok(
                                 orderService.getMerchantOrders(user.getId()));
         }
@@ -342,7 +342,7 @@ public class OrderController {
         @GetMapping("/api/orders/driver")
         public ResponseEntity<List<Order>> getDriverOrders(
                         Authentication auth) {
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
                 return ResponseEntity.ok(
                                 orderService.getDriverOrders(user.getId()));
         }
@@ -353,7 +353,7 @@ public class OrderController {
         @GetMapping("/api/orders/driver/active")
         public ResponseEntity<List<Order>> getActiveDriverOrders(
                         Authentication auth) {
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
                 return ResponseEntity.ok(
                                 orderService.getActiveDriverOrders(user.getId()));
         }
@@ -364,7 +364,7 @@ public class OrderController {
         @GetMapping("/api/orders/customer")
         public ResponseEntity<List<Order>> getCustomerOrders(
                         Authentication auth) {
-                Long customerId = getUser(auth).getId();
+                Long customerId = authResolver.resolve(auth).getId();
                 return ResponseEntity.ok(
                                 orderService.getCustomerOrders(customerId));
         }
@@ -460,7 +460,7 @@ public class OrderController {
                         @PathVariable Long orderId,
                         Authentication auth) {
 
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
                 Order order = orderService.cancelOrderByCustomer(orderId, user.getId());
 
                 return ResponseEntity.ok(Map.of(
@@ -480,7 +480,7 @@ public class OrderController {
                         @RequestBody Map<String, Double> body,
                         Authentication auth) {
 
-                User user = getUser(auth);
+                User user = authResolver.resolve(auth);
                 Order order = orderService.confirmRecipientLocation(
                                 orderId, user.getPhone(),
                                 body.get("lat"), body.get("lng"));
@@ -492,12 +492,4 @@ public class OrderController {
                                 "grandTotal", order.getGrandTotal()));
         }
 
-        // ─── Helper: get authenticated user ───────────────
-        private User getUser(Authentication auth) {
-                String principal = auth.getName();
-                return userRepository.findByEmail(principal)
-                                .orElseGet(() -> userRepository.findByPhone(principal)
-                                                .orElseThrow(() -> new NotFoundException(
-                                                                "User not found")));
-        }
 }

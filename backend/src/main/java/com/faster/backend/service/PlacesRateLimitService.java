@@ -4,11 +4,7 @@ import com.faster.backend.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-
-import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 
 // §2.4 fix — Google Places calls are authenticated (so an
 // anonymous scraper can't burn quota) but were otherwise
@@ -16,16 +12,19 @@ import java.util.concurrent.TimeUnit;
 // /api/places/autocomplete at ~$2.83/1000 requests, so a
 // script at 10 req/s is ~$2,450/day. Same Redis
 // per-day-counter pattern as OtpRateLimitService, keyed on
-// the user instead of phone/IP.
+// the user instead of phone/IP — shares the increment+TTL
+// primitive via RedisDailyCounterService (design-pattern-review
+// finding, 2026-11-01), but keeps its own fail-OPEN policy here
+// rather than in the shared helper; see that class's comment
+// for why.
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PlacesRateLimitService {
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final RedisDailyCounterService dailyCounter;
 
     private static final String USER_DAY_PREFIX = "places:userday:";
-    private static final Duration DAY = Duration.ofHours(24);
 
     @Value("${app.places.max-per-user-day:300}")
     private int maxPerUserDay;
@@ -40,11 +39,7 @@ public class PlacesRateLimitService {
 
         try {
             String key = USER_DAY_PREFIX + userId;
-            Long count = redisTemplate.opsForValue().increment(key);
-
-            if (count != null && count == 1L) {
-                redisTemplate.expire(key, DAY);
-            }
+            Long count = dailyCounter.incrementWithDailyWindow(key);
 
             if (count != null && count > maxPerUserDay) {
                 log.warn("Places API cap hit for user {} ({} calls today)",

@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -16,12 +15,11 @@ import java.util.concurrent.TimeUnit;
 public class OtpRateLimitService {
 
     private final RedisTemplate<String, Object> redisTemplate;
+    private final RedisDailyCounterService dailyCounter;
 
     private static final String COOLDOWN_PREFIX  = "otp:cooldown:";
     private static final String PHONE_DAY_PREFIX = "otp:phoneday:";
     private static final String IP_DAY_PREFIX    = "otp:ipday:";
-
-    private static final Duration DAY = Duration.ofHours(24);
 
     // Tunable from .env without a rebuild — if a limit turns out to
     // be wrong in production you do not want to be waiting on a
@@ -63,13 +61,7 @@ public class OtpRateLimitService {
 
             // ─── Layer 2: per-phone daily cap ─────────────
             String phoneDayKey = PHONE_DAY_PREFIX + phone;
-            Long phoneCount = redisTemplate.opsForValue().increment(phoneDayKey);
-
-            if (phoneCount != null && phoneCount == 1L) {
-                // First send in this window — start the 24h clock.
-                // Without this the key would live forever.
-                redisTemplate.expire(phoneDayKey, DAY);
-            }
+            Long phoneCount = dailyCounter.incrementWithDailyWindow(phoneDayKey);
 
             if (phoneCount != null && phoneCount > maxPerPhoneDay) {
                 log.warn("OTP phone cap hit for {} ({} attempts)",
@@ -83,11 +75,7 @@ public class OtpRateLimitService {
             // ─── Layer 3: per-IP daily cap ────────────────
             if (isUsableClientIp(ip)) {
                 String ipDayKey = IP_DAY_PREFIX + ip;
-                Long ipCount = redisTemplate.opsForValue().increment(ipDayKey);
-
-                if (ipCount != null && ipCount == 1L) {
-                    redisTemplate.expire(ipDayKey, DAY);
-                }
+                Long ipCount = dailyCounter.incrementWithDailyWindow(ipDayKey);
 
                 if (ipCount != null && ipCount > maxPerIpDay) {
                     log.warn("OTP IP cap hit for {} ({} attempts) — "

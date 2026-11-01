@@ -25,6 +25,7 @@ import com.faster.backend.exception.BusinessException;
 import com.faster.backend.exception.ForbiddenException;
 import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.DriverService;
 import com.faster.backend.service.FileStorageService;
 import com.faster.backend.service.LocationService;
@@ -42,6 +43,7 @@ public class DriverController {
     private final LocationService locationService;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
+    private final AuthenticatedUserResolver authResolver;
 
     // Every allowed document type — single source of truth
     // for validation, storage subfolder naming, and the
@@ -59,7 +61,7 @@ public class DriverController {
             @Valid @RequestBody DriverStatusRequest req,
             Authentication auth) {
 
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         User driver = driverService.goOnline(
                 driverId, req.getLat(), req.getLng(), req.getMode());
 
@@ -72,7 +74,7 @@ public class DriverController {
     // ─── POST /api/driver/offline ─────────────────────
     @PostMapping("/offline")
     public ResponseEntity<?> goOffline(Authentication auth) {
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         driverService.goOffline(driverId);
         return ResponseEntity.ok(Map.of(
                 "message", "You are now offline",
@@ -85,7 +87,7 @@ public class DriverController {
             @Valid @RequestBody DriverStatusRequest req,
             Authentication auth) {
 
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         User driver = driverService.switchMode(
                 driverId, req.getMode(), req.getLat(), req.getLng());
 
@@ -100,7 +102,7 @@ public class DriverController {
             @Valid @RequestBody DriverLocationRequest req,
             Authentication auth) {
 
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
 
         if (!locationService.isDriverOnline(driverId)) {
             return ResponseEntity.badRequest().body(
@@ -122,7 +124,7 @@ public class DriverController {
     @GetMapping("/status")
     public ResponseEntity<?> getStatus(Authentication auth) {
 
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         User driver = userRepository.findById(driverId)
                 .orElseThrow(() -> new NotFoundException("Driver not found"));
 
@@ -175,7 +177,7 @@ public class DriverController {
                     + VALID_DOC_TYPES);
         }
 
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         User driver = userRepository.findById(driverId)
                 .orElseThrow(() -> new NotFoundException("Driver not found"));
 
@@ -216,7 +218,7 @@ public class DriverController {
             throw new BusinessException("Invalid document type");
         }
 
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         User driver = userRepository.findById(driverId)
                 .orElseThrow(() -> new NotFoundException("Driver not found"));
 
@@ -244,7 +246,7 @@ public class DriverController {
             @RequestBody DriverProfileRequest req,
             Authentication auth) {
 
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         User driver = userRepository.findById(driverId)
                 .orElseThrow(() -> new NotFoundException("Driver not found"));
 
@@ -291,7 +293,7 @@ public class DriverController {
             Authentication auth) {
 
         if (auth == null) return;
-        Long driverId = getDriverId(auth);
+        Long driverId = authResolver.resolveId(auth);
         locationService.updateLocation(
                 driverId, req.getLat(), req.getLng());
     }
@@ -332,12 +334,4 @@ public class DriverController {
         return "image/jpeg";
     }
 
-    private Long getDriverId(Authentication auth) {
-        String principal = auth.getName();
-        User user = userRepository.findByEmail(principal)
-                .orElseGet(() -> userRepository.findByPhone(principal)
-                        .orElseThrow(() -> new NotFoundException(
-                                "User not found")));
-        return user.getId();
-    }
 }
