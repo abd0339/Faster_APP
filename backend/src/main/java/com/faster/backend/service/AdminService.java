@@ -199,6 +199,12 @@ public class AdminService {
         return orderRepository.findByIsPriceFlaggedTrueOrderByCreatedAtDesc();
     }
 
+    // ─── Orders with a flagged delivery distance ──────────
+    // (input-hardening) — review queue, not a block.
+    public List<Order> getDistanceFlaggedOrders() {
+        return orderRepository.findByIsDistanceFlaggedTrueOrderByCreatedAtDesc();
+    }
+
     // ─── All in-progress orders ───────────────────────
     // Returns PENDING + ACCEPTED + PREPARING +
     //         READY_FOR_PICKUP + PICKED_UP

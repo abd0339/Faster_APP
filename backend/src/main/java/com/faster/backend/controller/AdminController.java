@@ -161,6 +161,16 @@ public class AdminController {
                                 adminService.getPriceFlaggedOrders());
         }
 
+        // GET /api/admin/orders/distance-flagged
+        // Orders with a flagged delivery distance (input-hardening) —
+        // a review queue, not a block. See PricingService
+        // .exceedsMaxDeliveryDistance().
+        @GetMapping("/orders/distance-flagged")
+        public ResponseEntity<List<Order>> getDistanceFlaggedOrders() {
+                return ResponseEntity.ok(
+                                adminService.getDistanceFlaggedOrders());
+        }
+
         // GET /api/admin/orders/active
         @GetMapping("/orders/active")
         public ResponseEntity<List<Order>> getActiveOrders() {

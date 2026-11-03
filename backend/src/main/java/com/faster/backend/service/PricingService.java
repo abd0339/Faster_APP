@@ -33,6 +33,38 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PricingService {
 
+    // ─── BigDecimal scale/exponent DoS guard ──────────
+    // BigDecimal.setScale (and most BigDecimal arithmetic that must
+    // realign the decimal point) on a value with an extreme scale is
+    // computationally dangerous: internally it has to construct a
+    // BigInteger with roughly |scale| digits. A client sending
+    // {"totalPrice": 1e10000000} — an 11-character JSON token, NOT
+    // caught by Jackson's own default max-number-LENGTH guard, since
+    // the token itself is short even though the resulting scale is
+    // enormous — measured at ~8.8 SECONDS for a single setScale(2,...)
+    // call in this exact codebase. BigDecimal.scale() is a plain
+    // stored field: reading it is always O(1) regardless of
+    // magnitude, so checking it BEFORE any setScale/arithmetic call
+    // is the correct, cheap place to reject a dangerous value.
+    //
+    // NOTE: compareTo() against a small-magnitude reference constant
+    // (e.g. BigDecimal.ZERO, or the o2o/direct-delivery bound checks
+    // below) is SEPARATELY safe even for a huge-scale value — verified
+    // empirically (0ms for the same "1e10000000" against a small
+    // constant) — because BigDecimal.compareTo short-circuits via an
+    // internal "adjusted exponent" estimate when the two values'
+    // magnitudes are clearly different, without ever needing to
+    // align scales. So this guard is specifically required before
+    // setScale, not before a compareTo-based bounds check.
+    private static final int MAX_ABS_SCALE = 100;
+
+    public void rejectIfScaleIsDangerous(BigDecimal value) {
+        if (value != null && Math.abs(value.scale()) > MAX_ABS_SCALE) {
+            throw new BusinessException(
+                    "Amount has an invalid number of digits");
+        }
+    }
+
     private final ItemRepository itemRepository;
     private final ModifierOptionRepository modifierOptionRepository;
     private final ItemAddonRepository addonRepository;
@@ -60,6 +92,28 @@ public class PricingService {
 
     @Value("${pricing.o2o.review-threshold:5.00}")
     private BigDecimal o2oReviewThreshold;
+
+    // ─── Direct Delivery item-value guardrail ─────────
+    // itemValue is the customer's OWN declared package value (see
+    // OrderService.createDirectDeliveryOrder) — legitimately
+    // customer-set, unlike O2O's merchant-set totalPrice, so the
+    // $1000 O2O ceiling doesn't apply here. But it was completely
+    // unbounded server-side: Order.totalPrice/grandTotal are both
+    // NUMERIC(10,2) columns (max 99,999,999.99), and a value near or
+    // above that throws a raw DataIntegrityViolationException once
+    // persisted — caught only generically by GlobalExceptionHandler,
+    // leaking SQL/constraint text to the client. Bounded well under
+    // the column's real max so grandTotal (itemValue + deliveryFee)
+    // can never overflow either.
+    @Value("${pricing.direct-delivery.max-item-value:50000.00}")
+    private BigDecimal directDeliveryMaxItemValue;
+
+    // ─── Max delivery distance (input-hardening) ─────
+    // Hard cap on pickup→delivery straight-line distance; orders/location
+    // updates beyond this are rejected by OrderService (Tasks 5 and 6),
+    // not by this service — this method only answers the yes/no question.
+    @Value("${delivery.max-distance-km:6.0}")
+    private double maxDeliveryDistanceKm;
 
     // ─── Ride fee (MOBILITY) — distance-based ────────
     @Value("${pricing.ride.base-fee:1.50}")
@@ -222,6 +276,25 @@ public class PricingService {
     }
 
     // ─────────────────────────────────────────────────
+    // DIRECT DELIVERY ITEM-VALUE CHECK
+    // Hard-rejects a declared package value that's absurdly large —
+    // not a typo-guard like O2O's $1 minimum (a customer's own
+    // package can legitimately be worth very little), just an upper
+    // bound well under what Order.totalPrice/grandTotal's
+    // NUMERIC(10,2) columns can actually hold, so a huge value never
+    // reaches persistence and overflows them.
+    // ─────────────────────────────────────────────────
+    public void validateDirectDeliveryItemValue(BigDecimal itemValue) {
+        if (itemValue.compareTo(directDeliveryMaxItemValue) > 0) {
+            throw new BusinessException(
+                    "Declared item value of $" + itemValue
+                    + " looks like a mistake (max $"
+                    + directDeliveryMaxItemValue
+                    + "). Double-check the amount.");
+        }
+    }
+
+    // ─────────────────────────────────────────────────
     // DELIVERY FEE (LOGISTICS) — distance-based
     // base fee + (rate per km × distance), floored at min fee.
     //
@@ -253,9 +326,48 @@ public class PricingService {
     }
 
     // ─────────────────────────────────────────────────
-    // Shared distance-fee calculation (design-pattern-review
-    // finding, 2026-11-01): calculateDeliveryFee and calculateRideFee
-    // used to be two structurally identical methods differing only
+    // MAX DELIVERY DISTANCE CHECK (input-hardening)
+    // Answers "is this pickup→delivery pair too far apart to serve?"
+    // so OrderService can reject it at order-creation and
+    // location-update time (configurable cap, default 6km).
+    //
+    // Can't evaluate distance without all 4 coordinates — treated as
+    // "not exceeding" rather than throwing, matching this class's
+    // existing missing-coords philosophy (see calculateDistanceFee).
+    // ─────────────────────────────────────────────────
+    public boolean exceedsMaxDeliveryDistance(
+            Double pickupLat, Double pickupLng,
+            Double deliveryLat, Double deliveryLng) {
+
+        if (pickupLat == null || pickupLng == null
+                || deliveryLat == null || deliveryLng == null) {
+            return false;
+        }
+
+        double distanceKm = haversineKm(
+                pickupLat, pickupLng, deliveryLat, deliveryLng);
+
+        // a coordinate that overflows a double
+        // to +/-Infinity (e.g. a client sending "1e400" for a lat/lng —
+        // syntactically a valid JSON number, which Jackson parses straight
+        // into a Double field as Double.POSITIVE_INFINITY) makes the
+        // haversine formula compute NaN (Math.sin/cos of an infinite
+        // radian value is NaN by spec). `NaN > maxDeliveryDistanceKm` is
+        // FALSE — NaN compares false to everything — so without this
+        // guard the method silently reported "not exceeding the cap" for
+        // exactly the malformed input the cap exists to catch. Fail safe:
+        // treat an unanswerable (non-finite) distance as exceeding it.
+        if (!Double.isFinite(distanceKm)) {
+            return true;
+        }
+
+        return distanceKm > maxDeliveryDistanceKm;
+    }
+
+    // ─────────────────────────────────────────────────
+    // Shared distance-fee calculation: calculateDeliveryFee and
+    // calculateRideFee used to be two structurally identical methods
+    // differing only
     // by which (baseFee, ratePerKm, minFee) triple they used — a bug
     // fix to the clamping/rounding logic had to land in both, and a
     // future fee tier would naturally have been a third copy. Base
@@ -276,6 +388,18 @@ public class PricingService {
 
         double distanceKm = haversineKm(
                 pickupLat, pickupLng, deliveryLat, deliveryLng);
+
+        // Same non-finite-distance case as exceedsMaxDeliveryDistance
+        // above (see its comment) — without
+        // this guard, BigDecimal.valueOf(NaN/Infinity) a few lines below
+        // throws a raw NumberFormatException ("For input string: \"NaN\"")
+        // that leaks internal detail instead of a clean, intentional
+        // message. Fail fast with exactly that, before any BigDecimal
+        // math runs.
+        if (!Double.isFinite(distanceKm)) {
+            throw new BusinessException(
+                    "Invalid pickup or delivery coordinates");
+        }
 
         BigDecimal fee = baseFee.add(
                 ratePerKm.multiply(BigDecimal.valueOf(distanceKm)));

@@ -13,8 +13,8 @@ import org.springframework.stereotype.Service;
 // script at 10 req/s is ~$2,450/day. Same Redis
 // per-day-counter pattern as OtpRateLimitService, keyed on
 // the user instead of phone/IP — shares the increment+TTL
-// primitive via RedisDailyCounterService (design-pattern-review
-// finding, 2026-11-01), but keeps its own fail-OPEN policy here
+// primitive via RedisDailyCounterService, but keeps its own
+// fail-OPEN policy here
 // rather than in the shared helper; see that class's comment
 // for why.
 @Slf4j

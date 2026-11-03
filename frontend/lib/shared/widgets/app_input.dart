@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
@@ -16,6 +17,14 @@ class AppInput extends StatefulWidget {
   final bool readOnly;
   final VoidCallback? onTap;
   final String? initialValue;
+  final List<TextInputFormatter>? inputFormatters;
+  final int? maxLength;
+  // NEW (final review fix wave, finding #4) — Flutter shows a default
+  // "X/Y" counter under any field with maxLength set. Most callers
+  // adding maxLength (e.g. the price fields) don't want that counter
+  // cluttering a compact form; passing '' suppresses it, same as
+  // TextField's own counterText parameter.
+  final String? counterText;
 
   const AppInput({
     super.key,
@@ -32,6 +41,9 @@ class AppInput extends StatefulWidget {
     this.readOnly = false,
     this.onTap,
     this.initialValue,
+    this.inputFormatters,
+    this.maxLength,
+    this.counterText,
   });
 
   @override
@@ -53,10 +65,13 @@ class _AppInputState extends State<AppInput> {
       onTap: widget.onTap,
       onChanged: widget.onChanged,
       validator: widget.validator,
+      inputFormatters: widget.inputFormatters,
+      maxLength: widget.maxLength,
       style: AppTextStyles.bodyLarge,
       decoration: InputDecoration(
         hintText: widget.hint,
         labelText: widget.label,
+        counterText: widget.counterText,
         prefixIcon: widget.prefixIcon != null
             ? Icon(
                 widget.prefixIcon,

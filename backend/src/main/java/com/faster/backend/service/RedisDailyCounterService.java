@@ -8,7 +8,7 @@ import java.time.Duration;
 
 /**
  * Shared "increment a Redis counter, arm a 24h TTL on its first hit"
- * primitive (design-pattern-review finding, 2026-11-01).
+ * primitive.
  *
  * OtpRateLimitService and PlacesRateLimitService both hand-rolled this
  * exact increment+TTL dance for their per-phone/per-IP/per-user daily

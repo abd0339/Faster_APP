@@ -68,6 +68,17 @@ public class Order {
         private Boolean isPriceFlagged = false;
         private String priceFlagReason;
 
+        // ─── Delivery-distance review flag (input-hardening) ─
+        // Flagged when the delivery distance exceeds the
+        // configured cap — see PricingService
+        // .exceedsMaxDeliveryDistance(). Also a review flag,
+        // not a block: shows up in
+        // GET /api/admin/orders/distance-flagged for manual
+        // review.
+        @Builder.Default
+        private Boolean isDistanceFlagged = false;
+        private String distanceFlagReason;
+
         // ─── Order type ───────────────────────────────────
         @Enumerated(EnumType.STRING)
         @Column(nullable = false)

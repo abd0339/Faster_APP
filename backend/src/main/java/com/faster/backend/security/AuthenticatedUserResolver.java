@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * Resolves the authenticated principal (email or phone, per
  * AuthService.login) to the current User row.
  *
- * Design-pattern-review finding (2026-11-01): this exact lookup —
+ * This exact lookup —
  * findByEmail, falling back to findByPhone, throwing NotFoundException
  * either way — was copy-pasted as a private helper in 11 different
  * controllers (StoreScheduleController, PlacesProxyController,

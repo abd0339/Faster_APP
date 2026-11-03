@@ -1,12 +1,16 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/services/exchange_rate_service.dart';
+import '../../../core/utils/currency_converter.dart';
+import '../../../core/utils/currency_input_formatter.dart';
+import '../../../core/constants/business_rules.dart';
+import '../../../core/utils/distance_calculator.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -242,6 +246,11 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
 
     bool isDetectingPickup = false;
     bool isCreatingOrder = false;
+    // NEW — which currency the customer is typing the item value in.
+    // The backend only ever sees USD: when this is 'LBP', the typed
+    // amount is converted via CurrencyConverter.lbpToUsd right
+    // before the order is submitted.
+    String priceCurrency = 'USD';
     double? pickupLat, pickupLng, deliveryLat, deliveryLng;
 
     // NEW — live server-computed delivery fee (replaces the old
@@ -355,13 +364,88 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
               );
               return;
             }
-            final price = double.tryParse(priceCtrl.text.trim()) ?? 0.0;
+            // FIX: this used to be `?? 0.0`, which silently turned
+            // garbage/empty input into a free order instead of
+            // rejecting it. Now it's validated like every other
+            // required field above.
+            final rawPrice = double.tryParse(priceCtrl.text.trim());
+            if (rawPrice == null || rawPrice <= 0) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Enter a valid item value'),
+                  backgroundColor: AppColors.error,
+                ),
+              );
+              return;
+            }
             // NOTE: no fee parsed here anymore — the delivery fee is
             // computed server-side from real distance. The fee field
             // in the form is display-only (see below).
 
             setSheet(() => isCreatingOrder = true);
             try {
+              // Captured before the (possible) await below, not
+              // re-derived from `context` after it — the safe way to
+              // show a SnackBar across an async gap without
+              // triggering use_build_context_synchronously.
+              final messenger = ScaffoldMessenger.of(context);
+              // The backend always stores/expects totalPrice in USD.
+              // If the customer typed the value in LBP, convert it
+              // here — the rest of the flow never knows the field
+              // was typed in anything but dollars.
+              double price = rawPrice;
+              if (priceCurrency == 'LBP') {
+                final rate = await ExchangeRateService.instance.getCurrentRate();
+                price = CurrencyConverter.lbpToUsd(rawPrice, rate);
+              }
+              // Reject an amount that rounds away to (near) nothing
+              // after conversion — closing the same "silent $0
+              // order" gap this task fixed for raw input, just
+              // reachable through a tiny LBP entry instead of
+              // garbage input. (Direct-Delivery has no server-side
+              // minimum-value check, unlike the merchant O2O path,
+              // so this client-side guard is the only thing standing
+              // between a small LBP typo and a free order.)
+              if (price < 0.01) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Converted price is too small — enter a larger amount'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+                setSheet(() => isCreatingOrder = false);
+                return;
+              }
+
+              // Client-side, UX-only pre-check: warns before the
+              // network call when pickup/delivery are farther apart
+              // than the backend will allow. Mirrors
+              // PricingService.exceedsMaxDeliveryDistance — if the
+              // two ever drift, the backend's check (Tasks 5/6)
+              // still wins; this only decides how early the customer
+              // finds out. Skipped (not blocked) if either
+              // coordinate hasn't been set yet, same null-safety
+              // philosophy as the backend.
+              if (pickupLat != null &&
+                  pickupLng != null &&
+                  deliveryLat != null &&
+                  deliveryLng != null) {
+                final distanceKm = DistanceCalculator.kilometersBetween(
+                    pickupLat!, pickupLng!, deliveryLat!, deliveryLng!);
+                if (distanceKm > kMaxDeliveryDistanceKm) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  setSheet(() => isCreatingOrder = false);
+                  return;
+                }
+              }
+
               final res = await ApiService.instance.post(
                 ApiConstants.orders,
                 data: {
@@ -548,16 +632,81 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                           ),
                         ]),
                         const SizedBox(height: 16),
+
+                        // NEW — currency toggle for the item-value
+                        // field. The backend only ever sees USD;
+                        // picking LBP just changes what the customer
+                        // types, and the typed amount is converted to
+                        // USD right before the order is submitted
+                        // (see placeOrder above).
+                        Row(children: [
+                          TextButton(
+                            onPressed: () => setSheet(() {
+                              priceCurrency = 'USD';
+                              priceCtrl.clear();
+                            }),
+                            style: TextButton.styleFrom(
+                              backgroundColor: priceCurrency == 'USD'
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                              foregroundColor: priceCurrency == 'USD'
+                                  ? AppColors.background
+                                  : AppColors.textHint,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text('USD \$'),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => setSheet(() {
+                              priceCurrency = 'LBP';
+                              priceCtrl.clear();
+                            }),
+                            style: TextButton.styleFrom(
+                              backgroundColor: priceCurrency == 'LBP'
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                              foregroundColor: priceCurrency == 'LBP'
+                                  ? AppColors.background
+                                  : AppColors.textHint,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text('LBP'),
+                          ),
+                        ]),
+                        const SizedBox(height: 10),
+
                         Row(children: [
                           Expanded(
                             child: AppInput(
                               controller: priceCtrl,
-                              hint: '0.00',
-                              label: 'Item Value \$',
+                              hint: priceCurrency == 'USD' ? '0.00' : '0',
+                              label: priceCurrency == 'USD'
+                                  ? 'Item Value \$'
+                                  : 'Item Value (LBP)',
                               prefixIcon: Icons.attach_money_rounded,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                      decimal: true),
+                              keyboardType: TextInputType.numberWithOptions(
+                                  decimal: priceCurrency == 'USD'),
+                              // NEW (final review fix wave, findings #4
+                              // and #5) — see merchant_dashboard_screen's
+                              // identical price field for the full
+                              // rationale: shared formatter (rejects
+                              // just the bad keystroke) plus a hard
+                              // length cap (the real defense against a
+                              // long digit string parsing to Infinity).
+                              inputFormatters: [
+                                priceCurrency == 'USD'
+                                    ? CurrencyInputFormatter.usd()
+                                    : CurrencyInputFormatter.lbp(),
+                              ],
+                              maxLength: priceCurrency == 'USD' ? 10 : 12,
+                              counterText: '',
                             ),
                           ),
                           const SizedBox(width: 12),

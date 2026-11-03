@@ -122,6 +122,10 @@ class ApiConstants {
   static String adminDriverLedger(int id) => '/api/admin/ledger/driver/$id';
   static String adminMerchantLedger(int id) => '/api/admin/ledger/merchant/$id';
 
+  // ─── Exchange rate ────────────────────────────────
+  static const String exchangeRate = '/api/exchange-rate';
+  static const String adminExchangeRate = '/api/admin/exchange-rate';
+
   // ─── Public ───────────────────────────────────────
   static String storeMenu(int merchantId) => '/api/store/$merchantId/menu';
   static String storeStatus(int merchantId) => '/api/store/$merchantId/status';

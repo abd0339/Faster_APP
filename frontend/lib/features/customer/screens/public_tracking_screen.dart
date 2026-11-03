@@ -43,6 +43,14 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
 
   bool _isSharingLocation = false;
   bool _locationShared = false;
+  // NEW (final review fix wave, finding #1) — true when the backend
+  // FLAGGED the last location share instead of applying it (reported
+  // location beyond the delivery-distance cap). Deliberately separate
+  // from _locationShared: the share card (and its retry button) must
+  // stay visible in this case — the recipient may have a one-off bad
+  // GPS fix and should be able to try again — unlike the real success
+  // case, which hides it.
+  bool _locationFlagged = false;
 
   Timer? _pollTimer;
 
@@ -114,14 +122,34 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
 
       if (!mounted) return;
       final data = res.data as Map<String, dynamic>;
+      // FIX (final review fix wave, finding #1): OrderController now
+      // tells the truth about whether this update was actually
+      // applied or just flagged for admin review (beyond the
+      // delivery-distance cap) — previously this screen showed the
+      // success state either way, with no way for the recipient to
+      // know their location wasn't used and no way to retry (the
+      // share card was hidden as soon as _locationShared was set).
+      final flagged = data['distanceFlagged'] == true;
       setState(() {
-        _locationShared = true;
+        _locationFlagged = flagged;
+        // Only the real success case hides the share card — a
+        // flagged attempt leaves it (and its retry button) visible.
+        _locationShared = !flagged;
         if (_order != null) {
           _order!['deliveryFee'] = data['deliveryFee'];
           _order!['grandTotal'] = data['grandTotal'];
         }
       });
-      _showMessage('Location shared! Delivery fee updated.');
+      if (flagged) {
+        _showMessage(
+          (data['message'] as String?) ??
+              "We received your location, but it's outside our delivery "
+                  'area — our team will review it.',
+          isWarning: true,
+        );
+      } else {
+        _showMessage('Location shared! Delivery fee updated.');
+      }
     } catch (e) {
       _showMessage(ApiService.getErrorMessage(e), isError: true);
     } finally {
@@ -129,11 +157,15 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
     }
   }
 
-  void _showMessage(String msg, {bool isError = false}) {
+  void _showMessage(String msg, {bool isError = false, bool isWarning = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor: isError ? AppColors.error : AppColors.accent,
+      backgroundColor: isError
+          ? AppColors.error
+          : isWarning
+              ? AppColors.warning
+              : AppColors.accent,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ));
@@ -281,8 +313,33 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
           ],
 
           // ─── Share location ────────────────────────
+          // NEW (final review fix wave, finding #1): a FLAGGED attempt
+          // (reported location beyond the delivery-distance cap) must
+          // not look like success — show a distinct notice and keep
+          // the retry button, instead of silently matching the
+          // success card below (which hides the button entirely).
           if (!hasDeliveryLocation && !_locationShared &&
               !isCancelled && status != 'DELIVERED') ...[
+            if (_locationFlagged) ...[
+              GlassCard(
+                padding: const EdgeInsets.all(14),
+                borderColor: AppColors.warning.withValues(alpha: 0.5),
+                child: const Row(children: [
+                  Icon(Icons.info_outline_rounded,
+                      color: AppColors.warning, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "That location looked outside our delivery area, "
+                      'so our team will review it. You can try sharing '
+                      'again below.',
+                      style: AppTextStyles.bodyMedium,
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 12),
+            ],
             GlassCard(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -305,7 +362,9 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
                   ),
                   const SizedBox(height: 14),
                   AppButton(
-                    label: 'Share My Location',
+                    label: _locationFlagged
+                        ? 'Try Sharing Again'
+                        : 'Share My Location',
                     icon: Icons.my_location_rounded,
                     isLoading: _isSharingLocation,
                     onPressed: _shareLocation,

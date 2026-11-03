@@ -1,6 +1,8 @@
 package com.faster.backend.dto;
 
 import com.faster.backend.entity.Order;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -41,7 +43,23 @@ public class OrderRequest {
     // ─── Pickup location ──────────────────────────────
     // LOGISTICS/O2O: merchant store location
     // MOBILITY: customer current location (pickup point)
+    //
+    // Range-checked (not @NotNull — nullability is legitimate and
+    // varies by order type, enforced manually per-branch in
+    // OrderController/OrderService) the same way DriverLocationRequest
+    // and MerchantLocationRequest already range-check coordinates:
+    // without this, a value like
+    // "1e400" — syntactically a valid JSON number — overflows to
+    // Double.POSITIVE_INFINITY during deserialization and silently
+    // bypassed PricingService's distance cap (fixed separately in
+    // PricingService itself, but rejecting it here first means a
+    // clean, immediate 400 instead of ever reaching pricing logic).
+    @DecimalMin(value = "-90.0", message = "Invalid pickup latitude")
+    @DecimalMax(value = "90.0", message = "Invalid pickup latitude")
     private Double pickupLat;
+
+    @DecimalMin(value = "-180.0", message = "Invalid pickup longitude")
+    @DecimalMax(value = "180.0", message = "Invalid pickup longitude")
     private Double pickupLng;
     private String pickupAddress;
 
@@ -52,7 +70,12 @@ public class OrderRequest {
     // location (Flow 1). May be null for the WhatsApp
     // "bridge link" flow (Flow 2) where the offline
     // customer shares location after order creation.
+    @DecimalMin(value = "-90.0", message = "Invalid delivery latitude")
+    @DecimalMax(value = "90.0", message = "Invalid delivery latitude")
     private Double deliveryLat;
+
+    @DecimalMin(value = "-180.0", message = "Invalid delivery longitude")
+    @DecimalMax(value = "180.0", message = "Invalid delivery longitude")
     private Double deliveryLng;
     private String deliveryAddress;
 

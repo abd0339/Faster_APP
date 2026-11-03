@@ -62,6 +62,11 @@ public interface OrderRepository
     // .validateO2OPrice() and OrderService.createO2OOrder().
     List<Order> findByIsPriceFlaggedTrueOrderByCreatedAtDesc();
 
+    // ─── Orders with a flagged delivery distance ─────────
+    // (input-hardening) — review queue, not a block. See
+    // PricingService.exceedsMaxDeliveryDistance().
+    List<Order> findByIsDistanceFlaggedTrueOrderByCreatedAtDesc();
+
     // ─── Find pending orders for a merchant ───────────
     @Query("SELECT o FROM Order o " +
            "WHERE o.status = 'PENDING' " +

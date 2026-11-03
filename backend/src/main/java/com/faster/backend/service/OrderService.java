@@ -41,7 +41,7 @@ public class OrderService {
 
         private static final BigDecimal DRIVER_COMMISSION_RATE = new BigDecimal("0.20");
 
-        // Design-pattern-review finding (2026-11-01): this exact
+        // This exact
         // multiply+round was copy-pasted at all 4 order-creation call
         // sites plus both delivery-fee-recalculation call sites (6
         // total) — a rate or rounding-mode change had to land in all
@@ -54,6 +54,39 @@ public class OrderService {
                 return deliveryFee
                                 .multiply(DRIVER_COMMISSION_RATE)
                                 .setScale(2, RoundingMode.HALF_UP);
+        }
+
+        // ─────────────────────────────────────────────────
+        // quoteDeliveryFee, updateTrackingLocation, and
+        // confirmRecipientLocation all take
+        // raw lat/lng off a Map<String, Double> request body — unlike
+        // OrderRequest (createOrder), there is no DTO/@Valid layer in
+        // front of them, so a finite-but-out-of-range value (e.g.
+        // pickupLat + 360, which wraps back onto a real point on the
+        // sphere) was never caught by PricingService's non-finite-
+        // distance guard. That let a garbage coordinate pass the
+        // distance cap at a near-zero computed distance and get
+        // persisted as deliveryLat/deliveryLng and broadcast to a
+        // real driver's map. Reject both non-finite AND out-of-range
+        // values here, before any flag-path, fee calculation, or DB
+        // read runs — this matters most for updateTrackingLocation,
+        // which is PUBLIC and unauthenticated (anyone holding a
+        // tracking code can call it).
+        private void validateLatitude(Double lat) {
+                if (lat != null && (!Double.isFinite(lat) || lat < -90.0 || lat > 90.0)) {
+                        throw new BusinessException("Invalid latitude");
+                }
+        }
+
+        private void validateLongitude(Double lng) {
+                if (lng != null && (!Double.isFinite(lng) || lng < -180.0 || lng > 180.0)) {
+                        throw new BusinessException("Invalid longitude");
+                }
+        }
+
+        private void validateCoordinates(Double lat, Double lng) {
+                validateLatitude(lat);
+                validateLongitude(lng);
         }
 
         // How long after placing an order a customer may still
@@ -187,6 +220,12 @@ public class OrderService {
                 BigDecimal merchantCommission = totalPrice
                                 .multiply(MERCHANT_COMMISSION_RATE)
                                 .setScale(2, RoundingMode.HALF_UP);
+
+                if (pricingService.exceedsMaxDeliveryDistance(
+                                effectivePickupLat, effectivePickupLng, deliveryLat, deliveryLng)) {
+                        throw new BusinessException(
+                                        "Delivery distance exceeds the maximum allowed distance from pickup");
+                }
 
                 Order order = Order.builder()
                                 .trackingCode(generateTrackingCode())
@@ -374,6 +413,9 @@ public class OrderService {
                         Double pickupLat, Double pickupLng,
                         Double deliveryLat, Double deliveryLng) {
 
+                validateCoordinates(pickupLat, pickupLng);
+                validateCoordinates(deliveryLat, deliveryLng);
+
                 return pricingService.calculateDeliveryFee(
                                 pickupLat, pickupLng, deliveryLat, deliveryLng);
         }
@@ -412,7 +454,20 @@ public class OrderService {
                 if (itemValue == null) {
                         itemValue = BigDecimal.ZERO;
                 }
+                // Must run BEFORE setScale below — see
+                // PricingService.rejectIfScaleIsDangerous's comment. A
+                // client-supplied BigDecimal with an extreme scale (e.g.
+                // "1e10000000") makes setScale itself take several
+                // seconds, so checking after it would be too late —
+                // the thread is already stuck.
+                pricingService.rejectIfScaleIsDangerous(itemValue);
                 itemValue = itemValue.setScale(2, RoundingMode.HALF_UP);
+
+                // See PricingService.validateDirectDeliveryItemValue's comment —
+                // bounds itemValue well under the total_price/grand_total
+                // columns' NUMERIC(10,2) real max, so neither can overflow
+                // on save.
+                pricingService.validateDirectDeliveryItemValue(itemValue);
 
                 BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
                                 pickupLat, pickupLng, deliveryLat, deliveryLng);
@@ -422,6 +477,12 @@ public class OrderService {
                 BigDecimal grandTotal = itemValue
                                 .add(actualDeliveryFee)
                                 .setScale(2, RoundingMode.HALF_UP);
+
+                if (pricingService.exceedsMaxDeliveryDistance(
+                                pickupLat, pickupLng, deliveryLat, deliveryLng)) {
+                        throw new BusinessException(
+                                        "Delivery distance exceeds the maximum allowed distance from pickup");
+                }
 
                 Order order = Order.builder()
                                 .trackingCode(generateTrackingCode())
@@ -501,6 +562,13 @@ public class OrderService {
                         throw new BusinessException(
                                         "Order price must be greater than 0");
                 }
+                // Must run BEFORE setScale below — see
+                // PricingService.rejectIfScaleIsDangerous's comment. The
+                // compareTo(ZERO) check above is safe regardless
+                // of scale (comparing to zero is a pure signum check), but it
+                // does NOT catch a huge-but-positive value — that's this
+                // guard's job, before the expensive setScale call.
+                pricingService.rejectIfScaleIsDangerous(totalPrice);
                 totalPrice = totalPrice.setScale(2, RoundingMode.HALF_UP);
 
                 // M3 fix — still manual (see the comment above this
@@ -528,6 +596,12 @@ public class OrderService {
                                 .setScale(2, RoundingMode.HALF_UP);
 
                 String trackingCode = generateTrackingCode();
+
+                if (pricingService.exceedsMaxDeliveryDistance(
+                                pickupLat, pickupLng, deliveryLat, deliveryLng)) {
+                        throw new BusinessException(
+                                        "Delivery distance exceeds the maximum allowed distance from pickup");
+                }
 
                 Order order = Order.builder()
                                 .trackingCode(trackingCode)
@@ -806,6 +880,7 @@ public class OrderService {
                 if (lat == null || lng == null) {
                         throw new BusinessException("Both lat and lng are required");
                 }
+                validateCoordinates(lat, lng);
 
                 Order order = orderRepository.findById(orderId)
                                 .orElseThrow(() -> new NotFoundException("Order not found"));
@@ -831,6 +906,42 @@ public class OrderService {
                                         "This order is " + order.getStatus()
                                                         + " — location can no longer be updated");
                 }
+
+                // Flag (don't reject) when the reported location is beyond the
+                // configured delivery-distance cap. The order may already exist
+                // and even be accepted by a driver, so throwing here would roll
+                // back this whole @Transactional method — including the flag.
+                // Instead: leave the existing delivery location and money alone,
+                // mark the order for admin review, and still save/broadcast/return
+                // normally.
+                if (pricingService.exceedsMaxDeliveryDistance(
+                                order.getPickupLat(), order.getPickupLng(), lat, lng)) {
+                        order.setIsDistanceFlagged(true);
+                        order.setDistanceFlagReason(
+                                        "Reported location is beyond the maximum delivery distance from pickup");
+
+                        Order saved = orderRepository.save(order);
+
+                        messagingTemplate.convertAndSend(
+                                        "/topic/order/" + saved.getId(),
+                                        buildStatusUpdate(saved));
+
+                        log.warn("⚠️ Recipient-confirmed location for order {} exceeds max delivery distance — flagged for review",
+                                        orderId);
+
+                        return saved;
+                }
+
+                // Clear any PREVIOUS flag from an earlier out-of-range
+                // attempt — the recipient is allowed to retry (e.g. their
+                // GPS was briefly inaccurate), and once a good location
+                // comes in this update is no longer something admin needs
+                // to review. Without this, OrderController's honest
+                // flagged/success response would stay stuck on "flagged"
+                // forever after a single bad attempt, even once the
+                // recipient fixes it.
+                order.setIsDistanceFlagged(false);
+                order.setDistanceFlagReason(null);
 
                 order.setDeliveryLat(lat);
                 order.setDeliveryLng(lng);
@@ -881,6 +992,7 @@ public class OrderService {
                         throw new BusinessException(
                                         "Both lat and lng are required");
                 }
+                validateCoordinates(lat, lng);
 
                 Order order = orderRepository
                                 .findByTrackingCode(trackingCode)
@@ -893,6 +1005,37 @@ public class OrderService {
                                         "This order is " + order.getStatus()
                                                         + " — location can no longer be updated");
                 }
+
+                // Flag (don't reject) when the reported location is beyond the
+                // configured delivery-distance cap. The order may already exist
+                // and even be accepted by a driver, so throwing here would roll
+                // back this whole @Transactional method — including the flag.
+                // Instead: leave the existing delivery location and money alone,
+                // mark the order for admin review, and still save/broadcast/return
+                // normally.
+                if (pricingService.exceedsMaxDeliveryDistance(
+                                order.getPickupLat(), order.getPickupLng(), lat, lng)) {
+                        order.setIsDistanceFlagged(true);
+                        order.setDistanceFlagReason(
+                                        "Reported location is beyond the maximum delivery distance from pickup");
+
+                        Order saved = orderRepository.save(order);
+
+                        messagingTemplate.convertAndSend(
+                                        "/topic/order/" + saved.getId(),
+                                        buildStatusUpdate(saved));
+
+                        log.warn("⚠️ Tracking location for {} exceeds max delivery distance — flagged for review",
+                                        trackingCode);
+
+                        return saved;
+                }
+
+                // Clear any PREVIOUS flag from an earlier out-of-range
+                // attempt — see confirmRecipientLocation's identical
+                // comment above for why.
+                order.setIsDistanceFlagged(false);
+                order.setDistanceFlagReason(null);
 
                 order.setDeliveryLat(lat);
                 order.setDeliveryLng(lng);
@@ -986,12 +1129,25 @@ public class OrderService {
         }
 
         private Map<String, Object> buildStatusUpdate(Order order) {
-                return Map.of(
-                                "type", "STATUS_UPDATE",
-                                "orderId", order.getId(),
-                                "trackingCode", order.getTrackingCode(),
-                                "status", order.getStatus(),
-                                "updatedAt", LocalDateTime.now().toString());
+                // A distance-flagged order must broadcast that fact —
+                // otherwise nothing watching /topic/order/{id} (including
+                // an admin dashboard) can tell it apart from a normal
+                // update. Map.of() can't hold a null
+                // value, and distanceFlagReason is null on every non-flagged
+                // order, so a mutable map is used here instead.
+                Map<String, Object> update = new java.util.HashMap<>();
+                update.put("type", "STATUS_UPDATE");
+                update.put("orderId", order.getId());
+                update.put("trackingCode", order.getTrackingCode());
+                update.put("status", order.getStatus());
+                update.put("updatedAt", LocalDateTime.now().toString());
+                update.put("distanceFlagged",
+                                Boolean.TRUE.equals(order.getIsDistanceFlagged()));
+                update.put("distanceFlagReason",
+                                order.getDistanceFlagReason() != null
+                                                ? order.getDistanceFlagReason()
+                                                : "");
+                return update;
         }
 
         private Map<String, Object> buildOrderNotification(Order order) {

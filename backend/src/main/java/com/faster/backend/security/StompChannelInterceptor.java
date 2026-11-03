@@ -142,6 +142,15 @@ public class StompChannelInterceptor implements ChannelInterceptor {
                     "Not authorized to subscribe to " + destination);
         }
 
+        // The exchange rate is broadcast to /topic/exchange-rate on
+        // change; this allows subscribing to it. Not role-specific: the rate
+        // is readable by any authenticated user via GET /api/exchange-rate
+        // (see ExchangeRateController), so any authenticated user may
+        // also subscribe to its live updates.
+        if (destination.equals("/topic/exchange-rate")) {
+            return;
+        }
+
         if (destination.startsWith("/topic/driver/")) {
             requireOwnId(destination, "/topic/driver/", user, User.Role.DRIVER);
             return;

@@ -8,6 +8,8 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,22 @@ public class LedgerService {
     private final LedgerRepository ledgerRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+
+    // Self-injected proxy reference. recordDailyMerchantCommissions()
+    // below calls recordMerchantDailyCommission() in a loop — calling
+    // that through `this` is a plain Java method call that never goes
+    // through Spring's transactional proxy, so its own @Transactional
+    // would be silently ignored and the whole loop would run (and hold
+    // every merchant's pessimistic lock) inside ONE shared transaction.
+    // Calling through `self` instead routes back through the proxy, so
+    // each iteration gets (and releases) its own transaction. @Lazy
+    // breaks the circular-dependency-at-construction problem this
+    // creates. Field/setter injection (not part of the Lombok
+    // constructor above, which only takes `final` fields) is used
+    // deliberately so this doesn't become a required constructor arg.
+    @Lazy
+    @Autowired
+    private LedgerService self;
 
     // ─── Commission rates ─────────────────────────────
     private static final BigDecimal DRIVER_COMMISSION_RATE =
@@ -279,8 +297,16 @@ public class LedgerService {
     // Runs automatically every day at midnight
     // Records 10% of that day's total delivered sales
     // ─────────────────────────────────────────────────
+    // Deliberately NOT @Transactional — each merchant is handled by
+    // the @Transactional recordMerchantDailyCommission() below, called
+    // through `self` so every iteration gets its own transaction (and
+    // releases its own row lock) independently. If this outer method
+    // were transactional too, every call made through `this` would
+    // just join that one shared transaction regardless, and a call
+    // made through `self` would too since REQUIRED joins whatever
+    // transaction is already active — so the only way to get real
+    // per-merchant isolation is to not start one here at all.
     @Scheduled(cron = "0 0 0 * * *", zone = "Asia/Beirut")
-    @Transactional
     public void recordDailyMerchantCommissions() {
 
         // Get yesterday's date range
@@ -294,7 +320,10 @@ public class LedgerService {
 
         for (User merchant : merchants) {
             try {
-                recordMerchantDailyCommission(
+                // Through `self`, not `this` — see the field comment
+                // above and the method comment on
+                // recordDailyMerchantCommissions for why.
+                self.recordMerchantDailyCommission(
                         merchant, startOfDay, endOfDay);
             } catch (Exception e) {
                 log.error("Failed to record commission for merchant {}: {}",

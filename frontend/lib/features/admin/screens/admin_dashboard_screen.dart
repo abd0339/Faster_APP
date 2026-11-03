@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/exchange_rate_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
@@ -37,6 +39,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   // NEW — Feedback tab data
   List<dynamic> _feedback = [];
 
+  // Admin exchange-rate control
+  final TextEditingController _exchangeRateCtrl = TextEditingController();
+  bool _exchangeRateLoading = true;
+  bool _exchangeRateSaving = false;
+  // NEW (final review fix wave, finding #3) — last known-good rate
+  // from the server, so the confirmation dialog can show "old vs
+  // new" even though _exchangeRateCtrl's text may have been edited
+  // since the last successful load/save.
+  double? _currentExchangeRate;
+
   // Loading flags per tab
   bool _statsLoading = true;
   bool _driversLoading = false;
@@ -59,11 +71,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       }
     });
     _loadTab(0); // Load overview immediately
+    _loadExchangeRate();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _exchangeRateCtrl.dispose();
     super.dispose();
   }
 
@@ -223,6 +237,141 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     } catch (e) {
       if (mounted) _showError(ApiService.getErrorMessage(e));
     }
+  }
+
+  // ─── EXCHANGE RATE ─────────────────────────────────
+  // Minimal operator control: shows the current USD/LBP rate
+  // and lets an admin push a new one. Deliberately unstyled
+  // beyond matching this screen's existing conventions —
+  // Project B redesigns this screen later.
+  Future<void> _loadExchangeRate() async {
+    if (!mounted) return;
+    setState(() => _exchangeRateLoading = true);
+    try {
+      final rate = await ExchangeRateService.instance.getCurrentRate();
+      if (!mounted) return;
+      setState(() {
+        _exchangeRateCtrl.text = rate.toString();
+        _currentExchangeRate = rate;
+      });
+    } catch (e) {
+      if (mounted) _showError(ApiService.getErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _exchangeRateLoading = false);
+    }
+  }
+
+  Future<void> _saveExchangeRate() async {
+    final newRate = double.tryParse(_exchangeRateCtrl.text.trim());
+    if (newRate == null) {
+      _showError('Enter a valid number');
+      return;
+    }
+    await _submitExchangeRate(newRate, confirm: false);
+  }
+
+  // NEW (final review fix wave, finding #3) — ExchangeRateService.
+  // updateRate now rejects a rate that's a large (default >50%) swing
+  // from the current one unless the request explicitly confirms it.
+  // On that specific rejection, show a confirmation dialog (old rate,
+  // new rate, one sample conversion for each) and, if the admin
+  // confirms, resubmit with confirm:true.
+  Future<void> _submitExchangeRate(double newRate, {required bool confirm}) async {
+    setState(() => _exchangeRateSaving = true);
+    try {
+      final res = await ApiService.instance.put(
+        ApiConstants.adminExchangeRate,
+        data: {
+          'rate': newRate,
+          if (confirm) 'confirm': true,
+        },
+      );
+      if (!mounted) return;
+      final updated = (res.data['usdToLbpRate'] as num).toDouble();
+      setState(() {
+        _exchangeRateCtrl.text = updated.toString();
+        _currentExchangeRate = updated;
+      });
+      _showSuccess('Exchange rate updated!');
+    } catch (e) {
+      final message = ApiService.getErrorMessage(e);
+      final needsConfirmation = !confirm &&
+          e is DioException &&
+          e.response?.statusCode == 422 &&
+          message.toLowerCase().contains('confirm');
+
+      if (needsConfirmation) {
+        if (mounted) setState(() => _exchangeRateSaving = false);
+        final confirmed = await _showExchangeRateConfirmDialog(
+          oldRate: _currentExchangeRate,
+          newRate: newRate,
+        );
+        if (confirmed == true) {
+          await _submitExchangeRate(newRate, confirm: true);
+        }
+        return;
+      }
+
+      if (mounted) _showError(message);
+    } finally {
+      if (mounted) setState(() => _exchangeRateSaving = false);
+    }
+  }
+
+  Future<bool?> _showExchangeRateConfirmDialog({
+    required double? oldRate,
+    required double newRate,
+  }) {
+    String sampleConversion(double rate) =>
+        '\$1 = ${rate.toStringAsFixed(2)} ل.ل';
+
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Confirm large rate change',
+            style: AppTextStyles.headlineMedium),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "This is a big jump from the current rate — double-check "
+              "it isn't a typo (e.g. a missing zero) before continuing.",
+              style: AppTextStyles.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              oldRate != null
+                  ? 'Current: ${sampleConversion(oldRate)}'
+                  : 'Current: unknown',
+              style: AppTextStyles.bodyMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'New: ${sampleConversion(newRate)}',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: AppTextStyles.labelLarge
+                    .copyWith(color: AppColors.textHint)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Confirm anyway',
+                style:
+                    AppTextStyles.labelLarge.copyWith(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
   }
 
   // ─── ACTIONS ──────────────────────────────────────
@@ -571,6 +720,54 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       AppColors.merchantColor),
                   _summaryRow('Total Drivers',
                       '${_stats!['totalDrivers'] ?? 0}', AppColors.driverColor),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Exchange rate control (minimal/unstyled)
+            GlassCard(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.currency_exchange_rounded,
+                        color: AppColors.primary, size: 18),
+                    const SizedBox(width: 8),
+                    Text('USD / LBP Exchange Rate',
+                        style: AppTextStyles.headlineSmall),
+                  ]),
+                  const SizedBox(height: 16),
+                  if (_exchangeRateLoading)
+                    const Center(
+                        child:
+                            CircularProgressIndicator(color: AppColors.primary))
+                  else
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: AppInput(
+                            controller: _exchangeRateCtrl,
+                            hint: 'e.g. 89500',
+                            label: 'LBP per 1 USD',
+                            prefixIcon: Icons.attach_money_rounded,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        AppButton(
+                          label: 'Save',
+                          isFullWidth: false,
+                          height: 56,
+                          isLoading: _exchangeRateSaving,
+                          onPressed: _saveExchangeRate,
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),

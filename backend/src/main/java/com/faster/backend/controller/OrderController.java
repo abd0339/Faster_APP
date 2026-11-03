@@ -36,7 +36,7 @@ public class OrderController {
         // ─────────────────────────────────────────────────
         @PostMapping("/api/orders/quote")
         public ResponseEntity<?> quoteOrder(
-                        @RequestBody OrderRequest req) {
+                        @Valid @RequestBody OrderRequest req) {
 
                 if (req.getMerchantId() == null) {
                         return ResponseEntity.badRequest()
@@ -441,11 +441,21 @@ public class OrderController {
                 Order order = orderService.updateTrackingLocation(
                                 trackingCode, body.get("lat"), body.get("lng"));
 
+                // Still 200 either way (the flag must commit, not roll
+                // back if the location was outside the delivery-distance
+                // cap), but the message and the distanceFlagged field
+                // tell the recipient the truth about whether their
+                // location was actually applied.
+                boolean flagged = Boolean.TRUE.equals(order.getIsDistanceFlagged());
+
                 return ResponseEntity.ok(Map.of(
-                                "message", "Location confirmed",
+                                "message", flagged
+                                                ? "We received your location, but it's outside our delivery area — our team will review it"
+                                                : "Location confirmed",
                                 "trackingCode", order.getTrackingCode(),
                                 "deliveryFee", order.getDeliveryFee(),
-                                "grandTotal", order.getGrandTotal()));
+                                "grandTotal", order.getGrandTotal(),
+                                "distanceFlagged", flagged));
         }
 
         // ─────────────────────────────────────────────────
@@ -485,11 +495,17 @@ public class OrderController {
                                 orderId, user.getPhone(),
                                 body.get("lat"), body.get("lng"));
 
+                // Same honesty behavior as updateTrackingLocation above.
+                boolean flagged = Boolean.TRUE.equals(order.getIsDistanceFlagged());
+
                 return ResponseEntity.ok(Map.of(
-                                "message", "Delivery location confirmed",
+                                "message", flagged
+                                                ? "We received your location, but it's outside our delivery area — our team will review it"
+                                                : "Delivery location confirmed",
                                 "trackingCode", order.getTrackingCode(),
                                 "deliveryFee", order.getDeliveryFee(),
-                                "grandTotal", order.getGrandTotal()));
+                                "grandTotal", order.getGrandTotal(),
+                                "distanceFlagged", flagged));
         }
 
 }

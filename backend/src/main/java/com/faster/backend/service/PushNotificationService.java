@@ -9,6 +9,7 @@ import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.Notification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +41,19 @@ public class PushNotificationService {
      * registered on. [data] is optional extra payload the
      * Flutter app can use to route a tap on the notification
      * (e.g. {"type": "order_status", "orderId": "123"}).
+     *
+     * @Async — this is called from inside OrderService.updateStatus's
+     * transaction, which (for DELIVERED) is also holding the driver's
+     * row lock from LedgerService.recordDriverCommission. Running the
+     * blocking FirebaseMessaging HTTP call on the request thread would
+     * hold that lock for however long Firebase takes to respond; firing
+     * it on a separate thread lets the transaction commit (and release
+     * the lock) immediately instead. Requires @EnableAsync on
+     * BackendApplication. Call site never awaits a result or an
+     * exception from this method, matching the class's existing
+     * "never blocking, failures swallowed" contract.
      */
+    @Async
     public void sendToUser(Long userId, String title, String body,
             Map<String, String> data) {
 

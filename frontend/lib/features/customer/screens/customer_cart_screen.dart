@@ -203,6 +203,23 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
       return;
     }
     if (!mounted) return;
+
+    // NO client-side distance pre-check here (deliberately — see
+    // DistanceCalculator/kMaxDeliveryDistanceKm used by the other two
+    // order-creation screens for the pattern this would otherwise
+    // follow): this storefront checkout only has the CUSTOMER's
+    // delivery coordinates (_deliveryLat/_deliveryLng) client-side.
+    // The pickup point is the store's own location, which the
+    // backend resolves from the merchant's stored profile (see
+    // OrderService.quoteLogisticsOrder) but never exposes over the
+    // public store-menu/store-status endpoints this screen calls —
+    // so there is no pickup coordinate to compare against here yet.
+    // The backend's authoritative check (PricingService.
+    // exceedsMaxDeliveryDistance, Tasks 5/6) still runs server-side
+    // on submit regardless; this screen just can't front-run it with
+    // a local calculation the way the O2O/Direct-Delivery screens
+    // can. Revisit once the store-menu/store-status response (or a
+    // dedicated endpoint) carries the merchant's lat/lng.
     setState(() => _isPlacingOrder = true);
     try {
       final cart = CartService.instance;

@@ -1,8 +1,7 @@
 import 'package:dio/dio.dart' as dio;
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide DistanceCalculator;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../core/constants/app_colors.dart';
@@ -10,6 +9,11 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/services/exchange_rate_service.dart';
+import '../../../core/utils/currency_converter.dart';
+import '../../../core/utils/currency_input_formatter.dart';
+import '../../../core/constants/business_rules.dart';
+import '../../../core/utils/distance_calculator.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
@@ -429,6 +433,11 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     bool isDetectingPickup = false;
     bool isLookingUpPhone = false;
     bool isCreatingOrder = false;
+    // NEW — which currency the merchant is typing the price in.
+    // The backend only ever sees USD: when this is 'LBP', the typed
+    // amount is converted via CurrencyConverter.lbpToUsd right
+    // before the order is submitted.
+    String priceCurrency = 'USD';
     double? pickupLat = _merchantLat;
     double? pickupLng = _merchantLng;
     Map<String, dynamic>? foundCustomer;
@@ -516,6 +525,64 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
               return;
             }
 
+            // Resolves the typed price (in whichever currency is
+            // selected) to the USD amount the backend expects.
+            // Converts via the live exchange rate when the merchant
+            // typed in LBP, then rejects an amount that rounds away
+            // to (near) nothing after conversion — closing the same
+            // "silent $0 order" gap this task fixed for raw input,
+            // just reachable through a tiny LBP entry instead of
+            // garbage input. Deliberately called AFTER the
+            // isO2O/manual-address validation below (not before) so
+            // a merchant who also left phone/landmark blank sees
+            // that error immediately instead of waiting on a
+            // network round-trip first.
+            Future<double?> resolveTotalPriceUsd() async {
+              // Captured before the (possible) await below, not
+              // re-derived from `context` after it — the safe way to
+              // show a SnackBar across an async gap without
+              // triggering use_build_context_synchronously.
+              final messenger = ScaffoldMessenger.of(context);
+              double totalPrice = price;
+              if (priceCurrency == 'LBP') {
+                final rate = await ExchangeRateService.instance.getCurrentRate();
+                totalPrice = CurrencyConverter.lbpToUsd(price, rate);
+              }
+              if (totalPrice < 0.01) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Converted price is too small — enter a larger amount'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+                return null;
+              }
+              return totalPrice;
+            }
+
+            // Client-side, UX-only pre-check: warns before the network
+            // call when pickup/delivery are farther apart than the
+            // backend will allow. Mirrors
+            // PricingService.exceedsMaxDeliveryDistance — if the two
+            // ever drift, the backend's check (Tasks 5/6) still wins;
+            // this only decides how early the merchant finds out.
+            // Coordinates are missing whenever the merchant hasn't
+            // picked a map location for delivery yet (o2oDeliveryLat/
+            // Lng stay null) — skipped rather than blocked, same
+            // null-safety philosophy as the backend.
+            bool isWithinMaxDistance() {
+              if (pickupLat == null ||
+                  pickupLng == null ||
+                  o2oDeliveryLat == null ||
+                  o2oDeliveryLng == null) {
+                return true;
+              }
+              final distanceKm = DistanceCalculator.kilometersBetween(
+                  pickupLat!, pickupLng!, o2oDeliveryLat!, o2oDeliveryLng!);
+              return distanceKm <= kMaxDeliveryDistanceKm;
+            }
+
             setSheet(() => isCreatingOrder = true);
             try {
               Map<String, dynamic> body;
@@ -534,8 +601,24 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                   setSheet(() => isCreatingOrder = false);
                   return;
                 }
+                if (!isWithinMaxDistance()) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  setSheet(() => isCreatingOrder = false);
+                  return;
+                }
+                final totalPrice = await resolveTotalPriceUsd();
+                if (totalPrice == null) {
+                  setSheet(() => isCreatingOrder = false);
+                  return;
+                }
                 body = {
-                  'totalPrice': price,
+                  'totalPrice': totalPrice,
                   'pickupAddress': pickupCtrl.text.trim(),
                   'pickupLat': pickupLat,
                   'pickupLng': pickupLng,
@@ -581,8 +664,24 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                   setSheet(() => isCreatingOrder = false);
                   return;
                 }
+                if (!isWithinMaxDistance()) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  setSheet(() => isCreatingOrder = false);
+                  return;
+                }
+                final totalPrice = await resolveTotalPriceUsd();
+                if (totalPrice == null) {
+                  setSheet(() => isCreatingOrder = false);
+                  return;
+                }
                 body = {
-                  'totalPrice': price,
+                  'totalPrice': totalPrice,
                   // deliveryFee deliberately NOT sent — the backend
                   // always computes it from real distance (C2 rule).
                   'pickupAddress': pickupCtrl.text.trim(),
@@ -1238,16 +1337,84 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                         Text('Pricing', style: AppTextStyles.headlineSmall),
                         const SizedBox(height: 12),
 
+                        // NEW — currency toggle for the price field.
+                        // The backend only ever sees USD; picking LBP
+                        // just changes what the merchant types, and
+                        // the typed amount is converted to USD right
+                        // before the order is submitted (see
+                        // createOrder above).
+                        Row(children: [
+                          TextButton(
+                            onPressed: () => setSheet(() {
+                              priceCurrency = 'USD';
+                              priceCtrl.clear();
+                            }),
+                            style: TextButton.styleFrom(
+                              backgroundColor: priceCurrency == 'USD'
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                              foregroundColor: priceCurrency == 'USD'
+                                  ? AppColors.background
+                                  : AppColors.textHint,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text('USD \$'),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () => setSheet(() {
+                              priceCurrency = 'LBP';
+                              priceCtrl.clear();
+                            }),
+                            style: TextButton.styleFrom(
+                              backgroundColor: priceCurrency == 'LBP'
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                              foregroundColor: priceCurrency == 'LBP'
+                                  ? AppColors.background
+                                  : AppColors.textHint,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text('LBP'),
+                          ),
+                        ]),
+                        const SizedBox(height: 10),
+
                         Row(children: [
                           Expanded(
                             child: AppInput(
                               controller: priceCtrl,
-                              hint: '0.00',
-                              label: 'Order Price \$',
+                              hint: priceCurrency == 'USD' ? '0.00' : '0',
+                              label: priceCurrency == 'USD'
+                                  ? 'Order Price \$'
+                                  : 'Order Price (LBP)',
                               prefixIcon: Icons.attach_money_rounded,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                      decimal: true),
+                              keyboardType: TextInputType.numberWithOptions(
+                                  decimal: priceCurrency == 'USD'),
+                              // NEW (final review fix wave, findings #4
+                              // and #5) — shared formatter (rejects just
+                              // the bad keystroke instead of clearing the
+                              // whole field) plus a hard length cap. The
+                              // cap is the real defense against a long
+                              // digit string parsing to Infinity and
+                              // leaking a raw Dart error to the user
+                              // (double.tryParse('1'*309+) is already
+                              // Infinity, which the <=0 check doesn't
+                              // catch) — the shape-only regex alone never
+                              // limited length.
+                              inputFormatters: [
+                                priceCurrency == 'USD'
+                                    ? CurrencyInputFormatter.usd()
+                                    : CurrencyInputFormatter.lbp(),
+                              ],
+                              maxLength: priceCurrency == 'USD' ? 10 : 12,
+                              counterText: '',
                             ),
                           ),
                           const SizedBox(width: 12),
