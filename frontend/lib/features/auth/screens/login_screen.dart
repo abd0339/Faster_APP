@@ -7,6 +7,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
@@ -60,13 +61,7 @@ class _LoginScreenState extends State<LoginScreen>
     // PhoneInputField isn't a FormField, so it can't take part in
     // _formKey validation — guard phone mode explicitly here.
     if (!_isEmailMode && _phoneE164.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Phone number is required'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppToast.error(context, 'Phone number is required');
       return;
     }
 
@@ -85,16 +80,7 @@ class _LoginScreenState extends State<LoginScreen>
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthFailure) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.message),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
+          AppToast.error(context, state.message);
         }
       },
       builder: (context, state) {
@@ -161,12 +147,12 @@ class _LoginScreenState extends State<LoginScreen>
                           const SizedBox(height: 32),
 
                           // ─── Title ────────────
-                          const Text(
+                          Text(
                             'Welcome back',
                             style: AppTextStyles.displayMedium,
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             'Sign in to continue',
                             style: AppTextStyles.bodyMedium,
                           ),

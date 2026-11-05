@@ -12,6 +12,7 @@ import '../../../core/services/location_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../../core/constants/api_constants.dart';
@@ -1093,7 +1094,7 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             const SizedBox(height: 32),
             Text(
               isApproved
-                  ? '🎉 You\'re Approved!'
+                  ? 'You\'re Approved!'
                   : isRejected
                       ? 'Application Rejected'
                       : 'Application Submitted!',
@@ -1171,11 +1172,6 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
   // ─── HELPERS ──────────────────────────────────────
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.error(context, msg);
   }
 }

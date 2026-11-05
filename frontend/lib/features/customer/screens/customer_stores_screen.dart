@@ -4,6 +4,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/app_toast.dart';
 import 'customer_store_menu_screen.dart';
 
 class CustomerStoresScreen extends StatefulWidget {
@@ -166,7 +167,6 @@ class _CustomerStoresScreenState extends State<CustomerStoresScreen> {
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: AppColors.error));
+    AppToast.error(context, msg);
   }
 }

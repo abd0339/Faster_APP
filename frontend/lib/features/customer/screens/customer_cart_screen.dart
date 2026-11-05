@@ -3,14 +3,17 @@ import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_empty_state.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../services/cart_service.dart';
 import 'customer_order_tracking_screen.dart';
 
@@ -278,12 +281,13 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
           children: [
             // ─── Header ──────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.sm),
               child: Row(children: [
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
                       color: AppColors.glassWhite,
                       borderRadius: BorderRadius.circular(12),
@@ -293,7 +297,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                         color: AppColors.textPrimary, size: 20),
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: AppSpacing.lg),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -310,27 +314,22 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
 
             Expanded(
               child: cart.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.shopping_cart_outlined,
-                              color: AppColors.textHint, size: 56),
-                          const SizedBox(height: 16),
-                          Text('Cart is empty',
-                              style: AppTextStyles.headlineMedium),
-                        ],
-                      ),
+                  ? AppEmptyState(
+                      icon: Icons.shopping_cart_outlined,
+                      message: 'Your cart is empty',
+                      actionLabel: 'Browse stores',
+                      onAction: () => Navigator.pop(context),
                     )
                   : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.xl,
+                          AppSpacing.sm, AppSpacing.xl, AppSpacing.xl),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Items
                           ...cart.items.map((item) => _cartItemRow(item)),
 
-                          const SizedBox(height: 20),
+                          const SizedBox(height: AppSpacing.xl),
 
                           // ─── Address ─────────────
                           Row(children: [
@@ -342,8 +341,8 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                               onTap: _detectLocation,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
+                                  horizontal: AppSpacing.md,
+                                  vertical: AppSpacing.sm,
                                 ),
                                 decoration: BoxDecoration(
                                   color:
@@ -369,7 +368,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                                           const Icon(Icons.my_location_rounded,
                                               color: AppColors.primary,
                                               size: 14),
-                                          const SizedBox(width: 4),
+                                          const SizedBox(width: AppSpacing.xs),
                                           Text(
                                             'Use GPS',
                                             style:
@@ -383,16 +382,17 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                               ),
                             ),
                           ]),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: AppSpacing.md),
 
                           // GPS status indicator
                           if (_deliveryLat != null)
                             Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
+                              padding:
+                                  const EdgeInsets.only(bottom: AppSpacing.sm),
                               child: Row(children: [
                                 const Icon(Icons.location_on_rounded,
                                     color: AppColors.accent, size: 14),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: AppSpacing.xs),
                                 Text(
                                   'GPS detected — driver will navigate to your location',
                                   style: AppTextStyles.caption
@@ -413,7 +413,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                               _fetchQuote();
                             },
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: AppSpacing.lg),
 
                           // Notes
                           AppInput(
@@ -422,17 +422,17 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                             label: 'Notes',
                             prefixIcon: Icons.note_outlined,
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: AppSpacing.xl),
 
                           // ─── Order summary ───────────
                           GlassCard(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(AppSpacing.lg),
                             child: Column(children: [
                               _summaryRow(
                                   'Items subtotal',
                                   '\$${displayTotal.toStringAsFixed(2)}',
                                   AppColors.textPrimary),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: AppSpacing.sm),
                               _summaryRow(
                                   'Delivery fee',
                                   displayDeliveryFee != null
@@ -440,7 +440,8 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                                       : (_isQuoting ? 'Calculating…' : '—'),
                                   AppColors.textHint),
                               const Divider(
-                                  color: AppColors.glassBorder, height: 20),
+                                  color: AppColors.glassBorder,
+                                  height: AppSpacing.xl),
                               _summaryRow(
                                   'Total you pay',
                                   displayGrandTotal != null
@@ -449,7 +450,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                                   AppColors.accent,
                                   isBold: true),
                               if (_quoteError != null) ...[
-                                const SizedBox(height: 8),
+                                const SizedBox(height: AppSpacing.sm),
                                 Text(_quoteError!,
                                     style: AppTextStyles.caption
                                         .copyWith(color: AppColors.error)),
@@ -457,15 +458,15 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                             ]),
                           ),
 
-                          const SizedBox(height: 12),
+                          const SizedBox(height: AppSpacing.md),
 
                           // ─── Cash on delivery note ───
                           GlassCard(
-                            padding: const EdgeInsets.all(14),
+                            padding: const EdgeInsets.all(AppSpacing.lg),
                             child: Row(children: [
                               const Icon(Icons.payments_outlined,
                                   color: AppColors.warning, size: 18),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: AppSpacing.md),
                               Expanded(
                                 child: Text(
                                   displayGrandTotal != null
@@ -478,7 +479,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
                             ]),
                           ),
 
-                          const SizedBox(height: 24),
+                          const SizedBox(height: AppSpacing.xl),
 
                           // ─── Place order button ──────
                           AppButton(
@@ -503,9 +504,9 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
 
   Widget _cartItemRow(item) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: GlassCard(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Row(children: [
           Expanded(
             child: Column(
@@ -540,7 +541,7 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
               child: Text('${item.quantity}', style: AppTextStyles.labelLarge),
             ),
             GestureDetector(
@@ -563,10 +564,10 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
               ),
             ),
           ]),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.md),
           Text('\$${item.subtotal.toStringAsFixed(2)}',
               style: AppTextStyles.priceSmall),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm),
           GestureDetector(
             onTap: () {
               CartService.instance.removeItem(item.itemId);
@@ -594,11 +595,6 @@ class _CustomerCartScreenState extends State<CustomerCartScreen> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.error(context, msg);
   }
 }

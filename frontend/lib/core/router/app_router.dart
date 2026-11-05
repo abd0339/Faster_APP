@@ -10,12 +10,46 @@ import '../../features/merchant/screens/merchant_dashboard_screen.dart';
 import '../../features/customer/screens/customer_dashboard_screen.dart';
 import '../../features/admin/screens/admin_dashboard_screen.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_text_styles.dart';
+import '../../core/constants/app_motion.dart';
 import '../../features/customer/screens/customer_order_tracking_screen.dart';
 import '../services/push_notification_service.dart';
+import '../services/notification_log_service.dart';
+import '../models/notification_entry.dart';
 
 /// Global navigator key — lets a push notification tap navigate
 /// even though it fires outside any widget's BuildContext.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+/// Handles navigation for a tapped notification — shared by the push
+/// notification tap wiring below (where the tap fires outside any widget's
+/// BuildContext) and by [NotificationCenterScreen]'s own row taps.
+///
+/// FIX (Finding 1): tapping a push used to do nothing but log. Order-related
+/// pushes now open that order's tracking screen, where the recipient can
+/// follow the delivery and — for an incoming_delivery — optionally share
+/// their exact location.
+void handleNotificationNavigation(
+    BuildContext context, Map<String, dynamic> data) {
+  debugPrint('📬 Notification tapped: $data');
+
+  final orderIdRaw = data['orderId'];
+  final trackingCodeRaw = data['trackingCode'];
+  if (orderIdRaw == null || trackingCodeRaw == null) return;
+  final orderId = int.tryParse(orderIdRaw.toString());
+  if (orderId == null) return;
+
+  // Pushed on top of whatever dashboard the user is on,
+  // so backing out returns them where they were.
+  navigatorKey.currentState?.push(
+    MaterialPageRoute(
+      builder: (_) => CustomerOrderTrackingScreen(
+        orderId: orderId,
+        trackingCode: trackingCodeRaw.toString(),
+      ),
+    ),
+  );
+}
 
 class AppRouter extends StatelessWidget {
   const AppRouter({super.key});
@@ -33,73 +67,72 @@ class AppRouter extends StatelessWidget {
           current is AuthSuccess && previous is! AuthSuccess,
       listener: (context, state) {
         if (state is AuthSuccess) {
+          // Fire-and-forget: loads the on-device notification log from
+          // SharedPreferences so it's ready by the time anything reads it,
+          // such as a dashboard unread-count badge.
+          // ignore: discarded_futures
+          NotificationLogService.instance.init();
           PushNotificationService.instance.initialize(
-            onNotificationTap: (data) {
-              // FIX (Finding 1): tapping a push used to do nothing
-              // but log. Order-related pushes now open that order's
-              // tracking screen, where the recipient can follow the
-              // delivery and — for an incoming_delivery — optionally
-              // share their exact location.
-              debugPrint('📬 Notification tapped: $data');
-
-              final orderIdRaw = data['orderId'];
-              final trackingCodeRaw = data['trackingCode'];
-              if (orderIdRaw == null || trackingCodeRaw == null) return;
-              final orderId = int.tryParse(orderIdRaw.toString());
-              if (orderId == null) return;
-
-              // Pushed on top of whatever dashboard the user is on,
-              // so backing out returns them where they were.
-              navigatorKey.currentState?.push(
-                MaterialPageRoute(
-                  builder: (_) => CustomerOrderTrackingScreen(
-                    orderId: orderId,
-                    trackingCode: trackingCodeRaw.toString(),
-                  ),
-                ),
-              );
-            },
+            onForegroundMessage: (message) =>
+                NotificationLogService.instance
+                    .add(NotificationEntry.fromRemoteMessage(message)),
+            onNotificationTap: (data) =>
+                handleNotificationNavigation(context, data),
           );
         }
       },
       builder: (context, state) {
-        // Loading / splash
-        if (state is AuthInitial || state is AuthLoading) {
-          return const _SplashLoader();
-        }
-
-        // OTP required — after register or unverified login
-        if (state is OtpRequired) {
-          return OtpScreen(
-            phone: state.phone,
-            fullName: state.fullName,
-          );
-        }
-
-        // Not logged in
-        if (state is AuthLoggedOut || state is AuthFailure) {
-          return const LoginScreen();
-        }
-
-        // Logged in → route by role
-        if (state is AuthSuccess) {
-          switch (state.role) {
-            case 'MERCHANT':
-              return const MerchantDashboardScreen();
-            case 'DRIVER':
-              return const DriverVerificationScreen();
-            case 'CUSTOMER':
-              return const CustomerDashboardScreen();
-            case 'ADMIN':
-              return const AdminDashboardScreen();
-            default:
-              return const LoginScreen();
-          }
-        }
-
-        return const LoginScreen();
+        // This top-level builder swaps whole screens (splash -> login ->
+        // OTP -> role dashboard) directly, with no Navigator/PageRoute
+        // involved — so without this wrapper the switch was an instant
+        // snap. AnimatedSwitcher gives it a real transition, driven by
+        // the shared motion constants.
+        return AnimatedSwitcher(
+          duration: AppMotion.transitionDuration,
+          switchInCurve: AppMotion.transitionCurve,
+          switchOutCurve: AppMotion.transitionCurve,
+          child: _screenFor(state),
+        );
       },
     );
+  }
+
+  Widget _screenFor(AuthState state) {
+    // Loading / splash
+    if (state is AuthInitial || state is AuthLoading) {
+      return const _SplashLoader();
+    }
+
+    // OTP required — after register or unverified login
+    if (state is OtpRequired) {
+      return OtpScreen(
+        phone: state.phone,
+        fullName: state.fullName,
+      );
+    }
+
+    // Not logged in
+    if (state is AuthLoggedOut || state is AuthFailure) {
+      return const LoginScreen();
+    }
+
+    // Logged in → route by role
+    if (state is AuthSuccess) {
+      switch (state.role) {
+        case 'MERCHANT':
+          return const MerchantDashboardScreen();
+        case 'DRIVER':
+          return const DriverVerificationScreen();
+        case 'CUSTOMER':
+          return const CustomerDashboardScreen();
+        case 'ADMIN':
+          return const AdminDashboardScreen();
+        default:
+          return const LoginScreen();
+      }
+    }
+
+    return const LoginScreen();
   }
 }
 
@@ -108,25 +141,22 @@ class _SplashLoader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: AppColors.background,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.delivery_dining_rounded,
+            const Icon(Icons.delivery_dining_rounded,
                 color: AppColors.primary, size: 56),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             Text('FASTER',
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
+                style: AppTextStyles.displayLarge.copyWith(
                   color: AppColors.primary,
                   letterSpacing: 8,
                 )),
-            SizedBox(height: 32),
-            SizedBox(
+            const SizedBox(height: 32),
+            const SizedBox(
               width: 24,
               height: 24,
               child: CircularProgressIndicator(

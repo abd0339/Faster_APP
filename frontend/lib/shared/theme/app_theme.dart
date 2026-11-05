@@ -21,16 +21,16 @@ class AppTheme {
         ),
 
         // ─── App Bar ──────────────────────────────────
-        appBarTheme: const AppBarTheme(
+        appBarTheme: AppBarTheme(
           backgroundColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
-          systemOverlayStyle: SystemUiOverlayStyle(
+          systemOverlayStyle: const SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: Brightness.light,
           ),
           titleTextStyle: AppTextStyles.headlineMedium,
-          iconTheme: IconThemeData(
+          iconTheme: const IconThemeData(
             color: AppColors.textPrimary,
           ),
         ),
@@ -73,6 +73,13 @@ class AppTheme {
             borderRadius: BorderRadius.circular(16),
             borderSide: const BorderSide(
               color: AppColors.error,
+              width: 1,
+            ),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(
+              color: AppColors.glassBorder.withValues(alpha: 0.4),
               width: 1,
             ),
           ),
@@ -139,7 +146,7 @@ class AppTheme {
         ),
 
         // ─── Text ─────────────────────────────────────
-        textTheme: const TextTheme(
+        textTheme: TextTheme(
           displayLarge: AppTextStyles.displayLarge,
           displayMedium: AppTextStyles.displayMedium,
           headlineLarge: AppTextStyles.headlineLarge,
@@ -151,7 +158,5 @@ class AppTheme {
           labelLarge: AppTextStyles.labelLarge,
           labelMedium: AppTextStyles.labelMedium,
         ),
-
-        fontFamily: 'Montserrat',
       );
 }

@@ -12,6 +12,7 @@ import '../../../core/services/exchange_rate_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
@@ -330,13 +331,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Confirm large rate change',
+        title: Text('Confirm large rate change',
             style: AppTextStyles.headlineMedium),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               "This is a big jump from the current rate — double-check "
               "it isn't a typo (e.g. a missing zero) before continuing.",
               style: AppTextStyles.bodyMedium,
@@ -581,10 +582,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                       children: [
                         Icon(t.$1, size: 16),
                         Text(t.$2,
-                            style: const TextStyle(
-                                fontSize: 9,
-                                fontFamily: 'Montserrat',
-                                fontWeight: FontWeight.w600)),
+                            style: TextStyle(
+                              fontFamily: AppTextStyles.caption.fontFamily,
+                              fontWeight: AppTextStyles.caption.fontWeight,
+                              fontSize: 9,
+                              // No `color` here, deliberately: this sits
+                              // inside a TabBar, whose own `labelColor` /
+                              // `unselectedLabelColor` must keep controlling
+                              // the selected vs. unselected tint (exactly
+                              // like the original Montserrat literal this
+                              // replaced, which also left color unset).
+                            )),
                       ],
                     ),
                   ))
@@ -1820,24 +1828,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  // ─── SNACKBARS ────────────────────────────────────
+  // ─── TOASTS ───────────────────────────────────────
   void _showSuccess(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.success,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.success(context, msg);
   }
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.error(context, msg);
   }
 }

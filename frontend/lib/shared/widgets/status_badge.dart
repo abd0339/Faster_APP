@@ -50,44 +50,71 @@ class StatusBadge extends StatelessWidget {
     if (isRide) {
       switch (status.toUpperCase()) {
         case 'PENDING':
-          return '⏳ Ride requested';
+          return 'Ride requested';
         case 'ACCEPTED':
-          return '✅ Driver assigned';
+          return 'Driver assigned';
         case 'PICKED_UP':
-          return '🚗 On the way';
+          return 'On the way';
         case 'DELIVERED':
-          return '🏁 Arrived';
+          return 'Arrived';
         case 'CANCELLED':
-          return '❌ Cancelled';
+          return 'Cancelled';
         case 'DISPUTED':
-          return '⚠️ Disputed';
+          return 'Disputed';
       }
       // PREPARING / READY_FOR_PICKUP never occur on a ride, so any
       // other value falls through to the shared labels below.
     }
     switch (status.toUpperCase()) {
       case 'PENDING':
-        return '⏳ Pending';
+        return 'Pending';
       case 'ACCEPTED':
-        return '✅ Accepted';
+        return 'Accepted';
       case 'PREPARING':
-        return '👨‍🍳 Preparing';
+        return 'Preparing';
       case 'READY_FOR_PICKUP':
-        return '📦 Ready';
+        return 'Ready';
       case 'PICKED_UP':
-        return '🚀 On the way';
+        return 'On the way';
       case 'DELIVERED':
-        return '✅ Delivered';
+        return 'Delivered';
       case 'CANCELLED':
-        return '❌ Cancelled';
+        return 'Cancelled';
       case 'DISPUTED':
-        return '⚠️ Disputed';
+        return 'Disputed';
       case 'ONLINE':
-        return '🟢 Online';
+        return 'Online';
       case 'OFFLINE':
-        return '⚫ Offline';
+        return 'Offline';
       default:
         return status;
+    }
+  }
+
+  IconData get _icon {
+    switch (status.toUpperCase()) {
+      case 'PENDING':
+        return Icons.schedule_rounded;
+      case 'ACCEPTED':
+        return Icons.check_circle_rounded;
+      case 'PREPARING':
+        return Icons.restaurant_rounded;
+      case 'READY_FOR_PICKUP':
+        return Icons.inventory_2_rounded;
+      case 'PICKED_UP':
+        return isRide ? Icons.directions_bike_rounded : Icons.local_shipping_rounded;
+      case 'DELIVERED':
+        return Icons.check_circle_rounded;
+      case 'CANCELLED':
+        return Icons.cancel_rounded;
+      case 'DISPUTED':
+        return Icons.report_problem_rounded;
+      case 'ONLINE':
+        return Icons.circle;
+      case 'OFFLINE':
+        return Icons.circle_outlined;
+      default:
+        return Icons.circle_outlined;
     }
   }
 
@@ -106,13 +133,20 @@ class StatusBadge extends StatelessWidget {
           width: 1,
         ),
       ),
-      child: Text(
-        _label,
-        style: AppTextStyles.caption.copyWith(
-          color: _color,
-          fontSize: fontSize,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_icon, size: fontSize + 2, color: _color),
+          const SizedBox(width: 4),
+          Text(
+            _label,
+            style: AppTextStyles.caption.copyWith(
+              color: _color,
+              fontSize: fontSize,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
@@ -13,6 +14,7 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
+import '../../../shared/widgets/app_toast.dart';
 import 'customer_order_tracking_screen.dart';
 
 // ─── Saved destination model ──────────────────────────
@@ -176,10 +178,10 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, ss) => Padding(
           padding: EdgeInsets.only(
-              left: 24,
-              right: 24,
-              top: 24,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+              left: AppSpacing.xl,
+              right: AppSpacing.xl,
+              top: AppSpacing.xl,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.xl),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Center(
                 child: Container(
@@ -188,17 +190,18 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                     decoration: BoxDecoration(
                         color: AppColors.glassBorder,
                         borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.xl),
             Text(existing == null ? 'Save New Place' : 'Edit Place',
                 style: AppTextStyles.headlineMedium),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             // Icon row
             SizedBox(
               height: 48,
               child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: icons.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, __) =>
+                      const SizedBox(width: AppSpacing.sm),
                   itemBuilder: (_, i) {
                     final sel = icon == icons[i];
                     return GestureDetector(
@@ -222,20 +225,20 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                                     style: const TextStyle(fontSize: 20)))));
                   }),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppSpacing.lg),
             AppInput(
                 controller: nameCtrl,
                 hint: 'Home, Office, Gym...',
                 label: 'Name',
                 prefixIcon: Icons.label_outline_rounded),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.md),
             AppInput(
                 controller: addrCtrl,
                 hint: 'Full address or area',
                 label: 'Address',
                 prefixIcon: Icons.location_on_outlined,
                 maxLines: 2),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.xl),
             Row(children: [
               if (existing != null) ...[
                 Expanded(
@@ -249,7 +252,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                               _saved.removeWhere((d) => d.id == existing.id));
                           _persistSaved();
                         })),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.md),
               ],
               Expanded(
                   child: AppButton(
@@ -280,7 +283,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                         _persistSaved();
                       })),
             ]),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
           ]),
         ),
       ),
@@ -337,32 +340,33 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
         child: Column(children: [
           // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, 0),
             child: Row(children: [
               GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: Container(
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(AppSpacing.md),
                       decoration: BoxDecoration(
                           color: AppColors.glassWhite,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: AppColors.glassBorder)),
                       child: const Icon(Icons.arrow_back_rounded,
                           color: AppColors.textPrimary, size: 20))),
-              const SizedBox(width: 14),
+              const SizedBox(width: AppSpacing.lg),
               Text('Request a Ride', style: AppTextStyles.headlineMedium),
             ]),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
 
           // Vehicle selector
           SizedBox(
             height: 96,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
               itemCount: _vehicles.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
               itemBuilder: (_, i) {
                 final v = _vehicles[i];
                 final isSel = _selectedVehicle == v['value'];
@@ -374,7 +378,10 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     width: 96,
-                    padding: const EdgeInsets.all(10),
+                    // sm, not md: avoids widening this card's pre-existing
+                    // vertical overflow (3-line label/fare content in a
+                    // fixed 96x96 box).
+                    padding: const EdgeInsets.all(AppSpacing.sm),
                     decoration: BoxDecoration(
                         color: isSel
                             ? AppColors.primary.withValues(alpha: 0.15)
@@ -398,7 +405,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                         children: [
                           Text(v['icon'] as String,
                               style: const TextStyle(fontSize: 26)),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: AppSpacing.xs),
                           Text(v['label'] as String,
                               style: AppTextStyles.caption.copyWith(
                                   color: isSel
@@ -416,28 +423,29 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
               },
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
 
           // Scrollable form
           Expanded(
               child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl, AppSpacing.sm, AppSpacing.xl, AppSpacing.xxl),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // Fare card
               GlassCard(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(AppSpacing.md),
                   child: Row(children: [
                     const Icon(Icons.payments_outlined,
                         color: AppColors.accent, size: 20),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: AppSpacing.md),
                     Text('Cash fare: ', style: AppTextStyles.bodyMedium),
                     Text('\$${_fare.toStringAsFixed(2)}',
                         style: AppTextStyles.price),
                     const Spacer(),
                     Text('Pay driver on arrival', style: AppTextStyles.caption),
                   ])),
-              const SizedBox(height: 20),
+              const SizedBox(height: AppSpacing.xl),
 
               // Pickup
               Row(children: [
@@ -446,8 +454,8 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                 GestureDetector(
                   onTap: _detectPickup,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
@@ -463,7 +471,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                         : Row(mainAxisSize: MainAxisSize.min, children: [
                             const Icon(Icons.my_location_rounded,
                                 color: AppColors.primary, size: 14),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: AppSpacing.xs),
                             Text('My GPS',
                                 style: AppTextStyles.caption.copyWith(
                                     color: AppColors.primary,
@@ -472,7 +480,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                   ),
                 ),
               ]),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               AppInput(
                   controller: _pickupCtrl,
                   hint: 'Your current location',
@@ -480,7 +488,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                   prefixIcon: Icons.radio_button_checked_rounded,
                   maxLines: 2),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: AppSpacing.xl),
 
               // Destination
               Row(children: [
@@ -491,7 +499,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                     onTap: () => _showSaveSheet(),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                       decoration: BoxDecoration(
                           color: AppColors.accent.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -500,7 +508,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         const Icon(Icons.bookmark_add_outlined,
                             color: AppColors.accent, size: 14),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: AppSpacing.xs),
                         Text('Save',
                             style: AppTextStyles.caption.copyWith(
                                 color: AppColors.accent,
@@ -509,7 +517,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                     ),
                   ),
               ]),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
 
               // Saved destinations chips
               if (_saved.isNotEmpty) ...[
@@ -518,7 +526,8 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _saved.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(width: AppSpacing.md),
                     itemBuilder: (_, i) {
                       final d = _saved[i];
                       final isSel = _dropoffCtrl.text == d.address;
@@ -528,7 +537,8 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                              horizontal: AppSpacing.md,
+                              vertical: AppSpacing.sm),
                           decoration: BoxDecoration(
                               color: isSel
                                   ? AppColors.accent.withValues(alpha: 0.15)
@@ -541,7 +551,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                                   width: isSel ? 2 : 1)),
                           child: Row(children: [
                             Text(d.icon, style: const TextStyle(fontSize: 18)),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: AppSpacing.sm),
                             Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -567,7 +577,7 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                 ),
                 Text('Long press to edit a saved place',
                     style: AppTextStyles.caption),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
               ],
 
               GooglePlacesSearchField(
@@ -581,13 +591,13 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
                   setState(() {});
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               AppInput(
                   controller: _notesCtrl,
                   hint: 'Notes for driver (optional)',
                   label: 'Notes',
                   prefixIcon: Icons.note_outlined),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
 
               AppButton(
                 label:
@@ -607,11 +617,6 @@ class _CustomerRideScreenState extends State<CustomerRideScreen> {
 
   void _showErr(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(msg),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    AppToast.error(context, msg);
   }
 }

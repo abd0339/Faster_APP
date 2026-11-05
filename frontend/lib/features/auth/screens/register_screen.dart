@@ -6,6 +6,7 @@ import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
@@ -64,13 +65,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     // _formKey validation — guard here instead. It emits an empty
     // string until a national number is entered.
     if (_phoneE164.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Phone number is required'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppToast.error(context, 'Phone number is required');
       return;
     }
 
@@ -90,16 +85,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthFailure) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.message),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
+          AppToast.error(context, state.message);
         }
         if (state is AuthSuccess) {
           Navigator.pop(context);
@@ -127,7 +113,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ─── Role selector ────────────
-                  const Text(
+                  Text(
                     'I am a...',
                     style: AppTextStyles.headlineSmall,
                   ),

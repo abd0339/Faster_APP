@@ -85,6 +85,8 @@ dev_dependencies:
   flutter_lints: ^3.0.2
   build_runner: ^2.4.9
   json_serializable: ^6.7.1
+  flutter_secure_storage_platform_interface: ^1.1.2
+  geolocator_platform_interface: ^4.2.7
 
 flutter:
   uses-material-design: true
@@ -93,11 +95,3 @@ flutter:
     - assets/animations/
     - assets/images/
     - assets/icons/
-  fonts:
-    - family: Montserrat
-      fonts:
-        - asset: assets/fonts/Montserrat-Regular.ttf
-        - asset: assets/fonts/Montserrat-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Montserrat-SemiBold.ttf
-          weight: 600

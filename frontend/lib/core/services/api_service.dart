@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'dart:typed_data';
 import '../constants/api_constants.dart';
 import '../constants/app_config.dart';
+import 'notification_log_service.dart';
 import 'storage_service.dart';
 
 class ApiService {
@@ -41,6 +42,10 @@ class ApiService {
           // 401 = token expired → clear session
           if (error.response?.statusCode == 401) {
             StorageService.instance.clearAll();
+            // Same as an explicit logout: the notification log belongs to
+            // the session that just ended, so the next account signed in
+            // on this device must not inherit it.
+            NotificationLogService.instance.clear();
           }
           handler.next(error);
         },

@@ -1,17 +1,24 @@
 import 'dart:async';
+import 'package:animate_do/animate_do.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_motion.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/websocket_service.dart';
 import '../../../core/constants/api_constants.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
+import '../../../shared/widgets/app_skeleton_card.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/notification_bell_button.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
@@ -31,6 +38,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   Map<String, dynamic>? _debtInfo;
   Map<String, dynamic>? _activeOrder;
   bool _isLoading = false;
+  bool _loadFailed = false;
   bool _isTogglingStatus = false;
   bool _isUpdatingOrder = false;
   bool _isAcceptingOrder = false;
@@ -48,6 +56,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   // Incoming order overlay
   Map<String, dynamic>? _incomingOrder;
   bool _showIncomingOrder = false;
+
+  // Number of skeleton rows shown while the recent-orders list is loading —
+  // a typical phone screen's worth, independent of how many orders will
+  // actually come back.
+  static const int _recentOrdersSkeletonCount = 4;
+
+  // Only the first few visible order cards get a staggered entrance
+  // animation; a long list beyond that would just mean a long wait for
+  // the last items to appear.
+  static const int _maxAnimatedOrderCards = 5;
 
   @override
   void initState() {
@@ -102,7 +120,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   // ─── LOAD DATA ────────────────────────────────────
   Future<void> _loadData() async {
     if (_disposed || !mounted) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     try {
       final results = await Future.wait([
         ApiService.instance.get(ApiConstants.driverOrders),
@@ -125,7 +146,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               orElse: () => null,
             );
       });
-    } catch (_) {}
+    } catch (_) {
+      // Recorded rather than rethrown: an empty list after a failed load
+      // shows AppErrorState with a retry instead of the empty state.
+      _loadFailed = true;
+    }
     if (mounted && !_disposed) setState(() => _isLoading = false);
   }
 
@@ -397,7 +422,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       case 'READY_FOR_PICKUP':
         return 'Picked Up';
       case 'PICKED_UP':
-        return '✅ Mark Delivered';
+        return 'Mark Delivered';
       default:
         return 'Update';
     }
@@ -461,20 +486,24 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Mission Control', style: AppTextStyles.displayMedium),
-                  // Logout — now uses safe _handleLogout
-                  GestureDetector(
-                    onTap: _handleLogout,
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.glassWhite,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.glassBorder),
+                  Row(children: [
+                    const NotificationBellButton(),
+                    const SizedBox(width: 8),
+                    // Logout — now uses safe _handleLogout
+                    GestureDetector(
+                      onTap: _handleLogout,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.glassWhite,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.glassBorder),
+                        ),
+                        child: const Icon(Icons.logout_rounded,
+                            color: AppColors.error, size: 20),
                       ),
-                      child: const Icon(Icons.logout_rounded,
-                          color: AppColors.error, size: 20),
                     ),
-                  ),
+                  ]),
                 ],
               ),
 
@@ -577,10 +606,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                       children: ['PACKAGE', 'PEOPLE', 'HYBRID'].map((mode) {
                         final isSel = _currentMode == mode;
                         final icon = mode == 'PACKAGE'
-                            ? '📦'
+                            ? Icons.inventory_2_rounded
                             : mode == 'PEOPLE'
-                                ? '👥'
-                                : '⚡';
+                                ? Icons.people_rounded
+                                : Icons.bolt_rounded;
                         return Expanded(
                           child: GestureDetector(
                             onTap: () => _switchMode(mode),
@@ -600,9 +629,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
                                 ),
                               ),
                               child: Column(children: [
-                                Text(icon,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(fontSize: 18)),
+                                Icon(icon,
+                                    size: 18,
+                                    color: isSel
+                                        ? AppColors.primary
+                                        : AppColors.textHint),
                                 const SizedBox(height: 2),
                                 Text(mode,
                                     textAlign: TextAlign.center,
@@ -704,67 +735,90 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
               Text('Recent Orders', style: AppTextStyles.headlineMedium),
               const SizedBox(height: 16),
 
-              if (_isLoading)
-                const Center(
-                    child: CircularProgressIndicator(color: AppColors.primary))
+              // Skeletons only on a first load; a refresh (e.g. on a
+              // WebSocket update) updates the existing list in place.
+              if (_isLoading && _orders.isEmpty)
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _recentOrdersSkeletonCount,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (_, __) => const AppSkeletonCard(),
+                )
+              else if (_orders.isEmpty && _loadFailed)
+                AppErrorState(
+                  message: "Couldn't load orders",
+                  onRetry: _loadData,
+                )
               else if (_orders.isEmpty)
-                Center(
-                    child: Column(children: [
-                  const Text('🛵', style: TextStyle(fontSize: 48)),
-                  const SizedBox(height: 12),
-                  Text('No orders yet', style: AppTextStyles.headlineMedium),
-                  Text('Go online to receive orders',
-                      style: AppTextStyles.bodyMedium),
-                ]))
+                const AppEmptyState(
+                  icon: Icons.local_shipping_outlined,
+                  message: 'No rides yet',
+                )
               else
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: _orders.take(5).length,
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (_, i) {
-                    final order = _orders[i] as Map<String, dynamic>;
-                    return GlassCard(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(order['trackingCode'] ?? '',
-                                  style: AppTextStyles.labelLarge
-                                      .copyWith(color: AppColors.primary)),
-                              const SizedBox(height: 4),
-                              Text(
-                                order['deliveryAddress'] ??
-                                    order['offlineCustomerLandmark'] ??
-                                    'No address',
-                                style: AppTextStyles.bodyMedium,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              StatusBadge(
-                                status: order['status'] ?? '',
-                                isRide: order['orderType'] == 'MOBILITY',
-                              ),
-                              const SizedBox(height: 4),
-                              Text('\$${order['grandTotal'] ?? 0}',
-                                  style: AppTextStyles.priceSmall),
-                            ]),
-                      ]),
-                    );
-                  },
+                  itemBuilder: (context, i) =>
+                      _buildRecentOrderItem(context, i),
                 ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // Wraps the first few recent-order cards in a staggered fade/slide
+  // entrance, skipped entirely under the platform's reduced-motion setting.
+  Widget _buildRecentOrderItem(BuildContext context, int index) {
+    final card = _recentOrderCard(_orders[index] as Map<String, dynamic>);
+    if (index >= _maxAnimatedOrderCards || AppMotion.reduceMotion(context)) {
+      return card;
+    }
+    return FadeInUp(
+      duration: AppMotion.listEntranceDuration,
+      delay: Duration(
+          milliseconds: index * AppMotion.listStaggerDelay.inMilliseconds),
+      child: card,
+    );
+  }
+
+  Widget _recentOrderCard(Map<String, dynamic> order) {
+    return GlassCard(
+      padding: const EdgeInsets.all(14),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(order['trackingCode'] ?? '',
+                  style: AppTextStyles.labelLarge
+                      .copyWith(color: AppColors.primary)),
+              const SizedBox(height: 4),
+              Text(
+                order['deliveryAddress'] ??
+                    order['offlineCustomerLandmark'] ??
+                    'No address',
+                style: AppTextStyles.bodyMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          StatusBadge(
+            status: order['status'] ?? '',
+            isRide: order['orderType'] == 'MOBILITY',
+          ),
+          const SizedBox(height: 4),
+          Text('\$${order['grandTotal'] ?? 0}',
+              style: AppTextStyles.priceSmall),
+        ]),
+      ]),
     );
   }
 
@@ -1062,9 +1116,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
           const SizedBox(height: 24),
           Expanded(
             child: _orders.isEmpty
-                ? const Center(
-                    child:
-                        Text('No orders yet', style: AppTextStyles.bodyMedium))
+                ? (_loadFailed
+                    ? AppErrorState(
+                        message: "Couldn't load orders",
+                        onRetry: _loadData,
+                      )
+                    : Center(
+                        child: Text('No orders yet',
+                            style: AppTextStyles.bodyMedium)))
                 : RefreshIndicator(
                     onRefresh: _loadData,
                     color: AppColors.primary,
@@ -1247,21 +1306,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   // ─── HELPERS ──────────────────────────────────────
   void _showSuccess(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(msg),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    AppToast.success(context, msg);
   }
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(msg),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    AppToast.error(context, msg);
   }
 }

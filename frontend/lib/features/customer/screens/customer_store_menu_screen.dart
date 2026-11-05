@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_spacing.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../models/cart_item.dart';
 import '../services/cart_service.dart';
 import 'customer_cart_screen.dart';
@@ -90,15 +92,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
     }
 
     setState(() {}); // Rebuild cart badge
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${item['name']} added to cart'),
-        backgroundColor: AppColors.success,
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    AppToast.success(context, '${item['name']} added to cart');
   }
 
   void _showMerchantConflictSheet() {
@@ -109,22 +103,22 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.warning_amber_rounded,
                 color: AppColors.warning, size: 40),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             Text('Start a new cart?', style: AppTextStyles.headlineMedium),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               'Your cart has items from "${CartService.instance.merchantName}". '
               'Starting a new order will clear your current cart.',
               style: AppTextStyles.bodyMedium,
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             AppButton(
               label: 'Clear cart & continue',
               icon: Icons.refresh_rounded,
@@ -135,11 +129,11 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
                 Navigator.pop(ctx);
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             GestureDetector(
               onTap: () => Navigator.pop(ctx),
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Text('Keep current cart',
                     style: AppTextStyles.labelLarge
                         .copyWith(color: AppColors.textHint)),
@@ -207,12 +201,13 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
 
   Widget _buildHeader(bool isOpen, int cartCount) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.sm),
       child: Row(children: [
         GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: AppColors.glassWhite,
               borderRadius: BorderRadius.circular(12),
@@ -222,7 +217,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
                 color: AppColors.textPrimary, size: 20),
           ),
         ),
-        const SizedBox(width: 14),
+        const SizedBox(width: AppSpacing.lg),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,7 +229,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
                 Container(
                   width: 7,
                   height: 7,
-                  margin: const EdgeInsets.only(right: 5),
+                  margin: const EdgeInsets.only(right: AppSpacing.xs),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: isOpen ? AppColors.accent : AppColors.error,
@@ -256,7 +251,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
 
   Widget _buildMenu() {
     if (_categories.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('No items available', style: AppTextStyles.bodyMedium),
       );
     }
@@ -265,12 +260,15 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
       onRefresh: _load,
       color: AppColors.primary,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 120),
+        // bottom: 120 clears the floating cart FAB — not a spacing-scale
+        // value, left as a literal.
+        padding:
+            const EdgeInsets.fromLTRB(AppSpacing.xl, 0, AppSpacing.xl, 120),
         children: [
           // ─── Offers banner ─────────────────────
           if (_offers.isNotEmpty) ...[
             _buildOffersBanner(),
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.xl),
           ],
 
           // ─── Categories + items ────────────────
@@ -292,7 +290,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
                 _categoryHeader(catMap),
                 ...activeItems
                     .map((item) => _itemCard(item as Map<String, dynamic>)),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
               ],
             );
           }),
@@ -307,14 +305,14 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _offers.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
         itemBuilder: (_, i) {
           final offer = _offers[i] as Map<String, dynamic>;
           final discount = offer['discountPercent'];
           final type = offer['offerType'] as String? ?? '';
           return Container(
             width: 200,
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
@@ -331,7 +329,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
                     type == 'PERCENTAGE' ? '$discount% OFF' : '\$$discount OFF',
                     style: AppTextStyles.price.copyWith(fontSize: 22),
                   ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   offer['title'] as String? ?? '',
                   style: AppTextStyles.bodyMedium,
@@ -348,11 +346,11 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
 
   Widget _categoryHeader(Map<String, dynamic> cat) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: Row(children: [
         if ((cat['icon'] as String? ?? '').isNotEmpty)
           Text(cat['icon'] as String, style: const TextStyle(fontSize: 18)),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.sm),
         Text(
           cat['name'] as String? ?? '',
           style: AppTextStyles.headlineSmall,
@@ -369,7 +367,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
     final qty = _cartQty(itemId);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: GlassCard(
         padding: EdgeInsets.zero,
         child: Row(children: [
@@ -393,7 +391,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
           // Info
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -405,7 +403,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
                   ),
                   if (item['description'] != null &&
                       (item['description'] as String).isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppSpacing.xs),
                     Text(
                       item['description'] as String,
                       style: AppTextStyles.bodyMedium,
@@ -413,7 +411,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpacing.sm),
                   Text('\$$price', style: AppTextStyles.priceSmall),
                 ],
               ),
@@ -422,7 +420,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
 
           // Add / Qty control
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: AppSpacing.md),
             child: qty == 0
                 ? GestureDetector(
                     onTap: () => _addToCart(item),
@@ -467,7 +465,7 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
           child: Text('$qty', style: AppTextStyles.labelLarge),
         ),
         GestureDetector(
@@ -503,11 +501,6 @@ class _CustomerStoreMenuScreenState extends State<CustomerStoreMenuScreen> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.error(context, msg);
   }
 }

@@ -1,9 +1,11 @@
+import 'package:animate_do/animate_do.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
+import '../../../core/constants/app_motion.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/exchange_rate_service.dart';
@@ -14,9 +16,14 @@ import '../../../core/utils/distance_calculator.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/app_skeleton_card.dart';
 import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/notification_bell_button.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
@@ -36,7 +43,18 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
   int _currentIndex = 0;
   List<dynamic> _myOrders = [];
   bool _ordersLoading = false;
+  bool _ordersLoadFailed = false;
   bool _ordersVisited = false;
+
+  // Number of skeleton rows shown while the order list is loading — a
+  // typical phone screen's worth, independent of how many orders will
+  // actually come back.
+  static const int _ordersSkeletonCount = 4;
+
+  // Only the first few visible order cards get a staggered entrance
+  // animation; a long list beyond that would just mean a long wait for
+  // the last items to appear.
+  static const int _maxAnimatedOrderCards = 5;
 
   @override
   Widget build(BuildContext context) {
@@ -344,24 +362,15 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
           // Place the order
           Future<void> placeOrder() async {
             if (pickupCtrl.text.trim().isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Set pickup location'),
-                  backgroundColor: AppColors.error));
+              AppToast.error(context, 'Set pickup location');
               return;
             }
             if (deliveryCtrl.text.trim().isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Set delivery address'),
-                  backgroundColor: AppColors.error));
+              AppToast.error(context, 'Set delivery address');
               return;
             }
             if (recipientPhoneE164.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Enter the recipient's phone number"),
-                  backgroundColor: AppColors.error,
-                ),
-              );
+              AppToast.error(context, "Enter the recipient's phone number");
               return;
             }
             // FIX: this used to be `?? 0.0`, which silently turned
@@ -370,12 +379,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
             // required field above.
             final rawPrice = double.tryParse(priceCtrl.text.trim());
             if (rawPrice == null || rawPrice <= 0) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Enter a valid item value'),
-                  backgroundColor: AppColors.error,
-                ),
-              );
+              AppToast.error(context, 'Enter a valid item value');
               return;
             }
             // NOTE: no fee parsed here anymore — the delivery fee is
@@ -384,11 +388,6 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
 
             setSheet(() => isCreatingOrder = true);
             try {
-              // Captured before the (possible) await below, not
-              // re-derived from `context` after it — the safe way to
-              // show a SnackBar across an async gap without
-              // triggering use_build_context_synchronously.
-              final messenger = ScaffoldMessenger.of(context);
               // The backend always stores/expects totalPrice in USD.
               // If the customer typed the value in LBP, convert it
               // here — the rest of the flow never knows the field
@@ -407,13 +406,12 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
               // so this client-side guard is the only thing standing
               // between a small LBP typo and a free order.)
               if (price < 0.01) {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Converted price is too small — enter a larger amount'),
-                    backgroundColor: AppColors.error,
-                  ),
-                );
+                // context may be stale after the (possible) await above —
+                // guard the same way the catch block below already does.
+                if (context.mounted) {
+                  AppToast.error(context,
+                      'Converted price is too small — enter a larger amount');
+                }
                 setSheet(() => isCreatingOrder = false);
                 return;
               }
@@ -434,13 +432,12 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                 final distanceKm = DistanceCalculator.kilometersBetween(
                     pickupLat!, pickupLng!, deliveryLat!, deliveryLng!);
                 if (distanceKm > kMaxDeliveryDistanceKm) {
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
+                  if (context.mounted) {
+                    AppToast.error(
+                      context,
+                      'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)',
+                    );
+                  }
                   setSheet(() => isCreatingOrder = false);
                   return;
                 }
@@ -484,9 +481,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
               }
             } catch (e) {
               if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                    content: Text(ApiService.getErrorMessage(e)),
-                    backgroundColor: AppColors.error));
+                AppToast.error(ctx, ApiService.getErrorMessage(e));
               }
             }
             setSheet(() => isCreatingOrder = false);
@@ -799,7 +794,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
 
                         const SizedBox(height: 24),
                         AppButton(
-                          label: '🚀 Place Order',
+                          label: 'Place Order',
                           isLoading: isCreatingOrder,
                           color: AppColors.accent,
                           textColor: AppColors.background,
@@ -841,19 +836,24 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => context.read<AuthBloc>().add(LogoutRequested()),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.glassBorder),
+              Row(children: [
+                const NotificationBellButton(),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () =>
+                      context.read<AuthBloc>().add(LogoutRequested()),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.glassWhite,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.glassBorder),
+                    ),
+                    child: const Icon(Icons.logout_rounded,
+                        color: AppColors.error, size: 20),
                   ),
-                  child: const Icon(Icons.logout_rounded,
-                      color: AppColors.error, size: 20),
                 ),
-              ),
+              ]),
             ]),
 
             const SizedBox(height: 28),
@@ -1043,36 +1043,37 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
           ]),
         ),
         Expanded(
-          child: _ordersLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary))
-              : _myOrders.isEmpty
-                  ? Center(
-                      child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.receipt_long_outlined,
-                                color: AppColors.textHint, size: 56),
-                            const SizedBox(height: 16),
-                            Text('No orders yet',
-                                style: AppTextStyles.headlineMedium),
-                            const SizedBox(height: 8),
-                            Text('Tap + New Order to get started',
-                                style: AppTextStyles.bodyMedium,
-                                textAlign: TextAlign.center),
-                          ]),
+          // Skeletons only on a first load; a refresh of an existing list
+          // updates it in place.
+          child: _ordersLoading && _myOrders.isEmpty
+              ? ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  itemCount: _ordersSkeletonCount,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (_, __) => const AppSkeletonCard(),
+                )
+              : _myOrders.isEmpty && _ordersLoadFailed
+                  ? AppErrorState(
+                      message: "Couldn't load orders",
+                      onRetry: _loadOrders,
                     )
-                  : RefreshIndicator(
-                      onRefresh: _loadOrders,
-                      color: AppColors.primary,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                        itemCount: _myOrders.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (_, i) =>
-                            _orderCard(_myOrders[i] as Map<String, dynamic>),
-                      ),
-                    ),
+                  : _myOrders.isEmpty
+                      ? const AppEmptyState(
+                          icon: Icons.receipt_long_outlined,
+                          message: 'No orders yet',
+                        )
+                      : RefreshIndicator(
+                          onRefresh: _loadOrders,
+                          color: AppColors.primary,
+                          child: ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                            itemCount: _myOrders.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (context, i) =>
+                                _buildOrderListItem(context, i),
+                          ),
+                        ),
         ),
       ]),
     );
@@ -1080,14 +1081,21 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
 
   Future<void> _loadOrders() async {
     if (!mounted) return;
-    setState(() => _ordersLoading = true);
+    setState(() {
+      _ordersLoading = true;
+      _ordersLoadFailed = false;
+    });
     try {
       final res = await ApiService.instance.get('/api/orders/customer');
       if (!mounted) return;
       final d = res.data;
       setState(() =>
           _myOrders = d is List ? d : (d as Map?)?['content'] as List? ?? []);
-    } catch (_) {}
+    } catch (_) {
+      // Recorded rather than rethrown: an empty list after a failed load
+      // shows AppErrorState with a retry instead of "No orders yet".
+      _ordersLoadFailed = true;
+    }
     if (mounted) setState(() => _ordersLoading = false);
   }
 
@@ -1148,23 +1156,30 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
       await ApiService.instance
           .patch(ApiConstants.cancelOrder(order['id'] as int));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Order cancelled'),
-        backgroundColor: AppColors.accent,
-        behavior: SnackBarBehavior.floating,
-      ));
+      AppToast.success(context, 'Order cancelled');
       _loadOrders();
     } catch (e) {
       if (!mounted) return;
       // Surfaces the backend's own reason — e.g. a driver accepted
       // between the button rendering and the tap.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ApiService.getErrorMessage(e)),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-      ));
+      AppToast.error(context, ApiService.getErrorMessage(e));
       _loadOrders();
     }
+  }
+
+  // Wraps the first few order cards in a staggered fade/slide entrance,
+  // skipped entirely under the platform's reduced-motion setting.
+  Widget _buildOrderListItem(BuildContext context, int index) {
+    final card = _orderCard(_myOrders[index] as Map<String, dynamic>);
+    if (index >= _maxAnimatedOrderCards || AppMotion.reduceMotion(context)) {
+      return card;
+    }
+    return FadeInUp(
+      duration: AppMotion.listEntranceDuration,
+      delay: Duration(
+          milliseconds: index * AppMotion.listStaggerDelay.inMilliseconds),
+      child: card,
+    );
   }
 
   Widget _orderCard(Map<String, dynamic> order) {

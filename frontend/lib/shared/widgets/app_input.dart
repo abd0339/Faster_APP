@@ -25,6 +25,7 @@ class AppInput extends StatefulWidget {
   // cluttering a compact form; passing '' suppresses it, same as
   // TextField's own counterText parameter.
   final String? counterText;
+  final bool enabled;
 
   const AppInput({
     super.key,
@@ -44,6 +45,7 @@ class AppInput extends StatefulWidget {
     this.inputFormatters,
     this.maxLength,
     this.counterText,
+    this.enabled = true,
   });
 
   @override
@@ -62,6 +64,7 @@ class _AppInputState extends State<AppInput> {
       keyboardType: widget.keyboardType,
       maxLines: widget.isPassword ? 1 : widget.maxLines,
       readOnly: widget.readOnly,
+      enabled: widget.enabled,
       onTap: widget.onTap,
       onChanged: widget.onChanged,
       validator: widget.validator,

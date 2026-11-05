@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_motion.dart';
 import '../../core/constants/app_text_styles.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ─── Primary Button ───────────────────────────────────
-class AppButton extends StatelessWidget {
+class AppButton extends StatefulWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool isLoading;
@@ -28,59 +29,81 @@ class AppButton extends StatelessWidget {
   });
 
   @override
+  State<AppButton> createState() => _AppButtonState();
+}
+
+class _AppButtonState extends State<AppButton> {
+  bool _isPressed = false;
+
+  void _setPressed(bool pressed) {
+    if (_isPressed == pressed) return;
+    setState(() => _isPressed = pressed);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: isFullWidth ? double.infinity : null,
-      height: height,
-      child: ElevatedButton(
-        onPressed: isLoading
-            ? null
-            : () {
-                if (!kIsWeb) HapticFeedback.lightImpact();
-                onPressed?.call();
-              },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color ?? AppColors.primary,
-          foregroundColor: textColor ?? AppColors.background,
-          disabledBackgroundColor:
-              (color ?? AppColors.primary).withValues(alpha: 0.3),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 0,
-        ),
-        child: isLoading
-            ? SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: textColor ?? AppColors.background,
-                ),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 20),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    label,
-                    style: AppTextStyles.button.copyWith(
-                      color: textColor ?? AppColors.background,
-                    ),
-                  ),
-                ],
+    return GestureDetector(
+      onTapDown: (_) => _setPressed(true),
+      onTapUp: (_) => _setPressed(false),
+      onTapCancel: () => _setPressed(false),
+      child: AnimatedScale(
+        scale: _isPressed ? 0.97 : 1.0,
+        duration: AppMotion.microDuration,
+        curve: AppMotion.microCurve,
+        child: SizedBox(
+          width: widget.isFullWidth ? double.infinity : null,
+          height: widget.height,
+          child: ElevatedButton(
+            onPressed: widget.isLoading
+                ? null
+                : () {
+                    if (!kIsWeb) HapticFeedback.lightImpact();
+                    widget.onPressed?.call();
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.color ?? AppColors.primary,
+              foregroundColor: widget.textColor ?? AppColors.background,
+              disabledBackgroundColor:
+                  (widget.color ?? AppColors.primary).withValues(alpha: 0.4),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
+              elevation: 0,
+            ),
+            child: widget.isLoading
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: widget.textColor ?? AppColors.background,
+                    ),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (widget.icon != null) ...[
+                        Icon(widget.icon, size: 20),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        widget.label,
+                        style: AppTextStyles.button.copyWith(
+                          color: widget.textColor ?? AppColors.background,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
       ),
     );
   }
 }
 
 // ─── Outline Button ───────────────────────────────────
-class AppOutlineButton extends StatelessWidget {
+class AppOutlineButton extends StatefulWidget {
   final String label;
   final VoidCallback? onPressed;
   final Color? borderColor;
@@ -99,43 +122,87 @@ class AppOutlineButton extends StatelessWidget {
   });
 
   @override
+  State<AppOutlineButton> createState() => _AppOutlineButtonState();
+}
+
+class _AppOutlineButtonState extends State<AppOutlineButton> {
+  bool _isPressed = false;
+
+  void _setPressed(bool pressed) {
+    if (_isPressed == pressed) return;
+    setState(() => _isPressed = pressed);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: height,
-      child: OutlinedButton(
-        onPressed: () {
-          if (!kIsWeb) HapticFeedback.lightImpact();
-          onPressed?.call();
-        },
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(
-            color: borderColor ?? AppColors.primary,
-            width: 1.5,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(
-                icon,
-                size: 20,
-                color: textColor ?? AppColors.primary,
+    final resolvedBorderColor = widget.borderColor ?? AppColors.primary;
+    final resolvedTextColor = widget.textColor ?? AppColors.primary;
+
+    return GestureDetector(
+      onTapDown: (_) => _setPressed(true),
+      onTapUp: (_) => _setPressed(false),
+      onTapCancel: () => _setPressed(false),
+      child: AnimatedScale(
+        scale: _isPressed ? 0.97 : 1.0,
+        duration: AppMotion.microDuration,
+        curve: AppMotion.microCurve,
+        child: SizedBox(
+          width: double.infinity,
+          height: widget.height,
+          child: OutlinedButton(
+            onPressed: widget.onPressed == null
+                ? null
+                : () {
+                    if (!kIsWeb) HapticFeedback.lightImpact();
+                    widget.onPressed?.call();
+                  },
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: resolvedBorderColor,
+                width: 1.5,
               ),
-              const SizedBox(width: 8),
-            ],
-            Text(
-              label,
-              style: AppTextStyles.buttonOutline.copyWith(
-                color: textColor ?? AppColors.primary,
+              foregroundColor: resolvedTextColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
+            ).copyWith(
+              side: WidgetStateProperty.resolveWith((states) {
+                final color = states.contains(WidgetState.disabled)
+                    ? resolvedBorderColor.withValues(alpha: 0.4)
+                    : resolvedBorderColor;
+                return BorderSide(color: color, width: 1.5);
+              }),
+              foregroundColor: WidgetStateProperty.resolveWith((states) {
+                return states.contains(WidgetState.disabled)
+                    ? resolvedTextColor.withValues(alpha: 0.4)
+                    : resolvedTextColor;
+              }),
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (widget.icon != null) ...[
+                  Icon(
+                    widget.icon,
+                    size: 20,
+                    color: widget.onPressed == null
+                        ? resolvedTextColor.withValues(alpha: 0.4)
+                        : resolvedTextColor,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Text(
+                  widget.label,
+                  style: AppTextStyles.buttonOutline.copyWith(
+                    color: widget.onPressed == null
+                        ? resolvedTextColor.withValues(alpha: 0.4)
+                        : resolvedTextColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

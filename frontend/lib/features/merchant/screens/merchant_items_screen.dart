@@ -10,6 +10,7 @@ import '../../../core/services/api_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/app_toast.dart';
 
 class MerchantItemsScreen extends StatefulWidget {
   final Map<String, dynamic> category;
@@ -569,13 +570,13 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
               // ─── Uploading state ───────────────
               ? Container(
                   color: AppColors.glassWhite,
-                  child: const Center(
+                  child: Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        CircularProgressIndicator(
+                        const CircularProgressIndicator(
                             color: AppColors.primary, strokeWidth: 2),
-                        SizedBox(height: 8),
+                        const SizedBox(height: 8),
                         Text('Uploading...', style: AppTextStyles.bodyMedium),
                       ],
                     ),
@@ -680,7 +681,7 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('No items yet', style: AppTextStyles.headlineMedium),
+          Text('No items yet', style: AppTextStyles.headlineMedium),
           const SizedBox(height: 8),
           Text(
             'Tap the button below\nto add your first item',
@@ -972,20 +973,10 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
 
   // ─── Helpers ──────────────────────────────────────
   void _showSuccess(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.success,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.success(context, msg);
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.error(context, msg);
   }
 }

@@ -1,9 +1,12 @@
+import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_motion.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/websocket_service.dart';
+import '../../../shared/widgets/app_skeleton_card.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../widgets/order_feedback_sheet.dart';
@@ -32,6 +35,11 @@ class _CustomerOrderTrackingScreenState
   // than once per screen session (e.g. on WebSocket
   // reconnect re-delivering the same DELIVERED status).
   bool _feedbackPromptShown = false;
+
+  // Skeleton placeholders shown while the initial order fetch is in
+  // flight, echoing the eventual status-hero / progress-steps /
+  // order-details card layout below instead of a single centered spinner.
+  static const List<double> _loadingSkeletonHeights = [220, 260, 140, 100];
 
   // FIX: rides used to show delivery wording — a MOBILITY order
   // displayed "Preparing" and "Ready", which makes no sense for a
@@ -227,9 +235,13 @@ class _CustomerOrderTrackingScreenState
 
             Expanded(
               child: _isLoading
-                  ? const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.primary))
+                  ? ListView.separated(
+                      padding: const EdgeInsets.all(24),
+                      itemCount: _loadingSkeletonHeights.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 20),
+                      itemBuilder: (_, i) =>
+                          AppSkeletonCard(height: _loadingSkeletonHeights[i]),
+                    )
                   : SingleChildScrollView(
                       padding: const EdgeInsets.all(24),
                       child: Column(children: [
@@ -301,7 +313,7 @@ class _CustomerOrderTrackingScreenState
                             child: Column(
                               children: List.generate(
                                 _statusSteps.length,
-                                (i) => _buildStep(
+                                (i) => _buildAnimatedStep(
                                   i,
                                   currentIdx,
                                 ),
@@ -370,6 +382,19 @@ class _CustomerOrderTrackingScreenState
           ],
         ),
       ),
+    );
+  }
+
+  // Wraps a status-timeline step in a staggered fade/slide entrance,
+  // skipped entirely under the platform's reduced-motion setting.
+  Widget _buildAnimatedStep(int index, int currentIndex) {
+    final step = _buildStep(index, currentIndex);
+    if (AppMotion.reduceMotion(context)) return step;
+    return FadeInUp(
+      duration: AppMotion.listEntranceDuration,
+      delay: Duration(
+          milliseconds: index * AppMotion.listStaggerDelay.inMilliseconds),
+      child: step,
     );
   }
 

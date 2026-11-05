@@ -21,6 +21,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
   bool _isLoading = false;
   String? _statusMessage;
 
+  /// Whether [_statusMessage] reports a successful submission (shown in the
+  /// success color) rather than an error.
+  bool _submitted = false;
+
   final List<Map<String, dynamic>> _vehicles = [
     {
       'value': 'MOTO',
@@ -46,13 +50,17 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
 
   Future<void> _submit() async {
     if (_plateController.text.isEmpty) {
-      setState(() => _statusMessage = 'Please enter your plate number');
+      setState(() {
+        _statusMessage = 'Please enter your plate number';
+        _submitted = false;
+      });
       return;
     }
 
     setState(() {
       _isLoading = true;
       _statusMessage = null;
+      _submitted = false;
     });
 
     try {
@@ -64,8 +72,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         },
       );
 
-      setState(() =>
-          _statusMessage = '✅ Profile submitted! Waiting for admin approval.');
+      setState(() {
+        _statusMessage = 'Profile submitted! Waiting for admin approval.';
+        _submitted = true;
+      });
     } catch (e) {
       setState(() => _statusMessage = ApiService.getErrorMessage(e));
     } finally {
@@ -228,7 +238,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '📄 Documents',
+                    'Documents',
                     style: AppTextStyles.headlineSmall,
                   ),
                   const SizedBox(height: 12),
@@ -259,12 +269,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: _statusMessage!.startsWith('✅')
+                  color: _submitted
                       ? AppColors.success.withValues(alpha: 0.1)
                       : AppColors.error.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _statusMessage!.startsWith('✅')
+                    color: _submitted
                         ? AppColors.success
                         : AppColors.error,
                   ),
@@ -272,7 +282,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                 child: Text(
                   _statusMessage!,
                   style: AppTextStyles.bodyMedium.copyWith(
-                    color: _statusMessage!.startsWith('✅')
+                    color: _submitted
                         ? AppColors.success
                         : AppColors.error,
                   ),

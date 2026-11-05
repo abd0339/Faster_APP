@@ -1,3 +1,4 @@
+import 'package:animate_do/animate_do.dart';
 import 'package:dio/dio.dart' as dio;
 import 'package:latlong2/latlong.dart' hide DistanceCalculator;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_motion.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/constants/api_constants.dart';
@@ -17,10 +19,15 @@ import '../../../core/utils/distance_calculator.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_badge.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_empty_state.dart';
+import '../../../shared/widgets/app_error_state.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/app_skeleton_card.dart';
 import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
 import '../../../shared/widgets/map_picker_screen.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/notification_bell_button.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import 'merchant_categories_screen.dart';
@@ -39,6 +46,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
   int _currentIndex = 0;
   List<dynamic> _activeOrders = [];
   bool _isLoading = true;
+  bool _loadFailed = false;
   bool _menuVisited = false;
   bool _offersVisited = false;
   bool _scheduleVisited = false;
@@ -47,6 +55,16 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
   double? _merchantLat;
   double? _merchantLng;
   String _merchantAddress = '';
+
+  // Number of skeleton rows shown while the recent-orders list is loading —
+  // a typical phone screen's worth, independent of how many orders will
+  // actually come back.
+  static const int _recentOrdersSkeletonCount = 4;
+
+  // Only the first few visible order cards get a staggered entrance
+  // animation; a long list beyond that would just mean a long wait for
+  // the last items to appear.
+  static const int _maxAnimatedOrderCards = 5;
 
   @override
   void initState() {
@@ -97,7 +115,10 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
 
   Future<void> _loadData() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
     try {
       final ordersRes =
           await ApiService.instance.get(ApiConstants.merchantOrders);
@@ -107,7 +128,11 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
         _activeOrders =
             data is List ? data : (data as Map?)?['content'] as List? ?? [];
       });
-    } catch (_) {}
+    } catch (_) {
+      // Recorded rather than rethrown: an empty list after a failed load
+      // shows AppErrorState with a retry instead of "No orders yet".
+      _loadFailed = true;
+    }
     if (mounted) setState(() => _isLoading = false);
   }
 
@@ -160,20 +185,24 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                           style: AppTextStyles.bodyMedium),
                     ],
                   ),
-                  GestureDetector(
-                    onTap: () =>
-                        context.read<AuthBloc>().add(LogoutRequested()),
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.glassWhite,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.glassBorder),
+                  Row(children: [
+                    const NotificationBellButton(),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () =>
+                          context.read<AuthBloc>().add(LogoutRequested()),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.glassWhite,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.glassBorder),
+                        ),
+                        child: const Icon(Icons.logout_rounded,
+                            color: AppColors.error, size: 20),
                       ),
-                      child: const Icon(Icons.logout_rounded,
-                          color: AppColors.error, size: 20),
                     ),
-                  ),
+                  ]),
                 ],
               ),
               const SizedBox(height: 24),
@@ -191,20 +220,34 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
               const SizedBox(height: 24),
               Text('Recent Orders', style: AppTextStyles.headlineMedium),
               const SizedBox(height: 16),
-              if (_isLoading)
-                const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
+              // Skeletons only on a first load; a refresh (e.g. after
+              // creating an order) updates the existing list in place.
+              if (_isLoading && _activeOrders.isEmpty)
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _recentOrdersSkeletonCount,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (_, __) => const AppSkeletonCard(),
+                )
+              else if (_activeOrders.isEmpty && _loadFailed)
+                AppErrorState(
+                  message: "Couldn't load orders",
+                  onRetry: _loadData,
                 )
               else if (_activeOrders.isEmpty)
-                _buildEmptyState('📦', 'No orders yet',
-                    'Tap + New Order to create your first order')
+                const AppEmptyState(
+                  icon: Icons.storefront_outlined,
+                  message: 'No orders yet',
+                )
               else
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: _activeOrders.take(5).length,
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (_, i) => _buildOrderCard(_activeOrders[i]),
+                  itemBuilder: (context, i) =>
+                      _buildRecentOrderItem(context, i),
                 ),
             ],
           ),
@@ -241,8 +284,13 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
             const SizedBox(height: 24),
             Expanded(
               child: _activeOrders.isEmpty
-                  ? _buildEmptyState(
-                      '📋', 'No orders yet', 'Orders will appear here')
+                  ? (_loadFailed
+                      ? AppErrorState(
+                          message: "Couldn't load orders",
+                          onRetry: _loadData,
+                        )
+                      : _buildEmptyState(Icons.receipt_long_rounded,
+                          'No orders yet', 'Orders will appear here'))
                   : ListView.separated(
                       itemCount: _activeOrders.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -280,6 +328,21 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     return _scheduleVisited
         ? const MerchantScheduleScreen()
         : const SizedBox.shrink();
+  }
+
+  // Wraps the first few recent-order cards in a staggered fade/slide
+  // entrance, skipped entirely under the platform's reduced-motion setting.
+  Widget _buildRecentOrderItem(BuildContext context, int index) {
+    final card = _buildOrderCard(_activeOrders[index]);
+    if (index >= _maxAnimatedOrderCards || AppMotion.reduceMotion(context)) {
+      return card;
+    }
+    return FadeInUp(
+      duration: AppMotion.listEntranceDuration,
+      delay: Duration(
+          milliseconds: index * AppMotion.listStaggerDelay.inMilliseconds),
+      child: card,
+    );
   }
 
   // ─── ORDER CARD ───────────────────────────────────
@@ -374,12 +437,12 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     );
   }
 
-  Widget _buildEmptyState(String emoji, String title, String subtitle) {
+  Widget _buildEmptyState(IconData icon, String title, String subtitle) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 48)),
+          Icon(icon, size: 48, color: AppColors.textHint),
           const SizedBox(height: 16),
           Text(title, style: AppTextStyles.headlineMedium),
           const SizedBox(height: 8),
@@ -516,12 +579,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
             final price = double.tryParse(priceCtrl.text.trim());
             final fee = double.tryParse(feeCtrl.text.trim());
             if (price == null || price <= 0) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Enter a valid order price'),
-                  backgroundColor: AppColors.error,
-                ),
-              );
+              AppToast.error(context, 'Enter a valid order price');
               return;
             }
 
@@ -538,24 +596,18 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
             // that error immediately instead of waiting on a
             // network round-trip first.
             Future<double?> resolveTotalPriceUsd() async {
-              // Captured before the (possible) await below, not
-              // re-derived from `context` after it — the safe way to
-              // show a SnackBar across an async gap without
-              // triggering use_build_context_synchronously.
-              final messenger = ScaffoldMessenger.of(context);
               double totalPrice = price;
               if (priceCurrency == 'LBP') {
                 final rate = await ExchangeRateService.instance.getCurrentRate();
                 totalPrice = CurrencyConverter.lbpToUsd(price, rate);
               }
               if (totalPrice < 0.01) {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Converted price is too small — enter a larger amount'),
-                    backgroundColor: AppColors.error,
-                  ),
-                );
+                // context may be stale after the (possible) await above —
+                // guard the same way the catch block below already does.
+                if (context.mounted) {
+                  AppToast.error(context,
+                      'Converted price is too small — enter a larger amount');
+                }
                 return null;
               }
               return totalPrice;
@@ -592,22 +644,14 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                 final phone = phoneE164;
                 final landmark = landmarkCtrl.text.trim();
                 if (phone.isEmpty || landmark.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Phone and delivery address required'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
+                  AppToast.error(context, 'Phone and delivery address required');
                   setSheet(() => isCreatingOrder = false);
                   return;
                 }
                 if (!isWithinMaxDistance()) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)'),
-                      backgroundColor: AppColors.error,
-                    ),
+                  AppToast.error(
+                    context,
+                    'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)',
                   );
                   setSheet(() => isCreatingOrder = false);
                   return;
@@ -654,23 +698,15 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                 // ("The 'To' number is not a valid phone number") on an
                 // empty string.
                 if (delivery.isEmpty || manualPhone.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content:
-                          Text('Customer phone and delivery address required'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
+                  AppToast.error(
+                      context, 'Customer phone and delivery address required');
                   setSheet(() => isCreatingOrder = false);
                   return;
                 }
                 if (!isWithinMaxDistance()) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)'),
-                      backgroundColor: AppColors.error,
-                    ),
+                  AppToast.error(
+                    context,
+                    'Delivery address is too far from pickup (over ${kMaxDeliveryDistanceKm.toStringAsFixed(0)}km)',
                   );
                   setSheet(() => isCreatingOrder = false);
                   return;
@@ -703,27 +739,15 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
               await _loadData();
 
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '✅ Order created!'
-                      '${isO2O ? ' WhatsApp the customer with their tracking link.' : ' Searching for drivers...'}',
-                    ),
-                    backgroundColor: AppColors.success,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
+                AppToast.success(
+                  context,
+                  'Order created!'
+                  '${isO2O ? ' WhatsApp the customer with their tracking link.' : ' Searching for drivers...'}',
                 );
               }
             } catch (e) {
               if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  SnackBar(
-                    content: Text(ApiService.getErrorMessage(e)),
-                    backgroundColor: AppColors.error,
-                  ),
-                );
+                AppToast.error(ctx, ApiService.getErrorMessage(e));
               }
             }
             // FIX (crash): the sheet is popped above, so by the time
@@ -1250,7 +1274,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                                           mainAxisAlignment:
                                               MainAxisAlignment.center,
                                           children: [
-                                            const Text('✅ Yes'),
+                                            const Text('Yes'),
                                           ],
                                         ),
                                       ),
@@ -1282,7 +1306,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                                           mainAxisAlignment:
                                               MainAxisAlignment.center,
                                           children: [
-                                            const Text('❌ No'),
+                                            const Text('No'),
                                           ],
                                         ),
                                       ),
@@ -1301,7 +1325,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
-                                      '📲 After creating the order, '
+                                      'After creating the order, '
                                       'send the tracking link to '
                                       'the customer on WhatsApp. '
                                       'They can share their live '
@@ -1470,8 +1494,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
 
                         // ── CREATE BUTTON ─────────────────
                         AppButton(
-                          label:
-                              isO2O ? '📱 Create O2O Order' : '🚀 Create Order',
+                          label: isO2O ? 'Create O2O Order' : 'Create Order',
                           isLoading: isCreatingOrder,
                           color: isO2O
                               ? const Color(0xFF25D366)

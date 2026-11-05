@@ -8,6 +8,7 @@ import '../../../core/services/api_service.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
+import '../../../shared/widgets/app_toast.dart';
 import 'merchant_items_screen.dart';
 
 // ─── Emoji data organized by section ──────────────────
@@ -498,7 +499,8 @@ class _MerchantCategoriesScreenState extends State<MerchantCategoriesScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('🗂️', style: TextStyle(fontSize: 56)),
+          const Icon(Icons.folder_open_rounded,
+              size: 56, color: AppColors.textHint),
           const SizedBox(height: 16),
           Text('No categories yet', style: AppTextStyles.headlineMedium),
           const SizedBox(height: 8),
@@ -833,20 +835,10 @@ class _MerchantCategoriesScreenState extends State<MerchantCategoriesScreen> {
 
   // ─── Helpers ──────────────────────────────────────
   void _showSuccess(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.success,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.success(context, msg);
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    AppToast.error(context, msg);
   }
 }

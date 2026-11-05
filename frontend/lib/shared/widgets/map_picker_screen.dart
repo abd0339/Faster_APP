@@ -307,12 +307,12 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   if (_isLoadingLocation)
                     Container(
                       color: AppColors.background.withValues(alpha: 0.7),
-                      child: const Center(
+                      child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            CircularProgressIndicator(color: AppColors.primary),
-                            SizedBox(height: 16),
+                            const CircularProgressIndicator(color: AppColors.primary),
+                            const SizedBox(height: 16),
                             Text('Finding your location...',
                                 style: AppTextStyles.bodyMedium),
                           ],

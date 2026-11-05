@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/push_notification_service.dart';
+import '../../../core/services/notification_log_service.dart';
 import '../../../core/constants/api_constants.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
@@ -192,6 +193,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     } catch (_) {}
 
     await StorageService.instance.clearAll();
+
+    // The notification log belongs to the account that just signed out —
+    // clear it so the next account on this device does not inherit it.
+    await NotificationLogService.instance.clear();
     emit(AuthLoggedOut());
   }
 

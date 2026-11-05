@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:faster_app/shared/widgets/app_input.dart';
+import 'package:faster_app/shared/theme/app_theme.dart';
+import 'package:faster_app/core/constants/app_colors.dart';
 import 'package:faster_app/core/utils/currency_input_formatter.dart';
 
 void main() {
@@ -74,5 +76,45 @@ void main() {
     ))));
 
     expect(find.text('0/5'), findsNothing);
+  });
+
+  testWidgets('AppInput(enabled: false) renders a disabled TextFormField',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: AppInput(
+      hint: 'x',
+      enabled: false,
+    ))));
+
+    final field = tester.widget<TextFormField>(find.byType(TextFormField));
+    expect(field.enabled, isFalse);
+  });
+
+  testWidgets('AppInput defaults to enabled when enabled is not specified',
+      (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: AppInput(
+      hint: 'x',
+    ))));
+
+    final field = tester.widget<TextFormField>(find.byType(TextFormField));
+    expect(field.enabled, isTrue);
+  });
+
+  testWidgets(
+      'disabled AppInput resolves the theme disabledBorder color matching '
+      "AppColors.glassBorder at 40% alpha", (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.darkTheme,
+      home: const Scaffold(body: AppInput(
+        hint: 'x',
+        enabled: false,
+      )),
+    ));
+
+    final context = tester.element(find.byType(AppInput));
+    final disabledBorder = Theme.of(context).inputDecorationTheme.disabledBorder;
+
+    expect(disabledBorder, isA<OutlineInputBorder>());
+    final borderSide = (disabledBorder as OutlineInputBorder).borderSide;
+    expect(borderSide.color, AppColors.glassBorder.withValues(alpha: 0.4));
   });
 }

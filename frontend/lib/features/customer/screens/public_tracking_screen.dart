@@ -1,12 +1,16 @@
 import 'dart:async';
+import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_motion.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/location_service.dart';
+import '../../../shared/widgets/app_skeleton_card.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_toast.dart';
 
 /// PublicTrackingScreen
 /// ────────────────────────────────────────────────────
@@ -53,6 +57,11 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
   bool _locationFlagged = false;
 
   Timer? _pollTimer;
+
+  // Skeleton placeholders shown while the initial tracking-data fetch is
+  // in flight, echoing the eventual status-timeline / driver-info /
+  // order-details card layout below instead of a single centered spinner.
+  static const List<double> _loadingSkeletonHeights = [200, 220, 100, 140];
 
   static const _statusSteps = [
     'PENDING',
@@ -159,16 +168,13 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
 
   void _showMessage(String msg, {bool isError = false, bool isWarning = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: isError
-          ? AppColors.error
-          : isWarning
-              ? AppColors.warning
-              : AppColors.accent,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+    if (isError) {
+      AppToast.error(context, msg);
+    } else if (isWarning) {
+      AppToast.warning(context, msg);
+    } else {
+      AppToast.success(context, msg);
+    }
   }
 
   @override
@@ -177,8 +183,13 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: _isLoading && _order == null
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.primary))
+            ? ListView.separated(
+                padding: const EdgeInsets.all(24),
+                itemCount: _loadingSkeletonHeights.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 20),
+                itemBuilder: (_, i) =>
+                    AppSkeletonCard(height: _loadingSkeletonHeights[i]),
+              )
             : _error != null && _order == null
                 ? _buildError()
                 : _buildContent(),
@@ -324,10 +335,10 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
               GlassCard(
                 padding: const EdgeInsets.all(14),
                 borderColor: AppColors.warning.withValues(alpha: 0.5),
-                child: const Row(children: [
-                  Icon(Icons.info_outline_rounded,
+                child: Row(children: [
+                  const Icon(Icons.info_outline_rounded,
                       color: AppColors.warning, size: 18),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       "That location looked outside our delivery area, "
@@ -444,55 +455,72 @@ class _PublicTrackingScreenState extends State<PublicTrackingScreen> {
     return GlassCard(
       padding: const EdgeInsets.all(18),
       child: Column(
-        children: List.generate(labels.length, (i) {
-          final done = i <= currentStepIndex;
-          final isLast = i == labels.length - 1;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
-                children: [
-                  Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: done ? AppColors.accent : AppColors.glassWhite,
-                      border: Border.all(
-                        color:
-                            done ? AppColors.accent : AppColors.glassBorder,
-                      ),
-                    ),
-                    child: done
-                        ? const Icon(Icons.check_rounded,
-                            size: 12, color: AppColors.background)
-                        : null,
-                  ),
-                  if (!isLast)
-                    Container(
-                      width: 2,
-                      height: 32,
-                      color: done
-                          ? AppColors.accent
-                          : AppColors.glassBorder,
-                    ),
-                ],
-              ),
-              const SizedBox(width: 14),
-              Padding(
-                padding: const EdgeInsets.only(top: 1),
-                child: Text(
-                  labels[i],
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: done ? AppColors.textPrimary : AppColors.textHint,
-                    fontWeight: done ? FontWeight.w600 : FontWeight.normal,
-                  ),
+        children: List.generate(
+          labels.length,
+          (i) => _buildAnimatedTimelineStep(i, labels, currentStepIndex),
+        ),
+      ),
+    );
+  }
+
+  // Wraps a status-timeline step in a staggered fade/slide entrance,
+  // skipped entirely under the platform's reduced-motion setting.
+  Widget _buildAnimatedTimelineStep(
+      int index, List<String> labels, int currentStepIndex) {
+    final step = _buildTimelineStep(index, labels, currentStepIndex);
+    if (AppMotion.reduceMotion(context)) return step;
+    return FadeInUp(
+      duration: AppMotion.listEntranceDuration,
+      delay: Duration(
+          milliseconds: index * AppMotion.listStaggerDelay.inMilliseconds),
+      child: step,
+    );
+  }
+
+  Widget _buildTimelineStep(
+      int i, List<String> labels, int currentStepIndex) {
+    final done = i <= currentStepIndex;
+    final isLast = i == labels.length - 1;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          children: [
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: done ? AppColors.accent : AppColors.glassWhite,
+                border: Border.all(
+                  color: done ? AppColors.accent : AppColors.glassBorder,
                 ),
               ),
-            ],
-          );
-        }),
-      ),
+              child: done
+                  ? const Icon(Icons.check_rounded,
+                      size: 12, color: AppColors.background)
+                  : null,
+            ),
+            if (!isLast)
+              Container(
+                width: 2,
+                height: 32,
+                color: done ? AppColors.accent : AppColors.glassBorder,
+              ),
+          ],
+        ),
+        const SizedBox(width: 14),
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Text(
+            labels[i],
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: done ? AppColors.textPrimary : AppColors.textHint,
+              fontWeight: done ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

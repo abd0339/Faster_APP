@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
@@ -119,13 +120,7 @@ class _OtpScreenState extends State<OtpScreen>
   // ─── Submit code — single Twilio verify path ──────
   void _verify() {
     if (_code.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter all 6 digits'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppToast.error(context, 'Please enter all 6 digits');
       return;
     }
     if (!kIsWeb) HapticFeedback.mediumImpact();
@@ -158,13 +153,7 @@ class _OtpScreenState extends State<OtpScreen>
         if (state is AuthFailure) {
           for (final c in _controllers) c.clear();
           _focusNodes[0].requestFocus();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(state.message),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ));
+          AppToast.error(context, state.message);
         } else if (state is OtpRequired && state.message.isNotEmpty) {
           // A wrong/expired code re-emits OtpRequired (isError: true)
           // instead of AuthFailure, specifically so the router keeps
@@ -176,14 +165,10 @@ class _OtpScreenState extends State<OtpScreen>
           if (state.isError) {
             for (final c in _controllers) c.clear();
             _focusNodes[0].requestFocus();
+            AppToast.error(context, state.message);
+          } else {
+            AppToast.success(context, state.message);
           }
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(state.message),
-            backgroundColor: state.isError ? AppColors.error : AppColors.accent,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ));
         }
         // AuthSuccess is handled by AppRouter → navigates to dashboard
       },
