@@ -136,6 +136,13 @@ class _CustomerOrderTrackingScreenState
 
   void _subscribeToUpdates() async {
     await WebSocketService.instance.connect();
+    // The screen can be disposed while connect() is still in flight —
+    // dispose()'s unsubscribe() call already ran by then and found
+    // nothing registered yet, so subscribing now would register a
+    // subscription no future dispose() call will ever clean up,
+    // leaking it (and the closure's reference to this State) for as
+    // long as the socket stays connected.
+    if (!mounted) return;
     WebSocketService.instance.subscribeToOrder(
       widget.orderId,
       (data) {

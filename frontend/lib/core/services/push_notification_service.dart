@@ -36,6 +36,13 @@ class PushNotificationService {
   /// cancelled first, so only the latest callbacks are ever active.
   Future<void> initialize({
     required void Function(Map<String, dynamic> data) onNotificationTap,
+    // Despite the name, this fires for every message this class sees —
+    // foreground, background-tap, and cold-start-tap alike (see each
+    // call site below) — not just the foreground one. Logging only the
+    // foreground path left a gap: a notification the user received
+    // while the app was backgrounded or closed, then tapped, would open
+    // its target screen but never appear in the notification center's
+    // history.
     void Function(RemoteMessage message)? onForegroundMessage,
   }) async {
     _cancelSubscriptions();
@@ -78,31 +85,38 @@ class PushNotificationService {
       _subscriptions
           .add(FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('📬 Foreground push: ${message.notification?.title}');
-        // Guarded on its own: this listener callback runs well after
-        // initialize()'s own try/catch above has already returned, so an
-        // exception here would otherwise surface as an uncaught async
-        // error instead of being swallowed like every other failure in
-        // this class.
-        try {
-          onForegroundMessage?.call(message);
-        } catch (e) {
-          debugPrint('⚠️ onForegroundMessage callback failed: $e');
-        }
+        _logMessage(message, onForegroundMessage);
       }));
 
       // ─── User tapped a notification (app was in background) ─
       _subscriptions.add(
           FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        _logMessage(message, onForegroundMessage);
         onNotificationTap(message.data);
       }));
 
       // ─── App was fully closed, opened via notification tap ─
       final initialMessage = await messaging.getInitialMessage();
       if (initialMessage != null) {
+        _logMessage(initialMessage, onForegroundMessage);
         onNotificationTap(initialMessage.data);
       }
     } catch (e) {
       debugPrint('⚠️ Push notification setup failed: $e');
+    }
+  }
+
+  /// Guarded on its own: each call site here runs well after
+  /// initialize()'s own try/catch has already returned, so an exception
+  /// in the caller's callback would otherwise surface as an uncaught
+  /// async error instead of being swallowed like every other failure in
+  /// this class.
+  void _logMessage(RemoteMessage message,
+      void Function(RemoteMessage message)? onForegroundMessage) {
+    try {
+      onForegroundMessage?.call(message);
+    } catch (e) {
+      debugPrint('⚠️ onForegroundMessage callback failed: $e');
     }
   }
 

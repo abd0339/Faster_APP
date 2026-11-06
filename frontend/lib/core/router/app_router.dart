@@ -51,8 +51,26 @@ void handleNotificationNavigation(
   );
 }
 
-class AppRouter extends StatelessWidget {
+class AppRouter extends StatefulWidget {
   const AppRouter({super.key});
+
+  @override
+  State<AppRouter> createState() => _AppRouterState();
+}
+
+class _AppRouterState extends State<AppRouter> {
+  // Verifying or resending an OTP code re-emits AuthLoading before the
+  // next OtpRequired (see AuthBloc._onVerifyOtp/_onResendOtp) — without
+  // this, _screenFor would swap OtpScreen out for _SplashLoader and
+  // back on every single attempt, tearing down and recreating
+  // OtpScreen's State each time: its resend countdown timer resets to
+  // 60s and its typed digits are lost, even for a plain wrong-code
+  // retry that never asked to resend anything. Tracking the last
+  // non-loading state lets a loading blip mid-OTP-flow keep rendering
+  // OtpScreen itself instead of the splash screen, so Flutter's normal
+  // widget reconciliation (same type, same key) reuses the existing
+  // Element/State instead of disposing and recreating it.
+  AuthState? _lastSubstantiveState;
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +100,10 @@ class AppRouter extends StatelessWidget {
         }
       },
       builder: (context, state) {
+        if (state is! AuthLoading) {
+          _lastSubstantiveState = state;
+        }
+
         // This top-level builder swaps whole screens (splash -> login ->
         // OTP -> role dashboard) directly, with no Navigator/PageRoute
         // involved — so without this wrapper the switch was an instant
@@ -100,12 +122,21 @@ class AppRouter extends StatelessWidget {
   Widget _screenFor(AuthState state) {
     // Loading / splash
     if (state is AuthInitial || state is AuthLoading) {
+      final last = _lastSubstantiveState;
+      if (last is OtpRequired) {
+        return OtpScreen(
+          key: ValueKey(last.phone),
+          phone: last.phone,
+          fullName: last.fullName,
+        );
+      }
       return const _SplashLoader();
     }
 
     // OTP required — after register or unverified login
     if (state is OtpRequired) {
       return OtpScreen(
+        key: ValueKey(state.phone),
         phone: state.phone,
         fullName: state.fullName,
       );
