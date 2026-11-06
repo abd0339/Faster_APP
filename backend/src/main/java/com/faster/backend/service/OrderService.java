@@ -23,6 +23,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -871,6 +872,51 @@ public class OrderService {
         }
 
         // ─────────────────────────────────────────────────
+        // Shared by confirmRecipientLocation and updateTrackingLocation:
+        // flag (don't reject) when the reported location is beyond the
+        // configured delivery-distance cap. The order may already exist
+        // and even be accepted by a driver, so throwing here would roll
+        // back this whole @Transactional method — including the flag.
+        // Instead: leave the existing delivery location and money alone,
+        // mark the order for admin review, and still save/broadcast/return
+        // normally. Returns the saved, already-broadcast order when
+        // flagged (the caller should return it immediately); empty when
+        // the location is within range (the caller should proceed).
+        // ─────────────────────────────────────────────────
+        private Optional<Order> flagIfExceedsDistance(
+                        Order order, double lat, double lng, String logContext) {
+
+                if (!pricingService.exceedsMaxDeliveryDistance(
+                                order.getPickupLat(), order.getPickupLng(), lat, lng)) {
+                        return Optional.empty();
+                }
+
+                order.setIsDistanceFlagged(true);
+                order.setDistanceFlagReason(
+                                "Reported location is beyond the maximum delivery distance from pickup");
+
+                Order saved = orderRepository.save(order);
+
+                messagingTemplate.convertAndSend(
+                                "/topic/order/" + saved.getId(),
+                                buildStatusUpdate(saved));
+
+                log.warn("⚠️ {} exceeds max delivery distance — flagged for review",
+                                logContext);
+
+                return Optional.of(saved);
+        }
+
+        // Clears any PREVIOUS flag from an earlier out-of-range attempt —
+        // the recipient/customer is allowed to retry (e.g. their GPS was
+        // briefly inaccurate), and once a good location comes in this
+        // update is no longer something admin needs to review.
+        private void clearDistanceFlag(Order order) {
+                order.setIsDistanceFlagged(false);
+                order.setDistanceFlagReason(null);
+        }
+
+        // ─────────────────────────────────────────────────
         // CONFIRM RECIPIENT LOCATION
         // ─────────────────────────────────────────────────
         @Transactional
@@ -908,28 +954,13 @@ public class OrderService {
                 }
 
                 // Flag (don't reject) when the reported location is beyond the
-                // configured delivery-distance cap. The order may already exist
-                // and even be accepted by a driver, so throwing here would roll
-                // back this whole @Transactional method — including the flag.
-                // Instead: leave the existing delivery location and money alone,
-                // mark the order for admin review, and still save/broadcast/return
-                // normally.
-                if (pricingService.exceedsMaxDeliveryDistance(
-                                order.getPickupLat(), order.getPickupLng(), lat, lng)) {
-                        order.setIsDistanceFlagged(true);
-                        order.setDistanceFlagReason(
-                                        "Reported location is beyond the maximum delivery distance from pickup");
-
-                        Order saved = orderRepository.save(order);
-
-                        messagingTemplate.convertAndSend(
-                                        "/topic/order/" + saved.getId(),
-                                        buildStatusUpdate(saved));
-
-                        log.warn("⚠️ Recipient-confirmed location for order {} exceeds max delivery distance — flagged for review",
-                                        orderId);
-
-                        return saved;
+                // configured delivery-distance cap — see flagIfExceedsDistance's
+                // own doc for why this is a flag, not a rejection.
+                Optional<Order> flagged = flagIfExceedsDistance(
+                                order, lat, lng,
+                                "Recipient-confirmed location for order " + orderId);
+                if (flagged.isPresent()) {
+                        return flagged.get();
                 }
 
                 // Clear any PREVIOUS flag from an earlier out-of-range
@@ -940,8 +971,7 @@ public class OrderService {
                 // flagged/success response would stay stuck on "flagged"
                 // forever after a single bad attempt, even once the
                 // recipient fixes it.
-                order.setIsDistanceFlagged(false);
-                order.setDistanceFlagReason(null);
+                clearDistanceFlag(order);
 
                 order.setDeliveryLat(lat);
                 order.setDeliveryLng(lng);
@@ -1007,35 +1037,19 @@ public class OrderService {
                 }
 
                 // Flag (don't reject) when the reported location is beyond the
-                // configured delivery-distance cap. The order may already exist
-                // and even be accepted by a driver, so throwing here would roll
-                // back this whole @Transactional method — including the flag.
-                // Instead: leave the existing delivery location and money alone,
-                // mark the order for admin review, and still save/broadcast/return
-                // normally.
-                if (pricingService.exceedsMaxDeliveryDistance(
-                                order.getPickupLat(), order.getPickupLng(), lat, lng)) {
-                        order.setIsDistanceFlagged(true);
-                        order.setDistanceFlagReason(
-                                        "Reported location is beyond the maximum delivery distance from pickup");
-
-                        Order saved = orderRepository.save(order);
-
-                        messagingTemplate.convertAndSend(
-                                        "/topic/order/" + saved.getId(),
-                                        buildStatusUpdate(saved));
-
-                        log.warn("⚠️ Tracking location for {} exceeds max delivery distance — flagged for review",
-                                        trackingCode);
-
-                        return saved;
+                // configured delivery-distance cap — see flagIfExceedsDistance's
+                // own doc for why this is a flag, not a rejection.
+                Optional<Order> flagged = flagIfExceedsDistance(
+                                order, lat, lng,
+                                "Tracking location for " + trackingCode);
+                if (flagged.isPresent()) {
+                        return flagged.get();
                 }
 
                 // Clear any PREVIOUS flag from an earlier out-of-range
                 // attempt — see confirmRecipientLocation's identical
                 // comment above for why.
-                order.setIsDistanceFlagged(false);
-                order.setDistanceFlagReason(null);
+                clearDistanceFlag(order);
 
                 order.setDeliveryLat(lat);
                 order.setDeliveryLng(lng);

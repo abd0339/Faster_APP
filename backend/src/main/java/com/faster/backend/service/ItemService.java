@@ -30,6 +30,7 @@ public class ItemService {
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final MenuCacheService menuCacheService;
+    private final PricingService pricingService;
 
     // ─── Create item ──────────────────────────────────
     @Transactional
@@ -47,6 +48,11 @@ public class ItemService {
         User merchant = getMerchant(merchantId);
         Category category = getCategory(
                 categoryId, merchantId);
+
+        // Reject a dangerous-scale price before it's ever stored — once
+        // saved, PricingService.calculateItemsTotal runs arithmetic on it
+        // for every future order that includes this item, not just once.
+        pricingService.rejectIfScaleIsDangerous(price);
 
         Item item = Item.builder()
                 .merchant(merchant)
@@ -198,6 +204,7 @@ public class ItemService {
             item.setDescription(description);
         }
         if (price != null) {
+            pricingService.rejectIfScaleIsDangerous(price);
             item.setPrice(price);
         }
         if (stockQuantity != null) {

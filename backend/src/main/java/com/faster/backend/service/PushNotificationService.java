@@ -9,6 +9,8 @@ import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.Notification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +38,18 @@ public class PushNotificationService {
 
     private final DeviceTokenRepository deviceTokenRepository;
 
+    // Self-injected proxy reference. sendToToken below is called from
+    // sendToUser's loop (itself @Async), so by the time a dead-token
+    // cleanup is needed there's no transaction on the current thread —
+    // routing the cleanup through `self` (rather than a plain call,
+    // which bypasses Spring's proxy the same way LedgerService's own
+    // self-invocation issue did) lets removeDeadToken's own
+    // @Transactional actually take effect. @Lazy breaks the
+    // construction-time circular reference to this same bean.
+    @Lazy
+    @Autowired
+    private PushNotificationService self;
+
     /**
      * Sends a push to every device the given user is
      * registered on. [data] is optional extra payload the
@@ -53,7 +67,7 @@ public class PushNotificationService {
      * exception from this method, matching the class's existing
      * "never blocking, failures swallowed" contract.
      */
-    @Async
+    @Async("pushNotificationExecutor")
     public void sendToUser(Long userId, String title, String body,
             Map<String, String> data) {
 
@@ -100,9 +114,22 @@ public class PushNotificationService {
             if (e.getMessagingErrorCode() == MessagingErrorCode.UNREGISTERED
                     || e.getMessagingErrorCode() == MessagingErrorCode.INVALID_ARGUMENT) {
                 // Token is dead (app uninstalled, token rotated,
-                // malformed) — clean it up so we stop trying
-                deviceTokenRepository.deleteByFcmToken(token);
-                log.info("🗑️ Removed dead device token after push failure");
+                // malformed) — clean it up so we stop trying. Routed
+                // through self.removeDeadToken (see the `self` field
+                // comment) so the derived delete query gets its own
+                // transaction even when this runs on sendToUser's
+                // @Async thread, which has none of its own. Guarded
+                // separately so a cleanup failure can never escape
+                // this catch block and abort sendToUser's per-device
+                // loop for this user's remaining devices.
+                try {
+                    self.removeDeadToken(token);
+                    log.info("🗑️ Removed dead device token after push failure");
+                } catch (Exception cleanupError) {
+                    log.warn("Failed to remove dead device token "
+                            + "(will retry on next push): {}",
+                            cleanupError.getMessage());
+                }
             } else {
                 log.error("❌ Push failed | error={}", e.getMessage());
             }
@@ -115,6 +142,17 @@ public class PushNotificationService {
         } catch (Exception e) {
             log.error("❌ Unexpected push failure | error={}", e.getMessage());
         }
+    }
+
+    /**
+     * Deletes a single dead FCM token. A derived deleteByX query needs
+     * an active transaction to execute (same requirement as
+     * unregisterDevice below) — split out so sendToToken's cleanup gets
+     * one even when called from sendToUser's @Async thread.
+     */
+    @Transactional
+    public void removeDeadToken(String token) {
+        deviceTokenRepository.deleteByFcmToken(token);
     }
 
     /**

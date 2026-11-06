@@ -58,6 +58,7 @@ public class ExchangeRateService {
 
     private final ExchangeRateRepository exchangeRateRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final PricingService pricingService;
 
     // ─── Current rate ──────────────────────────────────
     // Absence of the row means the migration wasn't run —
@@ -92,6 +93,13 @@ public class ExchangeRateService {
                     "Exchange rate of " + newRate
                     + " is too large (max " + MAX_RATE + ")");
         }
+
+        // A value can sit well within MIN_RATE/MAX_RATE by magnitude while
+        // still carrying an enormous scale (e.g. many trailing fractional
+        // digits) — the bounds check above is a cheap compareTo regardless
+        // of scale, but setScale below is not. Reject before it runs, same
+        // guard OrderService uses before its own setScale calls.
+        pricingService.rejectIfScaleIsDangerous(newRate);
 
         // Round to the column's actual scale here, explicitly, rather
         // than relying on the DB to do it silently — same convention

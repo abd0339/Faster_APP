@@ -29,6 +29,7 @@ import com.faster.backend.exception.GlobalExceptionHandler;
 import com.faster.backend.repository.ExchangeRateRepository;
 import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.ExchangeRateService;
+import com.faster.backend.service.PricingService;
 
 /**
  * Hostile JSON PUT through REAL Jackson deserialization, the REAL
@@ -60,12 +61,20 @@ class ExchangeRateControllerAdversarialTest {
     @Mock
     private AuthenticatedUserResolver authResolver;
 
+    @Mock
+    private PricingService pricingService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
+        // pricingService is an unstubbed mock — rejectIfScaleIsDangerous
+        // is a void method that no-ops by default, which matches every
+        // rate in this file's adversarial inputs (none carry a
+        // dangerous SCALE, only extreme magnitude).
         ExchangeRateService realService =
-                new ExchangeRateService(exchangeRateRepository, messagingTemplate);
+                new ExchangeRateService(
+                        exchangeRateRepository, messagingTemplate, pricingService);
         // @Value is never processed outside a Spring context — same
         // convention as every other direct-constructed @Value-bearing
         // service test in this codebase (see PricingServiceTest and

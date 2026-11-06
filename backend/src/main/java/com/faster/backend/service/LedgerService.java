@@ -34,6 +34,7 @@ public class LedgerService {
     private final LedgerRepository ledgerRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final PricingService pricingService;
 
     // Self-injected proxy reference. recordDailyMerchantCommissions()
     // below calls recordMerchantDailyCommission() in a loop — calling
@@ -198,6 +199,11 @@ public class LedgerService {
             throw new BusinessException(
                     "Payment amount must be greater than 0");
         }
+
+        // A compareTo against ZERO never screens scale — the subtract()
+        // below forces scale realignment unconditionally, so a dangerous
+        // scale must be rejected explicitly before it runs.
+        pricingService.rejectIfScaleIsDangerous(amountPaid);
 
         BigDecimal currentDebt = driver.getDebtAmount() != null
                 ? driver.getDebtAmount()
@@ -435,6 +441,10 @@ public class LedgerService {
             throw new BusinessException(
                     "Payment amount must be greater than 0");
         }
+
+        // See settleDriverDebt's identical guard above — subtract()
+        // forces scale realignment regardless of magnitude.
+        pricingService.rejectIfScaleIsDangerous(amountPaid);
 
         BigDecimal currentBalance = ledgerRepository
                 .getLatestBalance(merchantId);

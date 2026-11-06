@@ -37,12 +37,19 @@ class ExchangeRateServiceTest {
     @Mock
     private SimpMessagingTemplate messagingTemplate;
 
+    @Mock
+    private PricingService pricingService;
+
     private ExchangeRateService exchangeRateService;
 
     @BeforeEach
     void setUp() {
+        // pricingService is an unstubbed mock — rejectIfScaleIsDangerous
+        // is a void method that no-ops by default, which matches this
+        // test's rates (always scale 2), same as if the guard didn't
+        // exist.
         exchangeRateService = new ExchangeRateService(
-                exchangeRateRepository, messagingTemplate);
+                exchangeRateRepository, messagingTemplate, pricingService);
         // @Value is never processed outside a Spring context — this
         // class is constructed directly, same convention as
         // PricingServiceTest/PricingServiceDistanceTest use for their

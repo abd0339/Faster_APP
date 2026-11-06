@@ -2,9 +2,8 @@ package com.faster.backend.security;
 
 import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
+import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.OrderRepository;
-import com.faster.backend.repository.UserRepository;
-import com.faster.backend.service.TokenBlacklistService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
@@ -13,11 +12,8 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
-
-import java.util.List;
 
 /**
  * STOMP channel interceptor — authenticates the session on connect and
@@ -48,9 +44,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class StompChannelInterceptor implements ChannelInterceptor {
 
-    private final JwtUtil jwtUtil;
-    private final TokenBlacklistService tokenBlacklistService;
-    private final UserRepository userRepository;
+    // Shared with JwtAuthFilter — see JwtAuthenticationSupport's own doc
+    // for why this used to be two independently-drifting copies of the
+    // same blacklist/validity/blocked checks.
+    private final JwtAuthenticationSupport jwtAuthenticationSupport;
+    private final AuthenticatedUserResolver authenticatedUserResolver;
     private final OrderRepository orderRepository;
 
     @Override
@@ -86,33 +84,21 @@ public class StompChannelInterceptor implements ChannelInterceptor {
 
         String token = bearer.substring(7);
 
-        // Fix #2 — same two checks JwtAuthFilter does on every REST
-        // request: a revoked (logged-out) token, or a since-blocked
-        // account, must not get a live socket.
-        if (tokenBlacklistService.isBlacklisted(token)) {
-            throw new IllegalArgumentException("This session has ended. Please sign in again.");
+        // Fix #2 — same checks JwtAuthFilter does on every REST request:
+        // a revoked (logged-out) token, a deleted account, or a
+        // since-blocked account must not get a live socket. Unlike
+        // JwtAuthFilter, a WS CONNECT always requires authentication, so
+        // a null (missing/invalid/expired token) result is itself an
+        // error here.
+        try {
+            var auth = jwtAuthenticationSupport.authenticate(token);
+            if (auth == null) {
+                throw new IllegalArgumentException("Invalid or missing WS token");
+            }
+            accessor.setUser(auth);
+        } catch (JwtAuthenticationSupport.AuthRejected e) {
+            throw new IllegalArgumentException(e.getMessage());
         }
-
-        if (!jwtUtil.validateToken(token)) {
-            throw new IllegalArgumentException("Invalid or missing WS token");
-        }
-
-        String email = jwtUtil.getEmailFromToken(token);
-        String role = jwtUtil.getRoleFromToken(token);
-
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Your account no longer exists. Please sign in again."));
-
-        if (Boolean.TRUE.equals(user.getIsBlocked())) {
-            throw new IllegalArgumentException(
-                    "Your account has been blocked. Please contact support.");
-        }
-
-        var auth = new UsernamePasswordAuthenticationToken(
-                email, null,
-                List.of(new SimpleGrantedAuthority("ROLE_" + role)));
-        accessor.setUser(auth);
     }
 
     // Fix #3 — per-destination authorization. The Principal set at
@@ -128,8 +114,17 @@ public class StompChannelInterceptor implements ChannelInterceptor {
             throw new IllegalArgumentException("Unauthorized subscription");
         }
 
-        User user = userRepository.findByEmail(principal.getName())
-                .orElseThrow(() -> new IllegalArgumentException("Unauthorized subscription"));
+        // Shared with the 11 REST controllers that resolve the
+        // authenticated principal the same way — see
+        // AuthenticatedUserResolver's own doc. The Principal set at
+        // CONNECT (see authenticateConnect above) is always the
+        // Authentication token this interceptor itself created.
+        User user;
+        try {
+            user = authenticatedUserResolver.resolve((Authentication) principal);
+        } catch (NotFoundException | ClassCastException e) {
+            throw new IllegalArgumentException("Unauthorized subscription");
+        }
 
         boolean isAdmin = user.getRole() == User.Role.ADMIN;
 

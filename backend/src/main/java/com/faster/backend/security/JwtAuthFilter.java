@@ -1,8 +1,5 @@
 package com.faster.backend.security;
 
-import com.faster.backend.entity.User;
-import com.faster.backend.repository.UserRepository;
-import com.faster.backend.service.TokenBlacklistService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -10,36 +7,22 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private final JwtUtil jwtUtil;
-
-    // M5 FIX: needed to re-check the user's CURRENT state on every
-    // request. A JWT is a signed snapshot taken at login — it cannot
-    // know that an admin blocked the user five minutes later. Without
-    // this lookup a blocked driver kept full access until their token
-    // expired naturally, which is up to TEN DAYS. Blocking someone for
-    // fraud has to take effect on their very next request, not next
-    // week.
-    private final UserRepository userRepository;
+    // Shared with StompChannelInterceptor — see that class's own doc for
+    // why this used to be two independently-drifting copies of the same
+    // blacklist/validity/blocked checks.
+    private final JwtAuthenticationSupport jwtAuthenticationSupport;
     private final ObjectMapper objectMapper;
-
-    // M5: tokens explicitly revoked at logout. Without this, "log
-    // out" was purely cosmetic — the token kept working for the
-    // rest of its 10-day life.
-    private final TokenBlacklistService tokenBlacklistService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -60,56 +43,28 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // ─── Extract the raw token ────────────────────
         String token = authHeader.substring(7);
 
-        // ─── Validate token and set user in context ───
-        // Subject is EMAIL — used as the Spring Security principal
-        // Controllers call auth.getName() to get email,
-        // then look up user via userRepository.findByEmail()
-        // ─── Reject tokens revoked at logout ─────────
-        if (tokenBlacklistService.isBlacklisted(token)) {
-            writeJsonError(response,
-                    HttpServletResponse.SC_UNAUTHORIZED,
-                    "This session has ended. Please sign in again.");
-            return;
-        }
-
-        if (jwtUtil.validateToken(token)) {
-            String email = jwtUtil.getEmailFromToken(token);
-            String role  = jwtUtil.getRoleFromToken(token);
-
-            // ─── M5: re-check current block status ────────
-            // One indexed lookup by email per authenticated request.
-            // Cheap, and the alternative is a blocked account staying
-            // live for days.
-            Optional<User> currentUser = userRepository.findByEmail(email);
-
-            if (currentUser.isEmpty()) {
-                // Account deleted since the token was issued.
-                writeJsonError(response,
-                        HttpServletResponse.SC_UNAUTHORIZED,
-                        "Your account no longer exists. Please sign in again.");
-                return;
-            }
-
-            if (Boolean.TRUE.equals(currentUser.get().getIsBlocked())) {
-                // 403, not 401: the credentials are valid, the account
-                // is barred. A 401 would make clients retry the login
-                // loop pointlessly.
-                writeJsonError(response,
-                        HttpServletResponse.SC_FORBIDDEN,
-                        "Your account has been blocked. Please contact support.");
-                return;
-            }
-
+        // Subject is EMAIL — used as the Spring Security principal.
+        // Controllers call auth.getName() to get email, then look up
+        // the user via userRepository.findByEmail().
+        try {
             UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            email,
-                            null,
-                            List.of(new SimpleGrantedAuthority(
-                                    "ROLE_" + role))
-                    );
+                    jwtAuthenticationSupport.authenticate(token);
 
-            SecurityContextHolder.getContext()
-                    .setAuthentication(authentication);
+            if (authentication != null) {
+                SecurityContextHolder.getContext()
+                        .setAuthentication(authentication);
+            }
+            // null means the token itself was missing/invalid/expired —
+            // not an error here, since many endpoints are public; just
+            // continue unauthenticated and let Spring Security's own
+            // authorization rules decide.
+        } catch (JwtAuthenticationSupport.AuthRejected e) {
+            writeJsonError(response,
+                    e.isForbidden()
+                            ? HttpServletResponse.SC_FORBIDDEN
+                            : HttpServletResponse.SC_UNAUTHORIZED,
+                    e.getMessage());
+            return;
         }
 
         filterChain.doFilter(request, response);

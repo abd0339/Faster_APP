@@ -28,7 +28,6 @@ import com.faster.backend.entity.Order;
 import com.faster.backend.entity.User;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
-import com.faster.backend.service.TokenBlacklistService;
 
 /**
  * Covers the final whole-branch-review fix wave, finding #2:
@@ -52,10 +51,7 @@ import com.faster.backend.service.TokenBlacklistService;
 class StompChannelInterceptorTest {
 
     @Mock
-    private JwtUtil jwtUtil;
-
-    @Mock
-    private TokenBlacklistService tokenBlacklistService;
+    private JwtAuthenticationSupport jwtAuthenticationSupport;
 
     @Mock
     private UserRepository userRepository;
@@ -72,8 +68,16 @@ class StompChannelInterceptorTest {
 
     @BeforeEach
     void setUp() {
+        // These tests exercise authorizeSubscribe only (see class doc) —
+        // jwtAuthenticationSupport is unused here and stays an
+        // unstubbed mock. AuthenticatedUserResolver is real, backed by
+        // the same mocked userRepository stubUser() below already sets
+        // up, since authorizeSubscribe now resolves through it instead
+        // of calling userRepository directly.
         interceptor = new StompChannelInterceptor(
-                jwtUtil, tokenBlacklistService, userRepository, orderRepository);
+                jwtAuthenticationSupport,
+                new AuthenticatedUserResolver(userRepository),
+                orderRepository);
     }
 
     private Authentication principal(String email) {
