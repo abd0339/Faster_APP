@@ -29,22 +29,22 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     {
       'value': 'MOTO',
       'label': 'Motorcycle',
-      'icon': '🏍️',
+      'icon': Icons.two_wheeler_rounded,
     },
     {
       'value': 'CAR',
       'label': 'Car',
-      'icon': '🚗',
+      'icon': Icons.directions_car_rounded,
     },
     {
       'value': 'TOKTOK',
       'label': 'Toktok',
-      'icon': '🛺',
+      'icon': Icons.electric_rickshaw_rounded,
     },
     {
       'value': 'VAN',
       'label': 'Van',
-      'icon': '🚐',
+      'icon': Icons.airport_shuttle_rounded,
     },
   ];
 
@@ -177,9 +177,12 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          v['icon'],
-                          style: const TextStyle(fontSize: 22),
+                        Icon(
+                          v['icon'] as IconData,
+                          size: 22,
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
                         ),
                         const SizedBox(width: 8),
                         Text(

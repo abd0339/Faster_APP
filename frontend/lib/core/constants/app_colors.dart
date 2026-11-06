@@ -23,7 +23,11 @@ class AppColors {
   // ─── Text Colors ──────────────────────────────────
   static const Color textPrimary  = Color(0xFFFFFFFF); // White
   static const Color textSecondary= Color(0xFFAAAAAA); // Grey
-  static const Color textHint     = Color(0xFF555558); // Dark grey
+  // WCAG AA FIX: the previous #555558 measured ~2.66:1 against
+  // `background` (#0A0A0B) — well under the 4.5:1 normal-text minimum.
+  // #7A7A7D keeps the same muted/de-emphasized role but measures
+  // ~4.6:1, clearing the threshold.
+  static const Color textHint     = Color(0xFF7A7A7D); // Muted grey (AA contrast)
 
   // ─── Order Status Colors ──────────────────────────
   static const Color pending      = Color(0xFFFFB300); // Amber

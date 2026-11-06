@@ -84,6 +84,10 @@ class _AppInputState extends State<AppInput> {
             : null,
         suffixIcon: widget.isPassword
             ? IconButton(
+                // IconButton.tooltip doubles as its Semantics label — an
+                // icon-only button with none announces as just "Button"
+                // to a screen reader, with no way to tell what it does.
+                tooltip: _obscureText ? 'Show password' : 'Hide password',
                 icon: Icon(
                   _obscureText
                       ? Icons.visibility_outlined

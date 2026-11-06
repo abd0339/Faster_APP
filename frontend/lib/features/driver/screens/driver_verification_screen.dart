@@ -75,25 +75,25 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
     {
       'value': 'MOTO',
       'label': 'Motorcycle',
-      'icon': '🏍️',
+      'icon': Icons.two_wheeler_rounded,
       'desc': 'Best for packages & food'
     },
     {
       'value': 'CAR',
       'label': 'Car',
-      'icon': '🚗',
+      'icon': Icons.directions_car_rounded,
       'desc': 'Packages, rides & people'
     },
     {
       'value': 'TOKTOK',
       'label': 'Toktok',
-      'icon': '🛺',
+      'icon': Icons.electric_rickshaw_rounded,
       'desc': 'Short rides & packages'
     },
     {
       'value': 'VAN',
       'label': 'Van',
-      'icon': '🚐',
+      'icon': Icons.airport_shuttle_rounded,
       'desc': 'Large packages & groups'
     },
   ];
@@ -102,19 +102,19 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
     {
       'value': 'PACKAGE',
       'label': 'Package Delivery',
-      'icon': '📦',
+      'icon': Icons.inventory_2_outlined,
       'desc': 'Deliver food & goods'
     },
     {
       'value': 'PEOPLE',
       'label': 'People Transport',
-      'icon': '👥',
+      'icon': Icons.people_alt_rounded,
       'desc': 'Drive passengers'
     },
     {
       'value': 'HYBRID',
       'label': 'Both',
-      'icon': '⚡',
+      'icon': Icons.bolt_rounded,
       'desc': 'Packages & passengers'
     },
   ];
@@ -572,8 +572,11 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                   ),
                   child: Row(
                     children: [
-                      Text(v['icon'] as String,
-                          style: const TextStyle(fontSize: 32)),
+                      Icon(v['icon'] as IconData,
+                          size: 32,
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.textSecondary),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
@@ -625,8 +628,11 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
                   ),
                   child: Row(
                     children: [
-                      Text(m['icon'] as String,
-                          style: const TextStyle(fontSize: 24)),
+                      Icon(m['icon'] as IconData,
+                          size: 24,
+                          color: isSelected
+                              ? AppColors.accent
+                              : AppColors.textSecondary),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
@@ -683,10 +689,11 @@ class _DriverVerificationScreenState extends State<DriverVerificationScreen>
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Text(
+                Icon(
                   _vehicles.firstWhere((v) => v['value'] == _selectedVehicle,
-                      orElse: () => _vehicles[0])['icon'] as String,
-                  style: const TextStyle(fontSize: 36),
+                      orElse: () => _vehicles[0])['icon'] as IconData,
+                  size: 36,
+                  color: AppColors.primary,
                 ),
                 const SizedBox(width: 16),
                 Column(
