@@ -2,6 +2,7 @@ import 'package:faster_app/dev/dev_launcher.DART';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -28,6 +29,18 @@ const bool kDevMode = bool.fromEnvironment(
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ACCESSIBILITY FIX: Flutter web's CanvasKit renderer builds no
+  // DOM/accessibility tree by default — screen readers and other
+  // assistive tech see nothing at all until the single, easy-to-miss
+  // "Enable accessibility" button Flutter auto-injects is activated.
+  // Forcing semantics on at startup removes that extra, undiscoverable
+  // step; native platforms already expose semantics to
+  // TalkBack/VoiceOver without it; this handle is intentionally never
+  // disposed — it needs to stay live for the app's entire lifetime.
+  if (kIsWeb) {
+    SemanticsBinding.instance.ensureSemantics();
+  }
 
   // ─── Initialize Firebase (Phase 2 — phone verification) ──
   // Used ONLY to verify phone ownership at registration — an
