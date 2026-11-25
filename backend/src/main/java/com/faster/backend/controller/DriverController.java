@@ -20,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.faster.backend.dto.DriverLocationRequest;
 import com.faster.backend.dto.DriverStatusRequest;
+import com.faster.backend.entity.DriverDocumentType;
 import com.faster.backend.entity.User;
 import com.faster.backend.exception.BusinessException;
 import com.faster.backend.exception.ForbiddenException;
@@ -44,16 +45,6 @@ public class DriverController {
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final AuthenticatedUserResolver authResolver;
-
-    // Every allowed document type — single source of truth
-    // for validation, storage subfolder naming, and the
-    // switch statements below.
-    private static final java.util.Set<String> VALID_DOC_TYPES =
-            java.util.Set.of(
-                    "PROFILE_PHOTO",
-                    "NATIONAL_ID",
-                    "LICENSE_FRONT",
-                    "LICENSE_BACK");
 
     // ─── POST /api/driver/online ──────────────────────
     @PostMapping("/online")
@@ -170,11 +161,11 @@ public class DriverController {
             @RequestParam("file") MultipartFile file,
             Authentication auth) {
 
-        String type = docType.toUpperCase();
-        if (!VALID_DOC_TYPES.contains(type)) {
+        DriverDocumentType type = DriverDocumentType.fromString(docType);
+        if (type == null) {
             throw new BusinessException(
                     "Invalid document type. Must be one of "
-                    + VALID_DOC_TYPES);
+                    + java.util.Arrays.toString(DriverDocumentType.values()));
         }
 
         Long driverId = authResolver.resolveId(auth);
@@ -184,19 +175,12 @@ public class DriverController {
         String relativePath = fileStorageService
                 .savePrivateImage(file, "drivers", driverId);
 
-        switch (type) {
-            case "PROFILE_PHOTO" -> driver.setDriverPhotoUrl(relativePath);
-            case "NATIONAL_ID" -> driver.setNationalIdUrl(relativePath);
-            case "LICENSE_FRONT" -> driver.setDriverLicenseFrontUrl(relativePath);
-            case "LICENSE_BACK" -> driver.setDriverLicenseBackUrl(relativePath);
-            default -> throw new BusinessException("Invalid document type");
-        }
-
+        type.set(driver, relativePath);
         userRepository.save(driver);
 
         return ResponseEntity.ok(Map.of(
                 "message", type + " uploaded successfully",
-                "docType", type));
+                "docType", type.name()));
     }
 
     // ─────────────────────────────────────────────────
@@ -213,8 +197,8 @@ public class DriverController {
             @PathVariable String docType,
             Authentication auth) {
 
-        String type = docType.toUpperCase();
-        if (!VALID_DOC_TYPES.contains(type)) {
+        DriverDocumentType type = DriverDocumentType.fromString(docType);
+        if (type == null) {
             throw new BusinessException("Invalid document type");
         }
 
@@ -227,7 +211,7 @@ public class DriverController {
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(
-                        guessContentType(relativePath)))
+                        FileStorageService.guessImageContentType(relativePath)))
                 .body(resource);
     }
 
@@ -310,28 +294,14 @@ public class DriverController {
     }
 
     // ─── Helpers ───────────────────────────────────────
-    private String resolveDocPath(User driver, String type) {
-        String path = switch (type) {
-            case "PROFILE_PHOTO" -> driver.getDriverPhotoUrl();
-            case "NATIONAL_ID" -> driver.getNationalIdUrl();
-            case "LICENSE_FRONT" -> driver.getDriverLicenseFrontUrl();
-            case "LICENSE_BACK" -> driver.getDriverLicenseBackUrl();
-            default -> null;
-        };
+    private String resolveDocPath(User driver, DriverDocumentType type) {
+        String path = type.get(driver);
         if (path == null) {
             throw new NotFoundException(
-                    "No " + type.toLowerCase().replace("_", " ")
+                    "No " + type.name().toLowerCase().replace("_", " ")
                     + " uploaded yet");
         }
         return path;
-    }
-
-    private String guessContentType(String path) {
-        String lower = path.toLowerCase();
-        if (lower.endsWith(".png")) return "image/png";
-        if (lower.endsWith(".gif")) return "image/gif";
-        if (lower.endsWith(".webp")) return "image/webp";
-        return "image/jpeg";
     }
 
 }

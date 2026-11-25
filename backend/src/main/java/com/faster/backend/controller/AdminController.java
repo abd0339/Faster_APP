@@ -39,12 +39,6 @@ public class AdminController {
         private final AuthenticatedUserResolver authResolver;
         private final DriverLookupSupport driverLookupSupport;
 
-        private static final java.util.Set<String> VALID_DOC_TYPES = java.util.Set.of(
-                        "PROFILE_PHOTO",
-                        "NATIONAL_ID",
-                        "LICENSE_FRONT",
-                        "LICENSE_BACK");
-
         // ─────────────────────────────────────────────────
         // DASHBOARD STATS
         // ─────────────────────────────────────────────────
@@ -339,21 +333,15 @@ public class AdminController {
                         @PathVariable Long driverId,
                         @PathVariable String docType) {
 
-                String type = docType.toUpperCase();
-                if (!VALID_DOC_TYPES.contains(type)) {
+                com.faster.backend.entity.DriverDocumentType type =
+                                com.faster.backend.entity.DriverDocumentType.fromString(docType);
+                if (type == null) {
                         throw new BusinessException("Invalid document type");
                 }
 
                 User driver = driverLookupSupport.findDriverOrThrow(driverId);
 
-                String relativePath = switch (type) {
-                        case "PROFILE_PHOTO" -> driver.getDriverPhotoUrl();
-                        case "NATIONAL_ID" -> driver.getNationalIdUrl();
-                        case "LICENSE_FRONT" -> driver.getDriverLicenseFrontUrl();
-                        case "LICENSE_BACK" -> driver.getDriverLicenseBackUrl();
-                        default -> null;
-                };
-
+                String relativePath = type.get(driver);
                 if (relativePath == null) {
                         throw new NotFoundException(
                                         "This driver has not uploaded that document");
@@ -361,14 +349,9 @@ public class AdminController {
 
                 Resource resource = fileStorageService.loadPrivateImage(relativePath);
 
-                String lower = relativePath.toLowerCase();
-                String contentType = lower.endsWith(".png") ? "image/png"
-                                : lower.endsWith(".gif") ? "image/gif"
-                                                : lower.endsWith(".webp") ? "image/webp"
-                                                                : "image/jpeg";
-
                 return ResponseEntity.ok()
-                                .contentType(MediaType.parseMediaType(contentType))
+                                .contentType(MediaType.parseMediaType(
+                                                FileStorageService.guessImageContentType(relativePath)))
                                 .body(resource);
         }
 

@@ -266,6 +266,21 @@ public class FileStorageService {
         return head;
     }
 
+    /**
+     * Guesses an image's MIME type from its stored filename extension.
+     * DriverController and AdminController each wrote this out
+     * independently (one as a helper method, one as an inline ternary
+     * chain) for the exact same purpose — streaming a driver document
+     * back with the right Content-Type.
+     */
+    public static String guessImageContentType(String path) {
+        String lower = path.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        return "image/jpeg";
+    }
+
     /** Minimal magic-byte sniff for JPEG / PNG / GIF / WEBP. */
     private boolean looksLikeImage(byte[] b) {
         if (b.length < 4) return false;
