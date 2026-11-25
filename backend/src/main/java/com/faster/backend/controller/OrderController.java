@@ -121,12 +121,14 @@ public class OrderController {
                                                                 "Phone and landmark are required for O2O orders"));
                         }
 
-                        if (req.getTotalPrice() == null
-                                        || req.getTotalPrice()
-                                                        .compareTo(java.math.BigDecimal.ZERO) <= 0) {
-                                return ResponseEntity.badRequest()
-                                                .body(Map.of("message",
-                                                                "A valid order price is required for O2O orders"));
+                        // O2O is a priced sale the merchant is entering on the
+                        // customer's behalf — a $0 "sale" makes no sense, so
+                        // zero itself is rejected, not just negative values.
+                        ResponseEntity<?> priceRejection = requirePositivePrice(
+                                        req.getTotalPrice(), false,
+                                        "A valid order price is required for O2O orders");
+                        if (priceRejection != null) {
+                                return priceRejection;
                         }
 
                         order = orderService.createO2OOrder(
@@ -173,12 +175,16 @@ public class OrderController {
                         // worth), while the delivery fee is ALWAYS
                         // server-computed from real distance. The client
                         // can never dictate the fee.
-                        if (req.getTotalPrice() == null
-                                        || req.getTotalPrice()
-                                                        .compareTo(java.math.BigDecimal.ZERO) < 0) {
-                                return ResponseEntity.badRequest()
-                                                .body(Map.of("message",
-                                                                "A valid item value is required"));
+                        // Direct Delivery's "price" is the customer's own
+                        // declared item value, not a sale — zero is a
+                        // legitimate declaration (e.g. a document with no
+                        // monetary value), so only negative is rejected,
+                        // unlike O2O above.
+                        ResponseEntity<?> priceRejection = requirePositivePrice(
+                                        req.getTotalPrice(), true,
+                                        "A valid item value is required");
+                        if (priceRejection != null) {
+                                return priceRejection;
                         }
 
                         // The recipient's phone is required: it's how the
@@ -492,6 +498,24 @@ public class OrderController {
         // flag must commit, not roll back, if the location was outside
         // the delivery-distance cap), but the message and
         // distanceFlagged field tell the truth about what happened.
+        // FIX: O2O and Direct-Delivery's price checks used to differ by a
+        // silent <= vs < operator with nothing marking whether that was
+        // deliberate (O2O rejects $0, Direct-Delivery allows it) or
+        // copy-paste drift. allowZero makes that policy an explicit,
+        // visible parameter at each call site instead.
+        private ResponseEntity<?> requirePositivePrice(
+                        java.math.BigDecimal price, boolean allowZero, String errorMessage) {
+                boolean invalid = price == null
+                                || (allowZero
+                                                ? price.compareTo(java.math.BigDecimal.ZERO) < 0
+                                                : price.compareTo(java.math.BigDecimal.ZERO) <= 0);
+                if (invalid) {
+                        return ResponseEntity.badRequest()
+                                        .body(Map.of("message", errorMessage));
+                }
+                return null;
+        }
+
         private Map<String, Object> buildLocationConfirmationResponse(
                         Order order, String successMessage) {
                 boolean flagged = Boolean.TRUE.equals(order.getIsDistanceFlagged());
