@@ -121,6 +121,10 @@ class OrderServiceCoordinateAndPriceValidationTest {
                 pricingService, "o2oMaxPrice", new BigDecimal("1000.00"));
         ReflectionTestUtils.setField(
                 pricingService, "o2oReviewThreshold", new BigDecimal("5.00"));
+        ReflectionTestUtils.setField(
+                pricingService, "driverCommissionRate", new BigDecimal("0.20"));
+        ReflectionTestUtils.setField(
+                pricingService, "merchantCommissionRate", new BigDecimal("0.10"));
 
         orderService = new OrderService(
                 orderRepository, userRepository, locationService,

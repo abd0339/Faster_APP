@@ -73,6 +73,40 @@ public class PricingService {
     private final OrderItemLineRepository orderItemLineRepository;
     private final MenuCacheService menuCacheService;
 
+    // FIX: these two rates used to be independently declared as
+    // separate constants in both OrderService (feeding the estimate
+    // stored on the Order at creation time) and LedgerService (feeding
+    // the actual debit posted on delivery/settlement) — two numbers
+    // that merely started out equal, with nothing forcing them to stay
+    // that way if one file's constant were ever edited without the
+    // other. PricingService already owns every other fee rate as a
+    // @Value-injected field; these belong here too, read by both.
+    @Value("${pricing.commission.driver-rate:0.20}")
+    private BigDecimal driverCommissionRate;
+
+    @Value("${pricing.commission.merchant-rate:0.10}")
+    private BigDecimal merchantCommissionRate;
+
+    public BigDecimal calculateDriverCommission(BigDecimal deliveryFee) {
+        return deliveryFee
+                .multiply(driverCommissionRate)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal calculateMerchantCommission(BigDecimal saleAmount) {
+        return saleAmount
+                .multiply(merchantCommissionRate)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal getDriverCommissionRate() {
+        return driverCommissionRate;
+    }
+
+    public BigDecimal getMerchantCommissionRate() {
+        return merchantCommissionRate;
+    }
+
     // ─── Delivery fee (LOGISTICS) — distance-based ───
     @Value("${pricing.delivery.base-fee:1.00}")
     private BigDecimal deliveryBaseFee;

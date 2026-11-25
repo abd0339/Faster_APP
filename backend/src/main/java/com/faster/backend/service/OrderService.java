@@ -40,21 +40,20 @@ public class OrderService {
         private final PricingService pricingService;
         private final PushNotificationService pushNotificationService;
 
-        private static final BigDecimal DRIVER_COMMISSION_RATE = new BigDecimal("0.20");
-
-        // This exact
-        // multiply+round was copy-pasted at all 4 order-creation call
+        // This exact call was copy-pasted at all 4 order-creation call
         // sites plus both delivery-fee-recalculation call sites (6
         // total) — a rate or rounding-mode change had to land in all
-        // 6 correctly, and nothing enforced that it did. Deliberately
-        // NOT unifying the surrounding grandTotal/totalPrice assembly
-        // the same way — those genuinely differ per order type (e.g.
-        // MOBILITY has no separate item total), so forcing one shared
-        // shape there would be the wrong kind of simplification.
+        // 6 correctly, and nothing enforced that it did. The rate
+        // itself now lives on PricingService (shared with
+        // LedgerService, which posts the actual debit this is an
+        // estimate of — see PricingService.calculateDriverCommission's
+        // own doc). Deliberately NOT unifying the surrounding
+        // grandTotal/totalPrice assembly the same way — those genuinely
+        // differ per order type (e.g. MOBILITY has no separate item
+        // total), so forcing one shared shape there would be the wrong
+        // kind of simplification.
         private BigDecimal calculateDriverCommission(BigDecimal deliveryFee) {
-                return deliveryFee
-                                .multiply(DRIVER_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                return pricingService.calculateDriverCommission(deliveryFee);
         }
 
         // ─────────────────────────────────────────────────
@@ -93,7 +92,6 @@ public class OrderService {
         // How long after placing an order a customer may still
         // cancel it (and only while no driver has accepted).
         private static final int CANCEL_WINDOW_MINUTES = 10;
-        private static final BigDecimal MERCHANT_COMMISSION_RATE = new BigDecimal("0.10");
         private static final double SEARCH_RADIUS_KM = 5.0;
 
         // ─────────────────────────────────────────────────
@@ -218,9 +216,8 @@ public class OrderService {
                                 .add(actualDeliveryFee)
                                 .setScale(2, RoundingMode.HALF_UP);
 
-                BigDecimal merchantCommission = totalPrice
-                                .multiply(MERCHANT_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal merchantCommission =
+                                pricingService.calculateMerchantCommission(totalPrice);
 
                 if (pricingService.exceedsMaxDeliveryDistance(
                                 effectivePickupLat, effectivePickupLng, deliveryLat, deliveryLng)) {
@@ -637,9 +634,8 @@ public class OrderService {
                                 .add(actualDeliveryFee)
                                 .setScale(2, RoundingMode.HALF_UP);
 
-                BigDecimal merchantCommission = totalPrice
-                                .multiply(MERCHANT_COMMISSION_RATE)
-                                .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal merchantCommission =
+                                pricingService.calculateMerchantCommission(totalPrice);
 
                 String trackingCode = generateTrackingCode();
 

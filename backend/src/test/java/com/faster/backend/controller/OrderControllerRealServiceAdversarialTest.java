@@ -89,6 +89,10 @@ class OrderControllerRealServiceAdversarialTest {
                 pricingService, "deliveryRatePerKm", new BigDecimal("0.50"));
         ReflectionTestUtils.setField(
                 pricingService, "deliveryMinFee", new BigDecimal("1.50"));
+        ReflectionTestUtils.setField(
+                pricingService, "driverCommissionRate", new BigDecimal("0.20"));
+        ReflectionTestUtils.setField(
+                pricingService, "merchantCommissionRate", new BigDecimal("0.10"));
 
         OrderService orderService = new OrderService(
                 orderRepository, userRepository, locationService,

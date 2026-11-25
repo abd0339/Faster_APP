@@ -52,12 +52,6 @@ public class LedgerService {
     @Autowired
     private LedgerService self;
 
-    // ─── Commission rates ─────────────────────────────
-    private static final BigDecimal DRIVER_COMMISSION_RATE =
-            new BigDecimal("0.20");
-    private static final BigDecimal MERCHANT_COMMISSION_RATE =
-            new BigDecimal("0.10");
-
     // FIX: @Scheduled(zone="Asia/Beirut") below only controls WHEN the
     // job fires — it does NOT change what an unzoned LocalDate.now()
     // call inside the method body resolves to, which is the JVM's
@@ -113,10 +107,12 @@ public class LedgerService {
             return null;
         }
 
-        // Commission = 20% of delivery fee
-        BigDecimal commission = order.getDeliveryFee()
-                .multiply(DRIVER_COMMISSION_RATE)
-                .setScale(2, RoundingMode.HALF_UP);
+        // Commission — rate now lives on PricingService (shared with
+        // OrderService's own estimate of this same figure at order
+        // creation, so the two can no longer silently disagree — see
+        // PricingService.calculateDriverCommission's own doc).
+        BigDecimal commission = pricingService
+                .calculateDriverCommission(order.getDeliveryFee());
 
         // Current debt from users table (source of truth)
         BigDecimal currentDebt = driver.getDebtAmount() != null
@@ -138,7 +134,8 @@ public class LedgerService {
                 .amount(commission)
                 .balanceAfter(newDebt)
                 .description(
-                        "Commission 20% of delivery fee $"
+                        "Commission " + formatRatePercent(pricingService.getDriverCommissionRate())
+                        + " of delivery fee $"
                         + order.getDeliveryFee()
                         + " for order "
                         + order.getTrackingCode())
@@ -403,10 +400,10 @@ public class LedgerService {
         userRepository.findByIdForUpdate(merchant.getId())
                 .orElseThrow(() -> new NotFoundException("Merchant not found"));
 
-        // Commission = 10% of daily sales
-        BigDecimal commission = dailySales
-                .multiply(MERCHANT_COMMISSION_RATE)
-                .setScale(2, RoundingMode.HALF_UP);
+        // Commission — rate now lives on PricingService (see
+        // recordDriverCommission's identical comment above).
+        BigDecimal commission = pricingService.calculateMerchantCommission(dailySales);
+        String ratePercent = formatRatePercent(pricingService.getMerchantCommissionRate());
 
         // Get current merchant ledger balance
         BigDecimal currentBalance = ledgerRepository
@@ -426,7 +423,7 @@ public class LedgerService {
                 .amount(commission)
                 .balanceAfter(newBalance)
                 .description(
-                        "Daily commission 10% of $"
+                        "Daily commission " + ratePercent + " of $"
                         + dailySales + " sales on "
                         + startOfDay.toLocalDate())
                 .build();
@@ -445,10 +442,10 @@ public class LedgerService {
                         "date", startOfDay.toLocalDate().toString(),
                         "message", "Merchant " + merchant.getFullName()
                                 + " owes $" + commission
-                                + " (10% of $" + dailySales + ")"));
+                                + " (" + ratePercent + " of $" + dailySales + ")"));
 
-        log.info("🏪 Merchant {} commission: ${} (10% of ${} sales)",
-                merchant.getFullName(), commission, dailySales);
+        log.info("🏪 Merchant {} commission: ${} ({} of ${} sales)",
+                merchant.getFullName(), commission, ratePercent, dailySales);
 
         return saved;
     }
@@ -580,5 +577,18 @@ public class LedgerService {
                 "currency", "USD",
                 "from", from != null ? from.toString() : "all time",
                 "to", to != null ? to.toString() : "now");
+    }
+
+    // FIX: the ledger description/notification text for both commission
+    // types used to hardcode "20%"/"10%" as literal strings — if either
+    // rate were ever changed (now both live on PricingService), the
+    // debited amount would update correctly but these strings would
+    // keep saying the old percentage forever, a self-inconsistent audit
+    // record for a real-money ledger. Formatting from the rate itself
+    // means the text can't drift from the math that produced it.
+    private String formatRatePercent(BigDecimal rate) {
+        return rate.multiply(new BigDecimal("100"))
+                .stripTrailingZeros()
+                .toPlainString() + "%";
     }
 }
