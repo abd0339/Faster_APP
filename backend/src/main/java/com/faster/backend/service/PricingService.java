@@ -339,6 +339,16 @@ public class PricingService {
     // ─────────────────────────────────────────────────
     public String validateO2OPrice(BigDecimal totalPrice) {
 
+        // FIX: compareTo below is safe regardless of scale, but a
+        // rejection message concatenates totalPrice directly — that
+        // calls BigDecimal.toString(), which (unlike compareTo) DOES
+        // have to format every digit of the scale, so a huge-scale
+        // value is expensive there too. This used to be safe only
+        // because every caller happened to already call
+        // rejectIfScaleIsDangerous first; guarding here too means this
+        // method defends itself regardless of what a caller does.
+        rejectIfScaleIsDangerous(totalPrice);
+
         if (totalPrice.compareTo(o2oMinPrice) < 0) {
             throw new BusinessException(
                     "Order price must be at least $" + o2oMinPrice);
@@ -370,6 +380,10 @@ public class PricingService {
     // reaches persistence and overflows them.
     // ─────────────────────────────────────────────────
     public void validateDirectDeliveryItemValue(BigDecimal itemValue) {
+        // See validateO2OPrice's identical guard above for why this
+        // method must not rely on the caller having already checked.
+        rejectIfScaleIsDangerous(itemValue);
+
         if (itemValue.compareTo(directDeliveryMaxItemValue) > 0) {
             throw new BusinessException(
                     "Declared item value of $" + itemValue

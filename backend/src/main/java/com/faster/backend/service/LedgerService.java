@@ -216,19 +216,9 @@ public class LedgerService {
         // scale must be rejected explicitly before it runs.
         pricingService.rejectIfScaleIsDangerous(amountPaid);
 
-        BigDecimal currentDebt = driver.getDebtAmount() != null
-                ? driver.getDebtAmount()
-                : BigDecimal.ZERO;
-
         // New balance after payment
-        BigDecimal newBalance = currentDebt
-                .subtract(amountPaid)
-                .setScale(2, RoundingMode.HALF_UP);
-
-        // Cannot go below zero
-        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
-            newBalance = BigDecimal.ZERO;
-        }
+        BigDecimal newBalance = applyPaymentFlooredAtZero(
+                driver.getDebtAmount(), amountPaid);
 
         // ─── Create credit ledger entry ───────────────
         LedgerEntry entry = LedgerEntry.builder()
@@ -478,19 +468,8 @@ public class LedgerService {
         // forces scale realignment regardless of magnitude.
         pricingService.rejectIfScaleIsDangerous(amountPaid);
 
-        BigDecimal currentBalance = ledgerRepository
-                .getLatestBalance(merchantId);
-        if (currentBalance == null) {
-            currentBalance = BigDecimal.ZERO;
-        }
-
-        BigDecimal newBalance = currentBalance
-                .subtract(amountPaid)
-                .setScale(2, RoundingMode.HALF_UP);
-
-        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
-            newBalance = BigDecimal.ZERO;
-        }
+        BigDecimal newBalance = applyPaymentFlooredAtZero(
+                ledgerRepository.getLatestBalance(merchantId), amountPaid);
 
         LedgerEntry entry = LedgerEntry.builder()
                 .user(merchant)
@@ -577,6 +556,25 @@ public class LedgerService {
                 "currency", "USD",
                 "from", from != null ? from.toString() : "all time",
                 "to", to != null ? to.toString() : "now");
+    }
+
+    // FIX: "default null balance to ZERO -> subtract the payment ->
+    // round -> never let it go negative" was copy-pasted identically in
+    // both settleDriverDebt and settleMerchantCommission — the same
+    // pattern PricingService.calculateDistanceFee was already unified
+    // for ("a bug fix to the clamping/rounding logic had to land in
+    // both"). A future settlement type (e.g. a refund entry) now has
+    // one implementation to reuse instead of a third copy to write.
+    private BigDecimal applyPaymentFlooredAtZero(
+            BigDecimal currentBalance, BigDecimal amountPaid) {
+        BigDecimal current = currentBalance != null ? currentBalance : BigDecimal.ZERO;
+        BigDecimal newBalance = current
+                .subtract(amountPaid)
+                .setScale(2, RoundingMode.HALF_UP);
+        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            newBalance = BigDecimal.ZERO;
+        }
+        return newBalance;
     }
 
     // FIX: the ledger description/notification text for both commission
