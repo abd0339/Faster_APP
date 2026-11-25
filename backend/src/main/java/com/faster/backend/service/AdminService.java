@@ -127,30 +127,34 @@ public class AdminService {
     // ─────────────────────────────────────────────────
 
     public List<AdminUserResponse> getAllUsers() {
-        return userRepository.findAll()
-                .stream()
-                .map(AdminUserResponse::from)
-                .collect(Collectors.toList());
+        return mapUsers(userRepository.findAll());
     }
 
     public List<AdminUserResponse> getUsersByRole(User.Role role) {
-        return userRepository.findByRole(role)
-                .stream()
-                .map(AdminUserResponse::from)
-                .collect(Collectors.toList());
+        return mapUsers(userRepository.findByRole(role));
     }
 
     public List<AdminUserResponse> getAllDrivers() {
-        return userRepository.findByRole(User.Role.DRIVER)
-                .stream()
-                .map(AdminUserResponse::from)
-                .collect(Collectors.toList());
+        return mapUsers(userRepository.findByRole(User.Role.DRIVER));
     }
 
     public List<AdminUserResponse> getBlockedDrivers() {
-        return userRepository
-                .findByRoleAndIsBlockedTrue(User.Role.DRIVER)
-                .stream()
+        return mapUsers(
+                userRepository.findByRoleAndIsBlockedTrue(User.Role.DRIVER));
+    }
+
+    // FIX: this used to live only in AdminController.getPendingDrivers,
+    // querying userRepository directly instead of going through this
+    // service like every sibling endpoint — easy to miss when changing
+    // how a User is projected into AdminUserResponse, since it doesn't
+    // look like the others.
+    public List<AdminUserResponse> getPendingDrivers() {
+        return mapUsers(userRepository.findByRoleAndVerificationStatus(
+                User.Role.DRIVER, User.DriverVerificationStatus.SUBMITTED));
+    }
+
+    private List<AdminUserResponse> mapUsers(List<User> users) {
+        return users.stream()
                 .map(AdminUserResponse::from)
                 .collect(Collectors.toList());
     }

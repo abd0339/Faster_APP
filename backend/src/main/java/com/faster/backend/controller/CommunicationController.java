@@ -2,9 +2,9 @@ package com.faster.backend.controller;
 
 import com.faster.backend.entity.MessageLog;
 import com.faster.backend.entity.User;
-import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.MessageLogRepository;
 import com.faster.backend.repository.UserRepository;
+import com.faster.backend.security.DriverLookupSupport;
 import com.faster.backend.service.CommunicationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +34,7 @@ public class CommunicationController {
     private final MessageLogRepository messageLogRepository;
     private final UserRepository userRepository;
     private final com.faster.backend.service.PushNotificationService pushNotificationService;
+    private final DriverLookupSupport driverLookupSupport;
 
     // ─────────────────────────────────────────────────
     // POST /api/admin/notify/driver-debt/{driverId}
@@ -46,14 +47,11 @@ public class CommunicationController {
     public ResponseEntity<?> notifyDriverDebt(
             @PathVariable Long driverId) {
 
-        User driver = userRepository.findById(driverId)
-                .orElseThrow(() ->
-                        new NotFoundException("Driver not found"));
-
-        if (driver.getRole() != User.Role.DRIVER) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "User is not a driver"));
-        }
+        // FIX: this used to do its own findById + role check, returning
+        // a manual 400 with a different JSON shape than every other
+        // "not a driver" check in the codebase (see
+        // DriverLookupSupport's own doc).
+        User driver = driverLookupSupport.findDriverOrThrow(driverId);
 
         BigDecimal debt = driver.getDebtAmount() != null
                 ? driver.getDebtAmount()

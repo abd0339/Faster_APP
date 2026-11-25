@@ -14,6 +14,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * PlacesProxyController .
@@ -73,14 +74,10 @@ public class PlacesProxyController {
             @RequestParam(required = false) String language,
             Authentication auth) {
 
-        placesRateLimitService.checkAndRecord(authResolver.resolveIdOrNull(auth));
-
-        if (placesApiKey.isBlank()) {
-            log.error("google.places.api-key is not configured — "
-                    + "address search will not work");
-            return ResponseEntity.status(503).body(Map.of(
-                    "status", "error",
-                    "message", "Address search is temporarily unavailable"));
+        Optional<ResponseEntity<?>> rejected = checkRateLimitAndApiKey(
+                auth, "Address search is temporarily unavailable");
+        if (rejected.isPresent()) {
+            return rejected.get();
         }
 
         if (input == null || input.trim().length() < MIN_INPUT_LENGTH) {
@@ -109,16 +106,7 @@ public class PlacesProxyController {
         builder.queryParam("language",
                 language != null ? language : "en");
 
-        try {
-            Object body = restTemplate.getForObject(
-                    buildUri(builder), Object.class);
-            return ResponseEntity.ok(body);
-        } catch (Exception e) {
-            log.error("Places autocomplete failed: {}", e.getMessage());
-            return ResponseEntity.status(502).body(Map.of(
-                    "status", "error",
-                    "message", "Address search failed. Please try again."));
-        }
+        return callGooglePlaces(builder, "Address search failed. Please try again.");
     }
 
     // ─────────────────────────────────────────────────
@@ -130,12 +118,10 @@ public class PlacesProxyController {
             @RequestParam(required = false) String fields,
             Authentication auth) {
 
-        placesRateLimitService.checkAndRecord(authResolver.resolveIdOrNull(auth));
-
-        if (placesApiKey.isBlank()) {
-            return ResponseEntity.status(503).body(Map.of(
-                    "status", "error",
-                    "message", "Address lookup is temporarily unavailable"));
+        Optional<ResponseEntity<?>> rejected = checkRateLimitAndApiKey(
+                auth, "Address lookup is temporarily unavailable");
+        if (rejected.isPresent()) {
+            return rejected.get();
         }
 
         UriComponentsBuilder builder = UriComponentsBuilder
@@ -147,15 +133,44 @@ public class PlacesProxyController {
                 .queryParam("fields",
                         fields != null ? fields : "geometry,formatted_address");
 
+        return callGooglePlaces(builder, "Address lookup failed. Please try again.");
+    }
+
+    // FIX: autocomplete and details each independently repeated this
+    // same boilerplate (rate-limit check, API-key-configured check, the
+    // actual Google call, and the try/catch mapping any failure to a
+    // clean 502) — a change to any of those (e.g. the rate-limit call,
+    // or the unavailable/failed status-code policy) had to be applied
+    // to both by hand. Split into two shared steps rather than one,
+    // since autocomplete's own input-length checks must still run
+    // between them (after the rate-limit/API-key check, before the
+    // actual call) exactly as they did before this was deduplicated.
+    private Optional<ResponseEntity<?>> checkRateLimitAndApiKey(
+            Authentication auth, String unavailableMessage) {
+
+        placesRateLimitService.checkAndRecord(authResolver.resolveIdOrNull(auth));
+
+        if (placesApiKey.isBlank()) {
+            log.error("google.places.api-key is not configured — "
+                    + "address search will not work");
+            return Optional.of(ResponseEntity.status(503).body(Map.of(
+                    "status", "error",
+                    "message", unavailableMessage)));
+        }
+        return Optional.empty();
+    }
+
+    private ResponseEntity<?> callGooglePlaces(
+            UriComponentsBuilder builder, String failureMessage) {
         try {
             Object body = restTemplate.getForObject(
                     buildUri(builder), Object.class);
             return ResponseEntity.ok(body);
         } catch (Exception e) {
-            log.error("Places details failed: {}", e.getMessage());
+            log.error("Places call failed: {}", e.getMessage());
             return ResponseEntity.status(502).body(Map.of(
                     "status", "error",
-                    "message", "Address lookup failed. Please try again."));
+                    "message", failureMessage));
         }
     }
 

@@ -72,52 +72,21 @@ public class FileStorageService {
         if (!ALLOWED_SUBFOLDERS.contains(subFolder)) {
             throw new IllegalArgumentException("Invalid upload folder");
         }
-        validateImage(file);
 
-        String extension = getSafeExtension(file.getOriginalFilename());
+        Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path targetDir = root.resolve(subFolder).normalize();
+        String fileName = storeValidatedImage(
+                file, root, targetDir, "Failed to save image");
 
-        try {
-            byte[] head = readHead(file);
-            if (!looksLikeImage(head)) {
-                throw new IllegalArgumentException("File content is not a valid image");
-            }
-
-            Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
-            Path targetDir = root.resolve(subFolder).normalize();
-            Files.createDirectories(targetDir);
-
-            String fileName = UUID.randomUUID() + "." + extension;
-            Path targetPath = targetDir.resolve(fileName).normalize();
-
-            if (!targetPath.startsWith(root)) {
-                throw new IllegalArgumentException("Invalid target path");
-            }
-
-            Files.copy(file.getInputStream(), targetPath,
-                    StandardCopyOption.REPLACE_EXISTING);
-
-            return "/" + uploadDir + "/" + subFolder + "/" + fileName;
-
-        } catch (IOException e) {
-            throw new BusinessException("Failed to save image");
-        }
+        return "/" + uploadDir + "/" + subFolder + "/" + fileName;
     }
 
     public void deleteImage(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) return;
-        try {
-            Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
-            String relative = imageUrl.startsWith("/") ? imageUrl.substring(1) : imageUrl;
-            Path filePath = Paths.get(relative).toAbsolutePath().normalize();
-
-            if (!filePath.startsWith(root)) {
-                log.warn("Refusing to delete path outside upload root: {}", imageUrl);
-                return;
-            }
-            Files.deleteIfExists(filePath);
-        } catch (IOException e) {
-            log.error("Could not delete image: {}", imageUrl);
-        }
+        Path root = Paths.get(uploadDir).toAbsolutePath().normalize();
+        String relative = imageUrl.startsWith("/") ? imageUrl.substring(1) : imageUrl;
+        Path filePath = Paths.get(relative).toAbsolutePath().normalize();
+        deleteStoredFile(root, filePath, "upload");
     }
 
     // ═════════════════════════════════════════════════
@@ -142,39 +111,17 @@ public class FileStorageService {
         if (entityId == null) {
             throw new IllegalArgumentException("entityId is required");
         }
-        validateImage(file);
 
-        String extension = getSafeExtension(file.getOriginalFilename());
+        Path root = Paths.get(privateUploadDir).toAbsolutePath().normalize();
+        Path targetDir = root.resolve(subFolder)
+                .resolve(String.valueOf(entityId))
+                .normalize();
+        String fileName = storeValidatedImage(
+                file, root, targetDir, "Failed to save document");
 
-        try {
-            byte[] head = readHead(file);
-            if (!looksLikeImage(head)) {
-                throw new IllegalArgumentException("File content is not a valid image");
-            }
-
-            Path root = Paths.get(privateUploadDir).toAbsolutePath().normalize();
-            Path targetDir = root.resolve(subFolder)
-                    .resolve(String.valueOf(entityId))
-                    .normalize();
-            Files.createDirectories(targetDir);
-
-            String fileName = UUID.randomUUID() + "." + extension;
-            Path targetPath = targetDir.resolve(fileName).normalize();
-
-            if (!targetPath.startsWith(root)) {
-                throw new IllegalArgumentException("Invalid target path");
-            }
-
-            Files.copy(file.getInputStream(), targetPath,
-                    StandardCopyOption.REPLACE_EXISTING);
-
-            // Relative path stored in DB — NOT servable by nginx,
-            // only resolvable through loadPrivateImage() below.
-            return subFolder + "/" + entityId + "/" + fileName;
-
-        } catch (IOException e) {
-            throw new BusinessException("Failed to save document");
-        }
+        // Relative path stored in DB — NOT servable by nginx,
+        // only resolvable through loadPrivateImage() below.
+        return subFolder + "/" + entityId + "/" + fileName;
     }
 
     /**
@@ -214,23 +161,75 @@ public class FileStorageService {
 
     public void deletePrivateImage(String relativePath) {
         if (relativePath == null || relativePath.isBlank()) return;
-        try {
-            Path root = Paths.get(privateUploadDir).toAbsolutePath().normalize();
-            Path filePath = root.resolve(relativePath).normalize();
-
-            if (!filePath.startsWith(root)) {
-                log.warn("Refusing to delete path outside private root: {}", relativePath);
-                return;
-            }
-            Files.deleteIfExists(filePath);
-        } catch (IOException e) {
-            log.error("Could not delete private document: {}", relativePath);
-        }
+        Path root = Paths.get(privateUploadDir).toAbsolutePath().normalize();
+        Path filePath = root.resolve(relativePath).normalize();
+        deleteStoredFile(root, filePath, "private document");
     }
 
     // ═════════════════════════════════════════════════
     // SHARED HELPERS
     // ═════════════════════════════════════════════════
+
+    /**
+     * Validates, sniffs, and copies an uploaded image into targetDir
+     * (under root), returning the generated filename. saveImage and
+     * savePrivateImage each used to run this same ~35-line pipeline
+     * independently — the path-traversal guard and the magic-byte
+     * sniff are security-relevant, so a future fix to either now only
+     * has to land in one place.
+     */
+    private String storeValidatedImage(
+            MultipartFile file, Path root, Path targetDir, String ioErrorMessage) {
+
+        validateImage(file);
+        String extension = getSafeExtension(file.getOriginalFilename());
+
+        try {
+            byte[] head = readHead(file);
+            if (!looksLikeImage(head)) {
+                throw new IllegalArgumentException("File content is not a valid image");
+            }
+
+            Files.createDirectories(targetDir);
+
+            String fileName = UUID.randomUUID() + "." + extension;
+            Path targetPath = targetDir.resolve(fileName).normalize();
+
+            if (!targetPath.startsWith(root)) {
+                throw new IllegalArgumentException("Invalid target path");
+            }
+
+            Files.copy(file.getInputStream(), targetPath,
+                    StandardCopyOption.REPLACE_EXISTING);
+
+            return fileName;
+
+        } catch (IOException e) {
+            throw new BusinessException(ioErrorMessage);
+        }
+    }
+
+    /**
+     * Verifies filePath is still under root, then deletes it if present.
+     * deleteImage and deletePrivateImage share this skeleton; each still
+     * resolves its own filePath differently (deleteImage's stored
+     * imageUrl embeds the upload dir prefix and resolves relative to the
+     * JVM's working directory, deletePrivateImage's stored relativePath
+     * resolves directly under its own root) — reconciling those two
+     * resolution techniques would mean changing what's already stored in
+     * existing rows, a bigger behavior change than this cleanup covers.
+     */
+    private void deleteStoredFile(Path root, Path filePath, String context) {
+        if (!filePath.startsWith(root)) {
+            log.warn("Refusing to delete {} path outside its root: {}", context, filePath);
+            return;
+        }
+        try {
+            Files.deleteIfExists(filePath);
+        } catch (IOException e) {
+            log.error("Could not delete {}: {}", context, filePath);
+        }
+    }
 
     private void validateImage(MultipartFile file) {
         if (file == null || file.isEmpty()) {

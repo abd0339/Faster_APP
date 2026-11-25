@@ -441,21 +441,8 @@ public class OrderController {
                 Order order = orderService.updateTrackingLocation(
                                 trackingCode, body.get("lat"), body.get("lng"));
 
-                // Still 200 either way (the flag must commit, not roll
-                // back if the location was outside the delivery-distance
-                // cap), but the message and the distanceFlagged field
-                // tell the recipient the truth about whether their
-                // location was actually applied.
-                boolean flagged = Boolean.TRUE.equals(order.getIsDistanceFlagged());
-
-                return ResponseEntity.ok(Map.of(
-                                "message", flagged
-                                                ? "We received your location, but it's outside our delivery area — our team will review it"
-                                                : "Location confirmed",
-                                "trackingCode", order.getTrackingCode(),
-                                "deliveryFee", order.getDeliveryFee(),
-                                "grandTotal", order.getGrandTotal(),
-                                "distanceFlagged", flagged));
+                return ResponseEntity.ok(
+                                buildLocationConfirmationResponse(order, "Location confirmed"));
         }
 
         // ─────────────────────────────────────────────────
@@ -495,17 +482,27 @@ public class OrderController {
                                 orderId, user.getPhone(),
                                 body.get("lat"), body.get("lng"));
 
-                // Same honesty behavior as updateTrackingLocation above.
-                boolean flagged = Boolean.TRUE.equals(order.getIsDistanceFlagged());
+                return ResponseEntity.ok(
+                                buildLocationConfirmationResponse(order, "Delivery location confirmed"));
+        }
 
-                return ResponseEntity.ok(Map.of(
+        // Shared by updateTrackingLocation and confirmMyLocation above —
+        // both report whether the customer's shared location actually
+        // got applied the same "honest" way: still 200 either way (the
+        // flag must commit, not roll back, if the location was outside
+        // the delivery-distance cap), but the message and
+        // distanceFlagged field tell the truth about what happened.
+        private Map<String, Object> buildLocationConfirmationResponse(
+                        Order order, String successMessage) {
+                boolean flagged = Boolean.TRUE.equals(order.getIsDistanceFlagged());
+                return Map.of(
                                 "message", flagged
                                                 ? "We received your location, but it's outside our delivery area — our team will review it"
-                                                : "Delivery location confirmed",
+                                                : successMessage,
                                 "trackingCode", order.getTrackingCode(),
                                 "deliveryFee", order.getDeliveryFee(),
                                 "grandTotal", order.getGrandTotal(),
-                                "distanceFlagged", flagged));
+                                "distanceFlagged", flagged);
         }
 
 }

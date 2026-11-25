@@ -10,6 +10,7 @@ import com.faster.backend.exception.BusinessException;
 import com.faster.backend.exception.NotFoundException;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.security.AuthenticatedUserResolver;
+import com.faster.backend.security.DriverLookupSupport;
 import com.faster.backend.service.AdminService;
 import com.faster.backend.service.FileStorageService;
 import com.faster.backend.service.LedgerService;
@@ -36,6 +37,7 @@ public class AdminController {
         private final FileStorageService fileStorageService;
         private final com.faster.backend.service.OrderFeedbackService feedbackService;
         private final AuthenticatedUserResolver authResolver;
+        private final DriverLookupSupport driverLookupSupport;
 
         private static final java.util.Set<String> VALID_DOC_TYPES = java.util.Set.of(
                         "PROFILE_PHOTO",
@@ -290,14 +292,7 @@ public class AdminController {
         // Admin sees drivers waiting for verification
         @GetMapping("/drivers/pending")
         public ResponseEntity<?> getPendingDrivers() {
-                return ResponseEntity.ok(
-                                userRepository
-                                                .findByRoleAndVerificationStatus(
-                                                                User.Role.DRIVER,
-                                                                User.DriverVerificationStatus.SUBMITTED)
-                                                .stream()
-                                                .map(AdminUserResponse::from)
-                                                .collect(java.util.stream.Collectors.toList()));
+                return ResponseEntity.ok(adminService.getPendingDrivers());
         }
 
         // ─── PATCH /api/admin/drivers/{id}/approve ───────────
@@ -349,13 +344,7 @@ public class AdminController {
                         throw new BusinessException("Invalid document type");
                 }
 
-                User driver = userRepository.findById(driverId)
-                                .orElseThrow(() -> new NotFoundException("Driver not found"));
-
-                if (driver.getRole() != User.Role.DRIVER) {
-                        throw new BusinessException(
-                                        "This user is not a driver");
-                }
+                User driver = driverLookupSupport.findDriverOrThrow(driverId);
 
                 String relativePath = switch (type) {
                         case "PROFILE_PHOTO" -> driver.getDriverPhotoUrl();
