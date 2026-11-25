@@ -25,6 +25,7 @@ import com.faster.backend.exception.BusinessException;
 import com.faster.backend.repository.ItemAddonRepository;
 import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.ModifierOptionRepository;
+import com.faster.backend.repository.OrderItemLineRepository;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
 
@@ -81,6 +82,12 @@ class OrderServiceCoordinateAndPriceValidationTest {
     @Mock
     private ItemAddonRepository addonRepository;
 
+    @Mock
+    private OrderItemLineRepository orderItemLineRepository;
+
+    @Mock
+    private MenuCacheService menuCacheService;
+
     private PricingService pricingService;
     private OrderService orderService;
 
@@ -97,7 +104,8 @@ class OrderServiceCoordinateAndPriceValidationTest {
     @BeforeEach
     void setUp() {
         pricingService = new PricingService(
-                itemRepository, modifierOptionRepository, addonRepository);
+                itemRepository, modifierOptionRepository, addonRepository,
+                orderItemLineRepository, menuCacheService);
         ReflectionTestUtils.setField(pricingService, "maxDeliveryDistanceKm", 6.0);
         ReflectionTestUtils.setField(
                 pricingService, "deliveryBaseFee", new BigDecimal("1.00"));

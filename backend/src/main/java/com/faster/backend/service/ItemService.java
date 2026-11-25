@@ -265,6 +265,14 @@ public class ItemService {
         int count = itemRepository.unsnoozeExpiredItems();
         if (count > 0) {
             log.info("Auto-unsnoozed {} items", count);
+            // FIX: this bulk, cross-merchant update never evicted the
+            // menu cache for any affected merchant (unlike the manual
+            // snoozeItem/unsnoozeItem paths, which both evict correctly)
+            // — an auto-unsnoozed item stayed invisible on the public
+            // menu for up to the cache's 5-minute TTL after it should
+            // have reappeared, every cycle. There's no single merchantId
+            // to scope an eviction to here, so clear every cached menu.
+            menuCacheService.clearAllMenuCaches();
         }
     }
 

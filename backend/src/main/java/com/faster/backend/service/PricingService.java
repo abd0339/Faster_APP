@@ -4,10 +4,12 @@ import com.faster.backend.dto.OrderItemLineRequest;
 import com.faster.backend.entity.Item;
 import com.faster.backend.entity.ItemAddon;
 import com.faster.backend.entity.ModifierOption;
+import com.faster.backend.entity.OrderItemLine;
 import com.faster.backend.exception.BusinessException;
 import com.faster.backend.repository.ItemAddonRepository;
 import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.ModifierOptionRepository;
+import com.faster.backend.repository.OrderItemLineRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -68,6 +70,8 @@ public class PricingService {
     private final ItemRepository itemRepository;
     private final ModifierOptionRepository modifierOptionRepository;
     private final ItemAddonRepository addonRepository;
+    private final OrderItemLineRepository orderItemLineRepository;
+    private final MenuCacheService menuCacheService;
 
     // ─── Delivery fee (LOGISTICS) — distance-based ───
     @Value("${pricing.delivery.base-fee:1.00}")
@@ -227,9 +231,20 @@ public class PricingService {
     // Call ONLY after calculateItemsTotal() has validated
     // availability, and only once per successfully created order.
     // Skips items with unlimited stock (-1).
+    //
+    // Each line is also recorded as an OrderItemLine — without that
+    // record, a later cancellation/dispute-resolution has no way to
+    // know what this order actually contained, so the stock taken
+    // here could never be given back (see restoreStockForOrder).
     // ─────────────────────────────────────────────────
-    public void decrementStockForOrder(List<OrderItemLineRequest> lines) {
+    public void decrementStockForOrder(Long orderId, List<OrderItemLineRequest> lines) {
         if (lines == null) return;
+        // FIX: this used to call itemRepository.decrementStock directly,
+        // bypassing ItemService's cache-evicting wrapper entirely (which
+        // nothing else called either — see ItemService.decrementStock's
+        // own doc). Without eviction here, the public menu kept serving a
+        // stale pre-order stock count for up to the cache's 5-minute TTL.
+        java.util.Set<Long> merchantIdsToEvict = new java.util.HashSet<>();
         for (OrderItemLineRequest line : lines) {
             Item item = itemRepository.findById(line.getItemId())
                     .orElse(null);
@@ -238,8 +253,44 @@ public class PricingService {
                     && item.getStockQuantity() != -1) {
                 itemRepository.decrementStock(
                         line.getItemId(), line.getQuantity());
+                if (item.getMerchant() != null) {
+                    merchantIdsToEvict.add(item.getMerchant().getId());
+                }
+            }
+            orderItemLineRepository.save(OrderItemLine.builder()
+                    .orderId(orderId)
+                    .itemId(line.getItemId())
+                    .quantity(line.getQuantity())
+                    .build());
+        }
+        merchantIdsToEvict.forEach(menuCacheService::evictMenuCache);
+    }
+
+    // ─────────────────────────────────────────────────
+    // Restores stock for every line decrementStockForOrder recorded
+    // for this order — the reverse operation, called when an order
+    // that already decremented stock is cancelled or its dispute is
+    // resolved as voided. Mirrors decrementStockForOrder's own
+    // unlimited-stock (-1) skip so a restore can never push a
+    // genuinely-unlimited item's stockQuantity off of -1.
+    // ─────────────────────────────────────────────────
+    public void restoreStockForOrder(Long orderId) {
+        List<OrderItemLine> lines = orderItemLineRepository.findByOrderId(orderId);
+        java.util.Set<Long> merchantIdsToEvict = new java.util.HashSet<>();
+        for (OrderItemLine line : lines) {
+            Item item = itemRepository.findById(line.getItemId())
+                    .orElse(null);
+            if (item == null) continue;
+            if (item.getStockQuantity() != null
+                    && item.getStockQuantity() != -1) {
+                itemRepository.incrementStock(
+                        line.getItemId(), line.getQuantity());
+                if (item.getMerchant() != null) {
+                    merchantIdsToEvict.add(item.getMerchant().getId());
+                }
             }
         }
+        merchantIdsToEvict.forEach(menuCacheService::evictMenuCache);
     }
 
     // ─────────────────────────────────────────────────

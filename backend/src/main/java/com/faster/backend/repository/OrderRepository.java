@@ -100,6 +100,55 @@ public interface OrderRepository
             @Param("driverId") Long driverId,
             @Param("now") LocalDateTime now);
 
+    // ─── Cancel order (atomic) ────────────────────────
+    // Only succeeds if order is still PENDING — same atomicity
+    // guarantee as assignDriver, in the other direction. A plain
+    // findById -> in-Java status check -> save() here would race
+    // assignDriver: if a driver's accept commits between this
+    // transaction's read and its save(), the stale entity's save
+    // would silently overwrite the just-committed ACCEPTED status
+    // (and driver_id) back to CANCELLED/null.
+    @Modifying
+    @Query("UPDATE Order o SET o.status = 'CANCELLED', " +
+           "o.updatedAt = :now " +
+           "WHERE o.id = :orderId " +
+           "AND o.status = 'PENDING'")
+    int cancelIfPending(
+            @Param("orderId") Long orderId,
+            @Param("now") LocalDateTime now);
+
+    // ─── Dispute order (atomic) ───────────────────────
+    // Same atomicity guarantee as assignDriver/cancelIfPending —
+    // disputeOrder's own pre-checks only reject an ALREADY
+    // CANCELLED/DISPUTED order from a stale read; this WHERE clause
+    // is what actually prevents disputing an order that a concurrent
+    // accept/cancel/status-update just changed underneath it.
+    @Modifying
+    @Query("UPDATE Order o SET o.status = 'DISPUTED', " +
+           "o.disputeReason = :reason, " +
+           "o.updatedAt = :now " +
+           "WHERE o.id = :orderId " +
+           "AND o.status NOT IN ('CANCELLED', 'DISPUTED')")
+    int disputeIfNotTerminal(
+            @Param("orderId") Long orderId,
+            @Param("reason") String reason,
+            @Param("now") LocalDateTime now);
+
+    // ─── Resolve a dispute (atomic) ───────────────────
+    // Only succeeds if the order is still DISPUTED. Used by
+    // OrderService.resolveDispute (admin action) so a dispute can
+    // only be resolved once, same shape as the other 3 guarded
+    // writes above.
+    @Modifying
+    @Query("UPDATE Order o SET o.status = :resolution, " +
+           "o.updatedAt = :now " +
+           "WHERE o.id = :orderId " +
+           "AND o.status = 'DISPUTED'")
+    int resolveIfDisputed(
+            @Param("orderId") Long orderId,
+            @Param("resolution") Order.OrderStatus resolution,
+            @Param("now") LocalDateTime now);
+
     // ─── Count orders by status for merchant ──────────
     @Query("SELECT COUNT(o) FROM Order o " +
            "WHERE o.merchant.id = :merchantId " +

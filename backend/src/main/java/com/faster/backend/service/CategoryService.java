@@ -20,6 +20,7 @@ public class CategoryService {
     private final CategoryRepository categoryRepository;
     private final UserRepository userRepository;
     private final ItemRepository itemRepository;
+    private final MenuCacheService menuCacheService;
 
     // ─── Create ───────────────────────────────────────
     @Transactional
@@ -45,7 +46,9 @@ public class CategoryService {
             existing.setIcon(icon != null ? icon : existing.getIcon());
             existing.setDisplayOrder(
                 displayOrder != null ? displayOrder : existing.getDisplayOrder());
-            return categoryRepository.save(existing);
+            Category saved = categoryRepository.save(existing);
+            menuCacheService.evictMenuCache(merchantId);
+            return saved;
         }
 
         // Brand new row
@@ -58,7 +61,9 @@ public class CategoryService {
                 .isActive(true)
                 .build();
 
-        return categoryRepository.save(category);
+        Category saved = categoryRepository.save(category);
+        menuCacheService.evictMenuCache(merchantId);
+        return saved;
     }
 
     // ─── Get all active categories ────────────────────
@@ -101,7 +106,9 @@ public class CategoryService {
             category.setDisplayOrder(displayOrder);
         }
 
-        return categoryRepository.save(category);
+        Category saved = categoryRepository.save(category);
+        menuCacheService.evictMenuCache(merchantId);
+        return saved;
     }
 
     // ─── Hard delete ──────────────────────────────────
@@ -123,6 +130,7 @@ public class CategoryService {
         }
 
         categoryRepository.delete(category);
+        menuCacheService.evictMenuCache(merchantId);
     }
 
     // ─── Helper ───────────────────────────────────────

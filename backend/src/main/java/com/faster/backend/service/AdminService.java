@@ -12,6 +12,7 @@ import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,17 +31,29 @@ public class AdminService {
     private final OrderRepository orderRepository;
     private final LedgerRepository ledgerRepository;
     private final LedgerService ledgerService;
+    private final OrderService orderService;
+    private final SimpMessagingTemplate messagingTemplate;
+
+    // See LedgerService's identical constant for why this must be
+    // explicit — the JVM's default zone is UTC, not Beirut.
+    private static final java.time.ZoneId BEIRUT =
+            java.time.ZoneId.of("Asia/Beirut");
 
     // ─────────────────────────────────────────────────
     // PLATFORM STATS — Full dashboard overview
     // ─────────────────────────────────────────────────
     public AdminStatsResponse getPlatformStats() {
 
-        // Today range (Asia/Beirut handled by app timezone)
+        // FIX: the comment here used to claim "Asia/Beirut handled by
+        // app timezone", but nothing in the repo actually sets the
+        // JVM's default zone (confirmed UTC) — an unzoned LocalDate.now()
+        // silently used UTC's calendar day, undercounting "today" for
+        // the first ~2 hours after Beirut midnight. Same bug and fix as
+        // LedgerService's scheduled jobs.
         LocalDateTime startOfDay =
-                LocalDate.now().atStartOfDay();
+                LocalDate.now(BEIRUT).atStartOfDay();
         LocalDateTime endOfDay =
-                LocalDate.now().atTime(LocalTime.MAX);
+                LocalDate.now(BEIRUT).atTime(LocalTime.MAX);
 
         // ─── User counts ──────────────────────────────
         long totalUsers    = userRepository.count();
@@ -156,6 +169,19 @@ public class AdminService {
                 .orElseThrow(() -> new NotFoundException("User not found"));
         user.setIsBlocked(true);
         userRepository.save(user);
+
+        // FIX: driver_dashboard_screen.dart already has a handler for a
+        // "BLOCKED" message on /topic/driver/{id} (stops the GPS stream,
+        // disconnects, shows "Account paused") — nothing on the backend
+        // ever sent one, so a driver blocked while already online and
+        // connected got no proactive signal; the block was only
+        // discovered the next time they tried to accept an order.
+        if (user.getRole() == User.Role.DRIVER) {
+            messagingTemplate.convertAndSend(
+                    "/topic/driver/" + userId,
+                    java.util.Map.of("type", "BLOCKED"));
+        }
+
         return AdminUserResponse.from(user);
     }
 
@@ -220,20 +246,15 @@ public class AdminService {
     }
 
     // ─── Resolve dispute ──────────────────────────────
-    @Transactional
+    // FIX: this used to set the status directly with no
+    // state-machine check, no commission recording, and no
+    // broadcast — delegates to OrderService.resolveDispute, which
+    // owns all of an order's lifecycle side effects (ledger,
+    // WebSocket, push), instead of re-implementing a slice of them
+    // here with none of the same guarantees.
     public Order resolveDispute(Long orderId,
                                 Order.OrderStatus resolution) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new NotFoundException(
-                        "Order not found"));
-
-        if (order.getStatus() != Order.OrderStatus.DISPUTED) {
-            throw new BusinessException(
-                    "Order is not in disputed state");
-        }
-
-        order.setStatus(resolution);
-        return orderRepository.save(order);
+        return orderService.resolveDispute(orderId, resolution);
     }
 
     // ─────────────────────────────────────────────────

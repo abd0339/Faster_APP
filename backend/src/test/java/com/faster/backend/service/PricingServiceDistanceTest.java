@@ -21,6 +21,7 @@ import com.faster.backend.exception.BusinessException;
 import com.faster.backend.repository.ItemAddonRepository;
 import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.ModifierOptionRepository;
+import com.faster.backend.repository.OrderItemLineRepository;
 
 /**
  * Covers PricingService.exceedsMaxDeliveryDistance (input-hardening plan,
@@ -39,12 +40,19 @@ class PricingServiceDistanceTest {
     @Mock
     private ItemAddonRepository addonRepository;
 
+    @Mock
+    private OrderItemLineRepository orderItemLineRepository;
+
+    @Mock
+    private MenuCacheService menuCacheService;
+
     private PricingService pricingService;
 
     @BeforeEach
     void setUp() {
         pricingService = new PricingService(
-                itemRepository, modifierOptionRepository, addonRepository);
+                itemRepository, modifierOptionRepository, addonRepository,
+                orderItemLineRepository, menuCacheService);
         // @Value fields are only populated by Spring; this is a plain unit
         // test, so set the field directly to match the configured default
         // (application.properties: delivery.max-distance-km=6.0).

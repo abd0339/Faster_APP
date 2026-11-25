@@ -58,6 +58,20 @@ public class LedgerService {
     private static final BigDecimal MERCHANT_COMMISSION_RATE =
             new BigDecimal("0.10");
 
+    // FIX: @Scheduled(zone="Asia/Beirut") below only controls WHEN the
+    // job fires — it does NOT change what an unzoned LocalDate.now()
+    // call inside the method body resolves to, which is the JVM's
+    // actual default zone (confirmed UTC in this deployment — no TZ
+    // env var or -Duser.timezone flag anywhere in the repo). Beirut is
+    // UTC+2/+3, so for the first ~2 hours after Beirut midnight, an
+    // unzoned "today"/"yesterday" was silently still the day before
+    // the one Beirut had already started. Every LocalDate.now() in
+    // this class that means "today in Beirut" must pass this zone
+    // explicitly — matching the pattern StoreScheduleService already
+    // uses for the same reason.
+    private static final java.time.ZoneId BEIRUT =
+            java.time.ZoneId.of("Asia/Beirut");
+
     // ─────────────────────────────────────────────────
     // DRIVER — Record commission on delivery
     // Called automatically by OrderService when order = DELIVERED
@@ -236,25 +250,46 @@ public class LedgerService {
 
         LedgerEntry saved = ledgerRepository.save(entry);
 
-        // ─── Update driver: reset debt + unblock ──────
+        // FIX: this used to clear isBlocked unconditionally on ANY
+        // payment, including a trivially small partial one — a driver
+        // blocked for $500 could pay $0.01 and be told "Account
+        // reactivated" while still owing $499.99, with no re-block
+        // mechanism anywhere in the codebase. Only a payment that
+        // actually brings the balance to zero reactivates the account;
+        // a partial payment still reduces debtAmount (so it's credited)
+        // but leaves isBlocked untouched.
+        boolean fullySettled = newBalance.compareTo(BigDecimal.ZERO) <= 0;
+
         driver.setDebtAmount(newBalance);
-        driver.setIsBlocked(false);
+        if (fullySettled) {
+            driver.setIsBlocked(false);
+        }
         userRepository.save(driver);
 
-        // ─── Notify driver account is active again ────
+        // ─── Notify driver of the payment ─────────────
         messagingTemplate.convertAndSend(
                 "/topic/driver/" + driverId,
-                Map.of(
-                        "type", "ACCOUNT_REACTIVATED",
-                        "message",
-                        "Payment of $" + amountPaid
-                        + " received. Your account is active. "
-                        + "Remaining balance: $" + newBalance,
-                        "amountPaid", amountPaid,
-                        "remainingDebt", newBalance));
+                fullySettled
+                        ? Map.of(
+                                "type", "ACCOUNT_REACTIVATED",
+                                "message",
+                                "Payment of $" + amountPaid
+                                + " received. Your account is active. "
+                                + "Remaining balance: $" + newBalance,
+                                "amountPaid", amountPaid,
+                                "remainingDebt", newBalance)
+                        : Map.of(
+                                "type", "PARTIAL_PAYMENT_RECEIVED",
+                                "message",
+                                "Payment of $" + amountPaid
+                                + " received. Remaining balance: $" + newBalance
+                                + ". Your account stays paused until the full "
+                                + "balance is settled.",
+                                "amountPaid", amountPaid,
+                                "remainingDebt", newBalance));
 
-        log.info("✅ Driver {} settled ${} | Remaining debt: ${} | Ref: {}",
-                driver.getFullName(), amountPaid, newBalance, paymentReference);
+        log.info("✅ Driver {} settled ${} | Remaining debt: ${} | Fully settled: {} | Ref: {}",
+                driver.getFullName(), amountPaid, newBalance, fullySettled, paymentReference);
 
         return saved;
     }
@@ -287,7 +322,7 @@ public class LedgerService {
                                 "isBlocked",
                                 Boolean.TRUE.equals(
                                         driver.getIsBlocked()),
-                                "date", LocalDate.now().toString(),
+                                "date", LocalDate.now(BEIRUT).toString(),
                                 "message", "Driver "
                                         + driver.getFullName()
                                         + " has outstanding debt of $"
@@ -316,7 +351,7 @@ public class LedgerService {
     public void recordDailyMerchantCommissions() {
 
         // Get yesterday's date range
-        LocalDate yesterday = LocalDate.now().minusDays(1);
+        LocalDate yesterday = LocalDate.now(BEIRUT).minusDays(1);
         LocalDateTime startOfDay = yesterday.atStartOfDay();
         LocalDateTime endOfDay = yesterday.atTime(LocalTime.MAX);
 
@@ -531,11 +566,17 @@ public class LedgerService {
                 ? ledgerRepository.getPlatformRevenueInRange(from, to)
                 : ledgerRepository.getPlatformTotalRevenue();
 
+        // FIX: every other money value in this class is rescaled before
+        // being surfaced (recordDriverCommission, settleDriverDebt,
+        // recordMerchantDailyCommission, settleMerchantCommission all
+        // call setScale) — this raw SUM() aggregate was the one figure
+        // skipping that convention, and a SQL SUM() can come back at a
+        // different scale depending on dialect/driver.
+        totalRevenue = (totalRevenue != null ? totalRevenue : BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
+
         return Map.of(
-                "totalRevenue",
-                totalRevenue != null
-                        ? totalRevenue
-                        : BigDecimal.ZERO,
+                "totalRevenue", totalRevenue,
                 "currency", "USD",
                 "from", from != null ? from.toString() : "all time",
                 "to", to != null ? to.toString() : "now");

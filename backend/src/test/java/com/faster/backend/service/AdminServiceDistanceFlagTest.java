@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import com.faster.backend.entity.Order;
 import com.faster.backend.repository.LedgerRepository;
@@ -37,12 +38,19 @@ class AdminServiceDistanceFlagTest {
     @Mock
     private LedgerService ledgerService;
 
+    @Mock
+    private OrderService orderService;
+
+    @Mock
+    private SimpMessagingTemplate messagingTemplate;
+
     private AdminService adminService;
 
     @BeforeEach
     void setUp() {
         adminService = new AdminService(
-                userRepository, orderRepository, ledgerRepository, ledgerService);
+                userRepository, orderRepository, ledgerRepository, ledgerService,
+                orderService, messagingTemplate);
     }
 
     @Test

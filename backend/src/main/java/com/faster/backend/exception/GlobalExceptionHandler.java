@@ -28,9 +28,22 @@ public class GlobalExceptionHandler {
                     error.getDefaultMessage());
         }
 
+        // FIX: "message" used to be the hardcoded literal "Validation
+        // failed" — the real per-field reason only ever reached the
+        // "errors" map, which the Flutter frontend's ApiService
+        // .getErrorMessage() never reads (only "message"), so every
+        // validation failure showed the user that one generic string
+        // with no field name or reason. Surface the first concrete
+        // field error here instead; "errors" still carries the full
+        // per-field map for a client that wants it.
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .orElse("Validation failed");
+
         return ResponseEntity.badRequest().body(Map.of(
                 "status", "error",
-                "message", "Validation failed",
+                "message", message,
                 "errors", fieldErrors,
                 "timestamp", LocalDateTime.now()));
     }

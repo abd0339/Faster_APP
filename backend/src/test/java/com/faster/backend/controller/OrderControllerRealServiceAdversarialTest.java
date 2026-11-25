@@ -29,12 +29,14 @@ import com.faster.backend.exception.GlobalExceptionHandler;
 import com.faster.backend.repository.ItemAddonRepository;
 import com.faster.backend.repository.ItemRepository;
 import com.faster.backend.repository.ModifierOptionRepository;
+import com.faster.backend.repository.OrderItemLineRepository;
 import com.faster.backend.repository.OrderRepository;
 import com.faster.backend.repository.UserRepository;
 import com.faster.backend.security.AuthenticatedUserResolver;
 import com.faster.backend.service.CommunicationService;
 import com.faster.backend.service.LedgerService;
 import com.faster.backend.service.LocationService;
+import com.faster.backend.service.MenuCacheService;
 import com.faster.backend.service.OrderService;
 import com.faster.backend.service.PricingService;
 import com.faster.backend.service.PushNotificationService;
@@ -64,6 +66,8 @@ class OrderControllerRealServiceAdversarialTest {
     @Mock private ItemRepository itemRepository;
     @Mock private ModifierOptionRepository modifierOptionRepository;
     @Mock private ItemAddonRepository addonRepository;
+    @Mock private OrderItemLineRepository orderItemLineRepository;
+    @Mock private MenuCacheService menuCacheService;
     @Mock private AuthenticatedUserResolver authResolver;
 
     private MockMvc mockMvc;
@@ -76,7 +80,8 @@ class OrderControllerRealServiceAdversarialTest {
     @BeforeEach
     void setUp() {
         PricingService pricingService = new PricingService(
-                itemRepository, modifierOptionRepository, addonRepository);
+                itemRepository, modifierOptionRepository, addonRepository,
+                orderItemLineRepository, menuCacheService);
         ReflectionTestUtils.setField(pricingService, "maxDeliveryDistanceKm", 6.0);
         ReflectionTestUtils.setField(
                 pricingService, "deliveryBaseFee", new BigDecimal("1.00"));

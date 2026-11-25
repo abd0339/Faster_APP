@@ -224,7 +224,7 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
   // ─── BUILD ────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final live = _offers.where((o) => o['isActive'] == true).toList();
+    final live = _offers.where(_isLive).toList();
     return SafeArea(
       child: Stack(
         children: [
@@ -347,6 +347,13 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
 
   Widget _buildCard(Map<String, dynamic> offer) {
     final isActive = offer['isActive'] as bool? ?? false;
+    // FIX: the row's "Live"/"Paused" text used to come straight from
+    // isActive, same bug as the tab count above — a future-dated offer
+    // with isActive==true showed "Live" immediately. isLive still drives
+    // only the text; the toggle switch itself correctly keeps reflecting
+    // isActive (the merchant's own on/off control, separate from whether
+    // the offer's date window has actually started).
+    final isLive = _isLive(offer);
     final offerId = offer['id'] as int;
     final imageUrl = offer['imageUrl'] as String?;
     final hasImage = imageUrl != null && imageUrl.isNotEmpty;
@@ -577,9 +584,9 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    isActive ? 'Live' : 'Paused',
+                    !isActive ? 'Paused' : (isLive ? 'Live' : 'Scheduled'),
                     style: AppTextStyles.caption.copyWith(
-                      color: isActive ? AppColors.accent : AppColors.textHint,
+                      color: isLive ? AppColors.accent : AppColors.textHint,
                     ),
                   ),
                   const Spacer(),
@@ -1265,6 +1272,24 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
     } catch (_) {
       return null;
     }
+  }
+
+  // FIX: "live" used to mean only isActive==true, which is true the
+  // instant an offer is created regardless of its start date — a
+  // future-dated offer (startDate still ahead of now) showed as "Live"
+  // immediately, both in this tab's count/filter and in each offer's own
+  // row badge, before it had actually started. Mirrors the backend's own
+  // GET /api/merchant/offers/live filter (isActive AND startDate<=now
+  // AND endDate>=now), computed client-side here since this screen
+  // already has the full offer list loaded.
+  bool _isLive(dynamic offer) {
+    if (offer['isActive'] != true) return false;
+    final now = DateTime.now();
+    final start = _parseDate(offer['startDate']);
+    final end = _parseDate(offer['endDate']);
+    if (start != null && start.isAfter(now)) return false;
+    if (end != null && end.isBefore(now)) return false;
+    return true;
   }
 
   Future<bool> _confirmDelete(String title) async {

@@ -251,7 +251,7 @@ public class OrderService {
 
                 Order saved = orderRepository.save(order);
 
-                pricingService.decrementStockForOrder(items);
+                pricingService.decrementStockForOrder(saved.getId(), items);
 
                 notifyNearestDrivers(
                                 saved, effectivePickupLat, effectivePickupLng,
@@ -307,10 +307,23 @@ public class OrderService {
                                 .deliveryLat(deliveryLat)
                                 .deliveryLng(deliveryLng)
                                 .deliveryAddress(deliveryAddress)
+                                // FIX: this parameter used to be silently
+                                // dropped — forwarded by the controller from
+                                // the same offlineCustomerPhone field O2O/
+                                // Direct-Delivery use, but never persisted or
+                                // notified here. A ride booked "for someone
+                                // else" left no trace of whose ride it was
+                                // and never told that person it was coming.
+                                .offlineCustomerPhone(recipientPhone)
                                 .customerNotes(customerNotes)
                                 .build();
 
                 Order saved = orderRepository.save(order);
+
+                // No-ops when recipientPhone is null/blank (the common
+                // case — most rides are for the customer themselves, not
+                // booked for someone else).
+                communicationService.sendO2OTrackingLink(saved);
 
                 notifyNearestDrivers(
                                 saved, pickupLat, pickupLng,
@@ -379,8 +392,23 @@ public class OrderService {
                         }
                 }
 
-                order.setStatus(Order.OrderStatus.CANCELLED);
-                Order saved = orderRepository.save(order);
+                // Atomic write — the checks above ran against a snapshot that
+                // can go stale the instant a driver's acceptOrder commits
+                // first; this WHERE-guarded update (not the checks above) is
+                // what actually prevents a lost update. See
+                // OrderRepository.cancelIfPending's own comment.
+                int updated = orderRepository.cancelIfPending(orderId, LocalDateTime.now());
+                if (updated == 0) {
+                        throw new BusinessException(
+                                        "A driver has already accepted this order, so it "
+                                                        + "can no longer be cancelled. Please contact "
+                                                        + "support if there is a problem.");
+                }
+
+                Order saved = orderRepository.findById(orderId)
+                                .orElseThrow(() -> new NotFoundException("Order not found"));
+
+                pricingService.restoreStockForOrder(orderId);
 
                 messagingTemplate.convertAndSend(
                                 "/topic/order/" + saved.getId(),
@@ -558,6 +586,23 @@ public class OrderService {
 
                 User merchant = getUser(merchantId);
 
+                // FIX: this used to feed the raw client-supplied
+                // pickupLat/pickupLng straight into the fee calculation
+                // and the persisted order — unlike createOrder/
+                // quoteLogisticsOrder, which both resolve pickup from the
+                // merchant's own registered store location first. Without
+                // this, a merchant could submit a pickup point close to
+                // the delivery address to understate the computed
+                // distance, shrinking both the delivery fee and the
+                // driver's 20% commission on it while the driver still
+                // has to travel the real distance to the real store.
+                Double effectivePickupLat = merchant.getStoreLatitude() != null
+                                ? merchant.getStoreLatitude() : pickupLat;
+                Double effectivePickupLng = merchant.getStoreLongitude() != null
+                                ? merchant.getStoreLongitude() : pickupLng;
+                String effectivePickupAddress = merchant.getStoreAddress() != null
+                                ? merchant.getStoreAddress() : pickupAddress;
+
                 if (totalPrice == null
                                 || totalPrice.compareTo(BigDecimal.ZERO) <= 0) {
                         throw new BusinessException(
@@ -584,7 +629,7 @@ public class OrderService {
                 }
 
                 BigDecimal actualDeliveryFee = pricingService.calculateDeliveryFee(
-                                pickupLat, pickupLng, deliveryLat, deliveryLng);
+                                effectivePickupLat, effectivePickupLng, deliveryLat, deliveryLng);
 
                 BigDecimal driverCommission = calculateDriverCommission(actualDeliveryFee);
 
@@ -599,7 +644,7 @@ public class OrderService {
                 String trackingCode = generateTrackingCode();
 
                 if (pricingService.exceedsMaxDeliveryDistance(
-                                pickupLat, pickupLng, deliveryLat, deliveryLng)) {
+                                effectivePickupLat, effectivePickupLng, deliveryLat, deliveryLng)) {
                         throw new BusinessException(
                                         "Delivery distance exceeds the maximum allowed distance from pickup");
                 }
@@ -617,9 +662,9 @@ public class OrderService {
                                 .grandTotal(grandTotal)
                                 .driverPaysMerchant(totalPrice)
                                 .merchantCommission(merchantCommission)
-                                .pickupLat(pickupLat)
-                                .pickupLng(pickupLng)
-                                .pickupAddress(pickupAddress)
+                                .pickupLat(effectivePickupLat)
+                                .pickupLng(effectivePickupLng)
+                                .pickupAddress(effectivePickupAddress)
                                 .deliveryLat(deliveryLat)
                                 .deliveryLng(deliveryLng)
                                 .deliveryAddress(offlineLandmark)
@@ -634,7 +679,7 @@ public class OrderService {
                 // quantities, so there's nothing to decrement.
 
                 notifyNearestDrivers(
-                                saved, pickupLat, pickupLng,
+                                saved, effectivePickupLat, effectivePickupLng,
                                 Order.OrderType.LOGISTICS);
 
                 communicationService.sendO2OTrackingLink(saved);
@@ -665,6 +710,19 @@ public class OrderService {
                                         "Your account is blocked. " +
                                                         "Settle your commission debt via OMT or WishMoney, " +
                                                         "then contact admin to reactivate.");
+                }
+
+                // FIX: only goOnline re-checked verificationStatus — once a
+                // driver was online, acceptOrder never re-checked it, so a
+                // driver whose verification an admin later REJECTED (fraud,
+                // fake documents) could keep accepting orders indefinitely
+                // since nothing forces an already-online driver offline when
+                // that happens. Same gate goOnline already applies.
+                if (driver.getVerificationStatus() != User.DriverVerificationStatus.APPROVED) {
+                        throw new BusinessException(
+                                        "Your account is pending verification. " +
+                                                        "Please complete your profile and wait " +
+                                                        "for admin approval.");
                 }
 
                 int updated = orderRepository.assignDriver(
@@ -767,6 +825,12 @@ public class OrderService {
 
                 if (newStatus == Order.OrderStatus.DELIVERED) {
                         ledgerService.recordDriverCommission(saved);
+                } else if (newStatus == Order.OrderStatus.CANCELLED) {
+                        // A merchant/driver-initiated cancellation through this
+                        // endpoint decremented stock at creation the same as a
+                        // customer-initiated one (cancelOrderByCustomer) — give
+                        // it back the same way.
+                        pricingService.restoreStockForOrder(orderId);
                 }
 
                 messagingTemplate.convertAndSend(
@@ -842,10 +906,28 @@ public class OrderService {
                                                         + " and cannot be disputed");
                 }
 
-                order.setStatus(Order.OrderStatus.DISPUTED);
-                order.setDisputeReason(reason);
+                // Atomic write — same race this guards against as
+                // cancelIfPending (a concurrent accept/cancel/status-update
+                // could otherwise be silently overwritten by a stale save()).
+                int updated = orderRepository.disputeIfNotTerminal(
+                                orderId, reason, LocalDateTime.now());
+                if (updated == 0) {
+                        throw new BusinessException(
+                                        "This order was just cancelled or disputed "
+                                                        + "by someone else and cannot be disputed again.");
+                }
 
-                Order saved = orderRepository.save(order);
+                Order saved = orderRepository.findById(orderId)
+                                .orElseThrow(() -> new NotFoundException("Order not found"));
+
+                // FIX: this used to only reach the merchant (if any) and the
+                // admin dispute queue — for a MOBILITY order (no merchant at
+                // all) that meant a dispute produced zero realtime signal to
+                // either the customer or the driver, unlike every other
+                // status-mutating method in this class.
+                messagingTemplate.convertAndSend(
+                                "/topic/order/" + orderId,
+                                buildStatusUpdate(saved));
 
                 if (saved.getMerchant() != null) {
                         messagingTemplate.convertAndSend(
@@ -854,9 +936,113 @@ public class OrderService {
                                         buildStatusUpdate(saved));
                 }
 
+                if (saved.getCustomer() != null) {
+                        pushNotificationService.sendToUser(
+                                        saved.getCustomer().getId(),
+                                        "Order Disputed",
+                                        "Order " + saved.getTrackingCode()
+                                                        + " has been disputed and is under review.",
+                                        Map.of("type", "order_status",
+                                                        "orderId", String.valueOf(orderId),
+                                                        "trackingCode", saved.getTrackingCode()));
+                }
+
+                if (saved.getDriver() != null) {
+                        pushNotificationService.sendToUser(
+                                        saved.getDriver().getId(),
+                                        "Order Disputed",
+                                        "Order " + saved.getTrackingCode()
+                                                        + " has been disputed and is under review.",
+                                        Map.of("type", "order_status",
+                                                        "orderId", String.valueOf(orderId),
+                                                        "trackingCode", saved.getTrackingCode()));
+                }
+
                 messagingTemplate.convertAndSend(
                                 "/topic/admin/disputes",
                                 buildStatusUpdate(saved));
+
+                return saved;
+        }
+
+        // ─────────────────────────────────────────────────
+        // ADMIN RESOLVES A DISPUTE
+        // FIX: AdminService.resolveDispute used to set the status
+        // directly from an unconstrained enum value with no
+        // state-machine check, no driver-commission recording, and no
+        // broadcast at all — an admin resolving a dispute to DELIVERED
+        // silently never paid the driver's commission, and nobody's
+        // app was ever told the dispute was resolved.
+        //
+        // Only two outcomes make real business sense for a disputed
+        // order: the delivery is confirmed to have actually happened
+        // (DELIVERED — records driver commission, same as the normal
+        // delivery path) or the order is voided (CANCELLED — restores
+        // any stock it decremented, same as a customer cancellation).
+        // Any other target status would bypass the state machine for
+        // no real business reason, so it's rejected outright.
+        // ─────────────────────────────────────────────────
+        @Transactional
+        public Order resolveDispute(Long orderId, Order.OrderStatus resolution) {
+
+                if (resolution != Order.OrderStatus.DELIVERED
+                                && resolution != Order.OrderStatus.CANCELLED) {
+                        throw new BusinessException(
+                                        "A dispute can only be resolved to DELIVERED or "
+                                                        + "CANCELLED, not " + resolution);
+                }
+
+                int updated = orderRepository.resolveIfDisputed(
+                                orderId, resolution, LocalDateTime.now());
+                if (updated == 0) {
+                        throw new BusinessException("Order is not in disputed state");
+                }
+
+                Order saved = orderRepository.findById(orderId)
+                                .orElseThrow(() -> new NotFoundException("Order not found"));
+
+                if (resolution == Order.OrderStatus.DELIVERED) {
+                        saved.setDeliveredAt(LocalDateTime.now());
+                        saved = orderRepository.save(saved);
+                        ledgerService.recordDriverCommission(saved);
+                } else {
+                        pricingService.restoreStockForOrder(orderId);
+                }
+
+                messagingTemplate.convertAndSend(
+                                "/topic/order/" + orderId,
+                                buildStatusUpdate(saved));
+
+                if (saved.getMerchant() != null) {
+                        messagingTemplate.convertAndSend(
+                                        "/topic/merchant/" +
+                                                        saved.getMerchant().getId(),
+                                        buildStatusUpdate(saved));
+                }
+
+                String pushBody = "Order " + saved.getTrackingCode()
+                                + " — the dispute has been resolved as " + resolution + ".";
+                if (saved.getCustomer() != null) {
+                        pushNotificationService.sendToUser(
+                                        saved.getCustomer().getId(),
+                                        "Dispute Resolved",
+                                        pushBody,
+                                        Map.of("type", "order_status",
+                                                        "orderId", String.valueOf(orderId),
+                                                        "trackingCode", saved.getTrackingCode()));
+                }
+                if (saved.getDriver() != null) {
+                        pushNotificationService.sendToUser(
+                                        saved.getDriver().getId(),
+                                        "Dispute Resolved",
+                                        pushBody,
+                                        Map.of("type", "order_status",
+                                                        "orderId", String.valueOf(orderId),
+                                                        "trackingCode", saved.getTrackingCode()));
+                }
+
+                log.info("⚖️ Dispute resolved for order {} -> {}",
+                                saved.getTrackingCode(), resolution);
 
                 return saved;
         }

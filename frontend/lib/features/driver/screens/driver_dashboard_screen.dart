@@ -181,6 +181,20 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
       _stopLocationStream();
       WebSocketService.instance.disconnect();
       _showError('Account paused. Pay your balance to continue.');
+    } else if (type == 'ACCOUNT_REACTIVATED') {
+      // FIX: LedgerService sends this on /topic/driver/{id} when an
+      // admin settles the driver's debt in full, but this handler had
+      // no case for it — an already-open dashboard stayed stuck showing
+      // "Account Paused" with Go-Online disabled until the driver
+      // happened to manually refresh, even though the debt was just
+      // cleared. _loadData() re-fetches _debtInfo, which drives that UI.
+      _loadData();
+      _showSuccess(data['message'] as String? ?? 'Your account is active again.');
+    } else if (type == 'PARTIAL_PAYMENT_RECEIVED' || type == 'COMMISSION_RECORDED') {
+      // Also previously silently dropped — refresh the debt/earnings
+      // figures this screen shows without implying the account is
+      // unblocked (only ACCOUNT_REACTIVATED means that).
+      _loadData();
     } else if (type == 'ORDER_UPDATE') {
       _loadData();
     }
