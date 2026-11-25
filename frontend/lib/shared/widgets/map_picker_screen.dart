@@ -78,6 +78,11 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   @override
   void dispose() {
     _geocodeDebounce?.cancel();
+    // FIX: flutter_map requires the caller to dispose any MapController
+    // it creates itself — this was never called, leaking the
+    // controller (and its internal event StreamController) every time
+    // this screen opened and closed.
+    _mapController.dispose();
     super.dispose();
   }
 
