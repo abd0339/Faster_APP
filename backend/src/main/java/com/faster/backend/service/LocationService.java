@@ -40,39 +40,54 @@ public class LocationService {
     }
 
     // ─── Driver goes ONLINE ───────────────────────────
+    // FIX: up to 5 sequential Redis round trips (3 geo adds for HYBRID
+    // + 2 status/mode sets) collapsed into 1 round trip via
+    // executePipelined -- calling the same typed opsFor*() inside the
+    // callback is the documented Spring Data Redis idiom for this: the
+    // callback's thread-bound connection is picked up automatically, so
+    // nothing about how each command is built changes, only that they
+    // batch onto the wire together.
     public void driverOnline(Long driverId,
                              double lat,
                              double lng,
                              String mode) {
 
         String memberId = driverId.toString();
+        String upperMode = mode.toUpperCase();
 
-        switch (mode.toUpperCase()) {
-            case "PACKAGE" -> geoOps()
-                .add(GEO_KEY_PACKAGE,
-                     new Point(lng, lat), memberId);
-            case "PEOPLE" -> geoOps()
-                .add(GEO_KEY_PEOPLE,
-                     new Point(lng, lat), memberId);
-            case "HYBRID" -> {
-                geoOps().add(GEO_KEY_PACKAGE,
-                             new Point(lng, lat), memberId);
-                geoOps().add(GEO_KEY_PEOPLE,
-                             new Point(lng, lat), memberId);
-                geoOps().add(GEO_KEY_HYBRID,
-                             new Point(lng, lat), memberId);
+        redisTemplate.executePipelined((org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
+            switch (upperMode) {
+                case "PACKAGE" -> geoOps()
+                    .add(GEO_KEY_PACKAGE,
+                         new Point(lng, lat), memberId);
+                case "PEOPLE" -> geoOps()
+                    .add(GEO_KEY_PEOPLE,
+                         new Point(lng, lat), memberId);
+                case "HYBRID" -> {
+                    geoOps().add(GEO_KEY_PACKAGE,
+                                 new Point(lng, lat), memberId);
+                    geoOps().add(GEO_KEY_PEOPLE,
+                                 new Point(lng, lat), memberId);
+                    geoOps().add(GEO_KEY_HYBRID,
+                                 new Point(lng, lat), memberId);
+                }
             }
-        }
 
-        redisTemplate.opsForValue()
-            .set(DRIVER_STATUS + driverId,
-                 "ONLINE", 10, TimeUnit.MINUTES);
-        redisTemplate.opsForValue()
-            .set(DRIVER_MODE + driverId,
-                 mode.toUpperCase(), 10, TimeUnit.MINUTES);
+            redisTemplate.opsForValue()
+                .set(DRIVER_STATUS + driverId,
+                     "ONLINE", 10, TimeUnit.MINUTES);
+            redisTemplate.opsForValue()
+                .set(DRIVER_MODE + driverId,
+                     upperMode, 10, TimeUnit.MINUTES);
+            return null;
+        });
     }
 
     // ─── Update driver GPS (called every 5 seconds) ───
+    // FIX: same pipelining as driverOnline above -- this runs once per
+    // online driver every 5 seconds, so its up to 4 sequential round
+    // trips (3 geo adds for HYBRID + 1 expire) were the highest-volume
+    // case of this pattern in the app.
     public void updateLocation(Long driverId,
                                double lat,
                                double lng) {
@@ -82,25 +97,28 @@ public class LocationService {
 
         String memberId = driverId.toString();
 
-        switch (mode) {
-            case "PACKAGE" -> geoOps()
-                .add(GEO_KEY_PACKAGE,
-                     new Point(lng, lat), memberId);
-            case "PEOPLE" -> geoOps()
-                .add(GEO_KEY_PEOPLE,
-                     new Point(lng, lat), memberId);
-            case "HYBRID" -> {
-                geoOps().add(GEO_KEY_PACKAGE,
-                             new Point(lng, lat), memberId);
-                geoOps().add(GEO_KEY_PEOPLE,
-                             new Point(lng, lat), memberId);
-                geoOps().add(GEO_KEY_HYBRID,
-                             new Point(lng, lat), memberId);
+        redisTemplate.executePipelined((org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
+            switch (mode) {
+                case "PACKAGE" -> geoOps()
+                    .add(GEO_KEY_PACKAGE,
+                         new Point(lng, lat), memberId);
+                case "PEOPLE" -> geoOps()
+                    .add(GEO_KEY_PEOPLE,
+                         new Point(lng, lat), memberId);
+                case "HYBRID" -> {
+                    geoOps().add(GEO_KEY_PACKAGE,
+                                 new Point(lng, lat), memberId);
+                    geoOps().add(GEO_KEY_PEOPLE,
+                                 new Point(lng, lat), memberId);
+                    geoOps().add(GEO_KEY_HYBRID,
+                                 new Point(lng, lat), memberId);
+                }
             }
-        }
 
-        redisTemplate.expire(
-            DRIVER_STATUS + driverId, 10, TimeUnit.MINUTES);
+            redisTemplate.expire(
+                DRIVER_STATUS + driverId, 10, TimeUnit.MINUTES);
+            return null;
+        });
     }
 
     // ─── Driver goes OFFLINE ──────────────────────────

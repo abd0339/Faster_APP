@@ -31,6 +31,15 @@ public interface StoreScheduleRepository
             @Param("merchantId") Long merchantId,
             @Param("day") StoreSchedule.DayOfWeek day);
 
+    // ─── Same, batched across several merchants/days in one round trip ─
+    @Query("SELECT s FROM StoreSchedule s " +
+           "WHERE s.merchant.id IN :merchantIds " +
+           "AND s.dayOfWeek IN :days " +
+           "AND s.isClosed = false")
+    List<StoreSchedule> findOpenSchedules(
+            @Param("merchantIds") List<Long> merchantIds,
+            @Param("days") List<StoreSchedule.DayOfWeek> days);
+
     // ─── Check if schedule exists for this day ───────
     boolean existsByMerchantIdAndDayOfWeek(
             Long merchantId,

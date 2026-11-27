@@ -32,21 +32,30 @@ public class PublicMenuController {
         @GetMapping("/all")
         public ResponseEntity<?> getAllMerchants() {
 
-                List<User> merchants = userRepository
-                                .findByRoleAndIsActiveTrue(User.Role.MERCHANT);
+                List<User> activeMerchants = userRepository
+                                .findByRoleAndIsActiveTrue(User.Role.MERCHANT)
+                                .stream()
+                                .filter(m -> !Boolean.TRUE.equals(m.getIsBlocked()))
+                                .toList();
+
+                // One batched schedule query for every merchant here,
+                // instead of 2 queries per merchant via isStoreOpenNow().
+                Map<Long, Boolean> openStatus = scheduleService
+                                .isStoreOpenNowBatch(
+                                                activeMerchants.stream()
+                                                                .map(User::getId)
+                                                                .toList());
 
                 // Return only safe public fields
-                List<Map<String, Object>> result = merchants.stream()
-                                .filter(m -> !Boolean.TRUE.equals(m.getIsBlocked()))
+                List<Map<String, Object>> result = activeMerchants.stream()
                                 .map(m -> {
                                         Map<String, Object> data = new java.util.HashMap<>();
                                         data.put("id", m.getId());
                                         data.put("fullName", m.getFullName());
                                         data.put("phone", m.getPhone());
-                                        // Check if store is open right now
-                                        boolean isOpen = scheduleService
-                                                        .isStoreOpenNow(m.getId());
-                                        data.put("isOpen", isOpen);
+                                        data.put("isOpen",
+                                                        openStatus.getOrDefault(
+                                                                        m.getId(), false));
                                         return data;
                                 })
                                 .toList();

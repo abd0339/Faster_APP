@@ -33,4 +33,20 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    // Same reasoning as pushNotificationExecutor above, for
+    // CommunicationService's Twilio SMS/WhatsApp sends — those ran the
+    // blocking Twilio HTTP call on the request thread (order-creation,
+    // driver-accept, debt notifications), including inside a
+    // transaction in some call paths.
+    @Bean(name = "communicationExecutor")
+    public Executor communicationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("comm-");
+        executor.initialize();
+        return executor;
+    }
 }

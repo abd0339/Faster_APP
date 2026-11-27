@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -48,6 +50,7 @@ public class Offer {
     // ─── Scope: applies to which categories ──────────
     // Empty list = applies to ALL items in the store
     @ManyToMany(fetch = FetchType.EAGER)
+    @Fetch(FetchMode.SUBSELECT)
     @JoinTable(
         name = "offer_categories",
         joinColumns = @JoinColumn(name = "offer_id"),
@@ -60,7 +63,13 @@ public class Offer {
 
     // ─── Scope: applies to which specific items ───────
     // Empty list = not item-specific
+    // FIX: EAGER alone still issued one SELECT per offer per
+    // collection (2N+1 for a list of N offers) -- SUBSELECT makes
+    // Hibernate fetch every offer's rows for this collection in one
+    // extra query (keyed off the same WHERE the owning query used),
+    // so loading N offers is always 3 queries total, not 2N+1.
     @ManyToMany(fetch = FetchType.EAGER)
+    @Fetch(FetchMode.SUBSELECT)
     @JoinTable(
         name = "offer_items",
         joinColumns = @JoinColumn(name = "offer_id"),

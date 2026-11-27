@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -119,6 +120,16 @@ public class CommunicationService {
         // Confirmation only makes the fee more accurate; it is
         // never required for the order to work.
         // ─────────────────────────────────────────────────
+        // FIX: this ran the blocking Twilio HTTP call (postToTwilio) on
+        // the caller's own request thread -- for sendO2OTrackingLink and
+        // sendDriverAssignedNotification below, that caller is
+        // OrderService's createOrder/acceptOrder transaction, the same
+        // kind of blocking-call-inside-a-transaction problem
+        // PushNotificationService.sendToUser was already given @Async
+        // for. Every method here is already a fire-and-forget void with
+        // failures swallowed inside sendMessage's own try/catch, so
+        // dispatching off-thread changes nothing about caller behavior.
+        @Async("communicationExecutor")
         public void sendO2OTrackingLink(Order order) {
                 if (order.getOfflineCustomerPhone() == null
                                 || order.getOfflineCustomerPhone().isBlank())
@@ -174,6 +185,7 @@ public class CommunicationService {
         }
 
         // Same push-first rule as the tracking link above.
+        @Async("communicationExecutor")
         public void sendDriverAssignedNotification(Order order) {
                 if (order.getOfflineCustomerPhone() == null
                                 || order.getOfflineCustomerPhone().isBlank())
@@ -216,6 +228,7 @@ public class CommunicationService {
                                 order.getId(), order.getTrackingCode(), defaultChannel());
         }
 
+        @Async("communicationExecutor")
         public void sendDriverDebtNotification(User driver, String amountDue) {
                 if (driver.getPhone() == null)
                         return;
@@ -233,6 +246,7 @@ public class CommunicationService {
                                 null, null, defaultChannel());
         }
 
+        @Async("communicationExecutor")
         public void sendPlatformAnnouncement(String phone, String announcementText) {
                 if (phone == null || phone.isBlank())
                         return;
@@ -249,6 +263,7 @@ public class CommunicationService {
                                 null, null, defaultChannel());
         }
 
+        @Async("communicationExecutor")
         public void sendOtpMessage(String phone, String messageBody) {
                 sendOtpMessage(phone, messageBody, defaultChannel());
         }
@@ -256,6 +271,7 @@ public class CommunicationService {
         // Explicit channel choice — called when the user taps
         // "Resend via SMS instead" after not receiving the
         // WhatsApp OTP. See AuthService.resendOtp().
+        @Async("communicationExecutor")
         public void sendOtpMessage(String phone, String messageBody, Channel channel) {
                 if (phone == null || phone.isBlank())
                         return;

@@ -70,11 +70,11 @@ public class AdminService {
 
         // Active = all in-progress statuses
         // (not just PENDING — that is waiting for driver)
-        long activeOrders =
-                orderRepository.countByStatus(Order.OrderStatus.ACCEPTED)
-                + orderRepository.countByStatus(Order.OrderStatus.PREPARING)
-                + orderRepository.countByStatus(Order.OrderStatus.READY_FOR_PICKUP)
-                + orderRepository.countByStatus(Order.OrderStatus.PICKED_UP);
+        long activeOrders = orderRepository.countByStatusIn(List.of(
+                Order.OrderStatus.ACCEPTED,
+                Order.OrderStatus.PREPARING,
+                Order.OrderStatus.READY_FOR_PICKUP,
+                Order.OrderStatus.PICKED_UP));
 
         long deliveredOrders = orderRepository.countByStatus(
                 Order.OrderStatus.DELIVERED);

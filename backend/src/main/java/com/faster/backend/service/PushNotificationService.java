@@ -2,11 +2,14 @@ package com.faster.backend.service;
 
 import com.faster.backend.entity.DeviceToken;
 import com.faster.backend.repository.DeviceTokenRepository;
+import com.google.firebase.messaging.BatchResponse;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
+import com.google.firebase.messaging.MulticastMessage;
 import com.google.firebase.messaging.Notification;
+import com.google.firebase.messaging.SendResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,8 +82,83 @@ public class PushNotificationService {
             return;
         }
 
-        for (DeviceToken device : devices) {
-            sendToToken(device.getFcmToken(), title, body, data);
+        // FIX: this used to call sendToToken (one blocking FirebaseMessaging
+        // HTTP call) per device, in a sequential loop — a user logged into
+        // several devices paid for every extra device in added latency.
+        // sendEachForMulticast sends the whole batch (up to 500 tokens) in
+        // one call; a per-token failure in the response is handled exactly
+        // like sendToToken's old catch block did (dead-token cleanup for
+        // UNREGISTERED/INVALID_ARGUMENT, log-and-swallow otherwise).
+        List<String> tokens = devices.stream()
+                .map(DeviceToken::getFcmToken)
+                .toList();
+
+        try {
+            Notification notification = Notification.builder()
+                    .setTitle(title)
+                    .setBody(body)
+                    .build();
+
+            MulticastMessage.Builder messageBuilder = MulticastMessage.builder()
+                    .addAllTokens(tokens)
+                    .setNotification(notification);
+
+            if (data != null) {
+                messageBuilder.putAllData(data);
+            }
+
+            BatchResponse response = FirebaseMessaging.getInstance()
+                    .sendEachForMulticast(messageBuilder.build());
+
+            List<SendResponse> responses = response.getResponses();
+            for (int i = 0; i < responses.size(); i++) {
+                handleSendResponse(tokens.get(i), responses.get(i));
+            }
+
+        } catch (IllegalStateException e) {
+            // FirebaseApp never initialized — same config issue
+            // FirebaseConfig already warns about at startup.
+            // Never let this bubble up and break the caller.
+            log.warn("Push not sent — Firebase not initialized: {}",
+                    e.getMessage());
+        } catch (Exception e) {
+            log.error("❌ Unexpected push failure | error={}", e.getMessage());
+        }
+    }
+
+    // One multicast recipient's outcome — same handling sendToToken's
+    // catch block used to do per blocking call, now per batch entry.
+    private void handleSendResponse(String token, SendResponse response) {
+        if (response.isSuccessful()) {
+            log.info("✅ Push sent | token={}... | messageId={}",
+                    token.substring(0, Math.min(12, token.length())),
+                    response.getMessageId());
+            return;
+        }
+
+        FirebaseMessagingException e = response.getException();
+        MessagingErrorCode code = e != null ? e.getMessagingErrorCode() : null;
+
+        if (code == MessagingErrorCode.UNREGISTERED
+                || code == MessagingErrorCode.INVALID_ARGUMENT) {
+            // Token is dead (app uninstalled, token rotated, malformed) —
+            // clean it up so we stop trying. Routed through
+            // self.removeDeadToken (see the `self` field comment) so the
+            // derived delete query gets its own transaction even when this
+            // runs on sendToUser's @Async thread, which has none of its
+            // own. Guarded separately so a cleanup failure can never
+            // escape and abort the rest of this response loop.
+            try {
+                self.removeDeadToken(token);
+                log.info("🗑️ Removed dead device token after push failure");
+            } catch (Exception cleanupError) {
+                log.warn("Failed to remove dead device token "
+                        + "(will retry on next push): {}",
+                        cleanupError.getMessage());
+            }
+        } else {
+            log.error("❌ Push failed | error={}",
+                    e != null ? e.getMessage() : "unknown");
         }
     }
 

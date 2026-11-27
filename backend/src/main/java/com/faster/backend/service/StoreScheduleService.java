@@ -13,7 +13,9 @@ import java.time.DayOfWeek;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -79,7 +81,23 @@ public class StoreScheduleService {
     // the evening-to-midnight portion) and yesterday's (covering any
     // midnight-to-closeTime portion still running from last night).
     public boolean isStoreOpenNow(Long merchantId) {
-        // Get current day/time in Beirut timezone
+        return Boolean.TRUE.equals(
+                isStoreOpenNowBatch(List.of(merchantId)).get(merchantId));
+    }
+
+    // Same check as isStoreOpenNow, batched across several merchants in
+    // one query instead of one (or, per merchant, two) round trips each
+    // — used by PublicMenuController.getAllMerchants() so a store-browse
+    // listing with N merchants doesn't run 2N schedule queries.
+    public Map<Long, Boolean> isStoreOpenNowBatch(List<Long> merchantIds) {
+        Map<Long, Boolean> result = new HashMap<>();
+        if (merchantIds.isEmpty()) {
+            return result;
+        }
+        for (Long id : merchantIds) {
+            result.put(id, false);
+        }
+
         ZonedDateTime now = ZonedDateTime.now(
             ZoneId.of("Asia/Beirut"));
         LocalTime nowTime = now.toLocalTime();
@@ -87,17 +105,15 @@ public class StoreScheduleService {
         StoreSchedule.DayOfWeek today = toScheduleDay(now.getDayOfWeek());
         StoreSchedule.DayOfWeek yesterday = toScheduleDay(now.getDayOfWeek().minus(1));
 
-        boolean openByTodaysSchedule = scheduleRepository
-                .findOpenSchedule(merchantId, today)
-                .map(s -> isOpenAt(s, nowTime, true))
-                .orElse(false);
+        List<StoreSchedule> schedules = scheduleRepository
+                .findOpenSchedules(merchantIds, List.of(today, yesterday));
 
-        boolean openByLastNightsSchedule = scheduleRepository
-                .findOpenSchedule(merchantId, yesterday)
-                .map(s -> isOpenAt(s, nowTime, false))
-                .orElse(false);
-
-        return openByTodaysSchedule || openByLastNightsSchedule;
+        for (StoreSchedule s : schedules) {
+            if (isOpenAt(s, nowTime, s.getDayOfWeek() == today)) {
+                result.put(s.getMerchant().getId(), true);
+            }
+        }
+        return result;
     }
 
     // isToday=true: checking a schedule against ITS OWN day — the
