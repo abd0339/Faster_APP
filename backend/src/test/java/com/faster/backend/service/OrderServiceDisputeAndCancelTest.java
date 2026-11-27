@@ -110,20 +110,17 @@ class OrderServiceDisputeAndCancelTest {
     @Test
     void cancelOrderByCustomer_restoresStockOnSuccess() {
         Order pending = pendingOrder();
-        Order cancelled = Order.builder()
-                .id(ORDER_ID)
-                .status(Order.OrderStatus.CANCELLED)
-                .customer(customer())
-                .createdAt(pending.getCreatedAt())
-                .build();
 
         when(orderRepository.findById(ORDER_ID))
-                .thenReturn(Optional.of(pending))
-                .thenReturn(Optional.of(cancelled));
+                .thenReturn(Optional.of(pending));
         when(orderRepository.cancelIfPending(eq(ORDER_ID), any())).thenReturn(1);
 
         Order result = orderService.cancelOrderByCustomer(ORDER_ID, CUSTOMER_ID);
 
+        // FIX regression: this used to come back from a stale re-read
+        // (see OrderService.cancelOrderByCustomer's own comment) and would
+        // still report PENDING here even though the DB row was correctly
+        // CANCELLED.
         assertEquals(Order.OrderStatus.CANCELLED, result.getStatus());
         verify(pricingService, times(1)).restoreStockForOrder(ORDER_ID);
     }
@@ -132,7 +129,7 @@ class OrderServiceDisputeAndCancelTest {
 
     @Test
     void disputeOrder_throwsWhenConcurrentChangeWinsTheRace() {
-        when(orderRepository.findById(ORDER_ID))
+        when(orderRepository.findByIdWithDriver(ORDER_ID))
                 .thenReturn(Optional.of(pendingOrder()));
         when(orderRepository.disputeIfNotTerminal(eq(ORDER_ID), any(), any()))
                 .thenReturn(0);
@@ -156,17 +153,9 @@ class OrderServiceDisputeAndCancelTest {
                 .driver(driver)
                 .trackingCode("FST-TEST")
                 .build();
-        Order disputed = Order.builder()
-                .id(ORDER_ID)
-                .status(Order.OrderStatus.DISPUTED)
-                .customer(customer())
-                .driver(driver)
-                .trackingCode("FST-TEST")
-                .build();
 
-        when(orderRepository.findById(ORDER_ID))
-                .thenReturn(Optional.of(pending))
-                .thenReturn(Optional.of(disputed));
+        when(orderRepository.findByIdWithDriver(ORDER_ID))
+                .thenReturn(Optional.of(pending));
         when(orderRepository.disputeIfNotTerminal(eq(ORDER_ID), any(), any()))
                 .thenReturn(1);
 

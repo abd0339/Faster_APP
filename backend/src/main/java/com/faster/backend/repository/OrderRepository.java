@@ -16,15 +16,38 @@ import java.util.Optional;
 public interface OrderRepository
         extends JpaRepository<Order, Long> {
 
+    // ─── Find order by id, with driver eagerly fetched ───
+    // FIX: Order.driver is a lazy @ManyToOne that IS serialized
+    // (unlike merchant/customer, which are @JsonIgnore'd), and
+    // spring.jpa.open-in-view=false means the Hibernate session
+    // backing a plain findById() is long closed by the time Jackson
+    // tries to serialize the response -- any order with a driver
+    // assigned threw LazyInitializationException on the live app
+    // (confirmed: GET /api/orders/{id}, PATCH .../status with
+    // DISPUTED, and every list endpoint below). Call sites that
+    // return the Order entity itself must use this instead of the
+    // plain findById.
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.id = :id")
+    Optional<Order> findByIdWithDriver(@Param("id") Long id);
+
     // ─── Find order by tracking code ─────────────────
-    // Used for O2O tracking link (public endpoint)
-    Optional<Order> findByTrackingCode(String trackingCode);
+    // Used for O2O tracking link (public endpoint) -- same
+    // LazyInitializationException risk as findByIdWithDriver above.
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.trackingCode = :trackingCode")
+    Optional<Order> findByTrackingCode(
+            @Param("trackingCode") String trackingCode);
 
     // ─── All orders for a merchant ────────────────────
-    List<Order> findByMerchantIdOrderByCreatedAtDesc(Long merchantId);
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.merchant.id = :merchantId " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByMerchantIdOrderByCreatedAtDesc(
+            @Param("merchantId") Long merchantId);
 
     // ─── Active orders for a merchant ─────────────────
-    @Query("SELECT o FROM Order o " +
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
            "WHERE o.merchant.id = :merchantId " +
            "AND o.status NOT IN " +
            "('DELIVERED', 'CANCELLED', 'DISPUTED') " +
@@ -33,10 +56,14 @@ public interface OrderRepository
             @Param("merchantId") Long merchantId);
 
     // ─── All orders for a driver ──────────────────────
-    List<Order> findByDriverIdOrderByCreatedAtDesc(Long driverId);
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.driver.id = :driverId " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByDriverIdOrderByCreatedAtDesc(
+            @Param("driverId") Long driverId);
 
     // ─── Active orders for a driver ───────────────────
-    @Query("SELECT o FROM Order o " +
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
            "WHERE o.driver.id = :driverId " +
            "AND o.status NOT IN " +
            "('DELIVERED', 'CANCELLED', 'DISPUTED')")
@@ -44,27 +71,43 @@ public interface OrderRepository
             @Param("driverId") Long driverId);
 
     // ─── All orders for a customer ────────────────────
-    List<Order> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.customer.id = :customerId " +
+           "ORDER BY o.createdAt DESC")
+    List<Order> findByCustomerIdOrderByCreatedAtDesc(
+            @Param("customerId") Long customerId);
 
     // ─── Find by single status ordered ────────────────
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.status = :status " +
+           "ORDER BY o.createdAt DESC")
     List<Order> findByStatusOrderByCreatedAtDesc(
-            Order.OrderStatus status);
+            @Param("status") Order.OrderStatus status);
 
     // ─── Find by multiple statuses ordered ────────────
     // Used by AdminService.getActiveOrders() to return all
     // in-progress orders: PENDING + ACCEPTED + PREPARING
     //                   + READY_FOR_PICKUP + PICKED_UP
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.status IN :statuses " +
+           "ORDER BY o.createdAt DESC")
     List<Order> findByStatusInOrderByCreatedAtDesc(
-            List<Order.OrderStatus> statuses);
+            @Param("statuses") List<Order.OrderStatus> statuses);
 
     // ─── O2O orders with a suspiciously low manual price ─
     // (M3 fix) — review queue, not a block. See PricingService
     // .validateO2OPrice() and OrderService.createO2OOrder().
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.isPriceFlagged = true " +
+           "ORDER BY o.createdAt DESC")
     List<Order> findByIsPriceFlaggedTrueOrderByCreatedAtDesc();
 
     // ─── Orders with a flagged delivery distance ─────────
     // (input-hardening) — review queue, not a block. See
     // PricingService.exceedsMaxDeliveryDistance().
+    @Query("SELECT o FROM Order o LEFT JOIN FETCH o.driver " +
+           "WHERE o.isDistanceFlagged = true " +
+           "ORDER BY o.createdAt DESC")
     List<Order> findByIsDistanceFlaggedTrueOrderByCreatedAtDesc();
 
     // ─── Find pending orders for a merchant ───────────
@@ -168,6 +211,9 @@ public interface OrderRepository
 
     // ─── Count by status ──────────────────────────────
     long countByStatus(Order.OrderStatus status);
+
+    // ─── Count across several statuses in one round trip ─
+    long countByStatusIn(List<Order.OrderStatus> statuses);
 
     // ─── Count orders created in a time range ─────────
     long countByCreatedAtBetween(

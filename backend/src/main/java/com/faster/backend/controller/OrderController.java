@@ -251,7 +251,11 @@ public class OrderController {
                         Authentication auth) {
 
                 User user = authResolver.resolve(auth);
-                Order order = orderRepository.findById(id)
+                // FIX: this returns the Order entity raw; a plain findById's
+                // lazy driver proxy throws LazyInitializationException on
+                // serialization once a driver is assigned (open-in-view is
+                // false) — confirmed live. Must eagerly fetch driver.
+                Order order = orderRepository.findByIdWithDriver(id)
                                 .orElseThrow(() -> new NotFoundException("Order not found"));
 
                 boolean isMerchant = order.getMerchant() != null &&

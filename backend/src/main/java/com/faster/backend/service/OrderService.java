@@ -394,7 +394,8 @@ public class OrderService {
                 // first; this WHERE-guarded update (not the checks above) is
                 // what actually prevents a lost update. See
                 // OrderRepository.cancelIfPending's own comment.
-                int updated = orderRepository.cancelIfPending(orderId, LocalDateTime.now());
+                LocalDateTime now = LocalDateTime.now();
+                int updated = orderRepository.cancelIfPending(orderId, now);
                 if (updated == 0) {
                         throw new BusinessException(
                                         "A driver has already accepted this order, so it "
@@ -402,8 +403,19 @@ public class OrderService {
                                                         + "support if there is a problem.");
                 }
 
-                Order saved = orderRepository.findById(orderId)
-                                .orElseThrow(() -> new NotFoundException("Order not found"));
+                // FIX: re-querying by id here used to return the SAME
+                // stale, already-managed entity from this transaction's
+                // Hibernate session (loaded above) instead of a fresh row
+                // — a bulk @Modifying UPDATE like cancelIfPending writes
+                // straight to the DB without updating that in-memory
+                // instance, so the client-facing response showed "PENDING"
+                // instead of "CANCELLED" even though the DB was correct.
+                // Setting the field the atomic query just persisted avoids
+                // both the staleness and an extra query (same fix as
+                // disputeOrder's identical pattern above).
+                order.setStatus(Order.OrderStatus.CANCELLED);
+                order.setUpdatedAt(now);
+                Order saved = order;
 
                 pricingService.restoreStockForOrder(orderId);
 
@@ -879,8 +891,15 @@ public class OrderService {
                         String reason,
                         Long requesterId) {
 
+                // FIX: this entity is returned raw by the controller (not a
+                // curated field map), so driver must be eagerly fetched —
+                // a disputed order realistically already has one assigned,
+                // and a plain findById's lazy proxy throws
+                // LazyInitializationException when Jackson serializes the
+                // response (confirmed live; spring.jpa.open-in-view is
+                // false).
                 Order order = orderRepository
-                                .findById(orderId)
+                                .findByIdWithDriver(orderId)
                                 .orElseThrow(() -> new NotFoundException("Order not found"));
 
                 boolean isParty = (order.getMerchant() != null &&
@@ -905,16 +924,30 @@ public class OrderService {
                 // Atomic write — same race this guards against as
                 // cancelIfPending (a concurrent accept/cancel/status-update
                 // could otherwise be silently overwritten by a stale save()).
+                LocalDateTime now = LocalDateTime.now();
                 int updated = orderRepository.disputeIfNotTerminal(
-                                orderId, reason, LocalDateTime.now());
+                                orderId, reason, now);
                 if (updated == 0) {
                         throw new BusinessException(
                                         "This order was just cancelled or disputed "
                                                         + "by someone else and cannot be disputed again.");
                 }
 
-                Order saved = orderRepository.findById(orderId)
-                                .orElseThrow(() -> new NotFoundException("Order not found"));
+                // FIX: re-querying by id here used to return a STALE
+                // entity -- order was already loaded into this
+                // transaction's Hibernate session above, and a bulk
+                // @Modifying UPDATE (disputeIfNotTerminal) writes straight
+                // to the DB without touching that already-managed instance,
+                // so Hibernate's identity map handed back the pre-update
+                // object instead of issuing a fresh SELECT (confirmed live:
+                // the HTTP response showed the order's old status and
+                // disputeReason even though the DB row was correctly
+                // DISPUTED). Setting the exact fields the atomic query just
+                // persisted avoids both the staleness and an extra query.
+                order.setStatus(Order.OrderStatus.DISPUTED);
+                order.setDisputeReason(reason);
+                order.setUpdatedAt(now);
+                Order saved = order;
 
                 // FIX: this used to only reach the merchant (if any) and the
                 // admin dispute queue — for a MOBILITY order (no merchant at
