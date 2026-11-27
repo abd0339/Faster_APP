@@ -24,6 +24,7 @@ import '../../../shared/widgets/phone_input_field.dart';
 import '../../../shared/widgets/google_places_search_field.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/notification_bell_button.dart';
+import '../../../shared/mixins/lazy_tab_mixin.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
@@ -39,12 +40,12 @@ class CustomerDashboardScreen extends StatefulWidget {
       _CustomerDashboardScreenState();
 }
 
-class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
+class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
+    with LazyTabMixin {
   int _currentIndex = 0;
   List<dynamic> _myOrders = [];
   bool _ordersLoading = false;
   bool _ordersLoadFailed = false;
-  bool _ordersVisited = false;
 
   // Number of skeleton rows shown while the order list is loading — a
   // typical phone screen's worth, independent of how many orders will
@@ -1015,8 +1016,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen> {
   // TAB 3 — MY ORDERS
   // ═══════════════════════════════════════════════
   Widget _buildOrdersTab() {
-    if (!_ordersVisited && _currentIndex == 2) {
-      _ordersVisited = true;
+    if (onFirstVisit(2, _currentIndex)) {
       _loadOrders();
     }
 

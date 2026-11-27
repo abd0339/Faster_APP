@@ -28,6 +28,7 @@ import '../../../shared/widgets/google_places_search_field.dart';
 import '../../../shared/widgets/map_picker_screen.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/notification_bell_button.dart';
+import '../../../shared/mixins/lazy_tab_mixin.dart';
 import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import 'merchant_categories_screen.dart';
@@ -42,14 +43,12 @@ class MerchantDashboardScreen extends StatefulWidget {
       _MerchantDashboardScreenState();
 }
 
-class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
+class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
+    with LazyTabMixin {
   int _currentIndex = 0;
   List<dynamic> _activeOrders = [];
   bool _isLoading = true;
   bool _loadFailed = false;
-  bool _menuVisited = false;
-  bool _offersVisited = false;
-  bool _scheduleVisited = false;
 
   // Merchant's own location (auto-detected)
   double? _merchantLat;
@@ -303,32 +302,14 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     );
   }
 
-  Widget _buildMenuTab() {
-    if (!_menuVisited && _currentIndex == 2) {
-      _menuVisited = true;
-    }
-    return _menuVisited
-        ? const MerchantCategoriesScreen()
-        : const SizedBox.shrink();
-  }
+  Widget _buildMenuTab() =>
+      lazyTab(2, _currentIndex, () => const MerchantCategoriesScreen());
 
-  Widget _buildOffersTab() {
-    if (!_offersVisited && _currentIndex == 3) {
-      _offersVisited = true;
-    }
-    return _offersVisited
-        ? const MerchantOffersScreen()
-        : const SizedBox.shrink();
-  }
+  Widget _buildOffersTab() =>
+      lazyTab(3, _currentIndex, () => const MerchantOffersScreen());
 
-  Widget _buildScheduleTab() {
-    if (!_scheduleVisited && _currentIndex == 4) {
-      _scheduleVisited = true;
-    }
-    return _scheduleVisited
-        ? const MerchantScheduleScreen()
-        : const SizedBox.shrink();
-  }
+  Widget _buildScheduleTab() =>
+      lazyTab(4, _currentIndex, () => const MerchantScheduleScreen());
 
   // Wraps the first few recent-order cards in a staggered fade/slide
   // entrance, skipped entirely under the platform's reduced-motion setting.
@@ -486,7 +467,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     double? o2oDeliveryLat;
     double? o2oDeliveryLng;
     final priceCtrl = TextEditingController();
-    final feeCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
 
     // State
@@ -506,6 +486,15 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
     Map<String, dynamic>? foundCustomer;
     String? whatsappAvailable; // 'yes' | 'no' | null
 
+    // FIX: replaces the old editable-but-ignored feeCtrl field — the
+    // backend always computes the real delivery fee server-side
+    // (deliberately never sent from the client), so a merchant typing a
+    // number into that field had no effect on what was actually
+    // charged. Mirrors customer_dashboard_screen.dart's identical fix:
+    // a live, read-only, server-quoted fee display instead.
+    double? quotedFee;
+    bool isQuotingFee = false;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
@@ -515,6 +504,48 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
+          // Fetches the real, server-computed delivery fee once both
+          // pickup and delivery coordinates are known — purely for
+          // display, same as customer_dashboard_screen.dart's identical
+          // helper: the backend recomputes the fee when the order is
+          // actually created, so a stale or failed quote here can never
+          // affect what's charged. Stays null (and the display falls
+          // back to "Set both locations") for the non-O2O "standard
+          // order" flow, which has no UI to set a delivery pin at all —
+          // an honest reflection of the backend's own min-fee fallback
+          // for missing coordinates, not a new gap this introduces.
+          Future<void> fetchDeliveryFee() async {
+            if (pickupLat == null ||
+                pickupLng == null ||
+                o2oDeliveryLat == null ||
+                o2oDeliveryLng == null) {
+              return;
+            }
+            setSheet(() => isQuotingFee = true);
+            try {
+              final res = await ApiService.instance.post(
+                ApiConstants.quoteDeliveryFee,
+                data: {
+                  'pickupLat': pickupLat,
+                  'pickupLng': pickupLng,
+                  'deliveryLat': o2oDeliveryLat,
+                  'deliveryLng': o2oDeliveryLng,
+                },
+              );
+              final data = res.data as Map<String, dynamic>;
+              final fee = data['deliveryFee'];
+              setSheet(() {
+                quotedFee = fee is num ? fee.toDouble() : null;
+                isQuotingFee = false;
+              });
+            } catch (_) {
+              // Quote failed — leave the fee blank rather than showing
+              // a wrong number. The order still works; the real fee
+              // comes back on creation.
+              setSheet(() => isQuotingFee = false);
+            }
+          }
+
           // ─── Detect merchant GPS ─────────────────
           Future<void> detectPickup() async {
             setSheet(() => isDetectingPickup = true);
@@ -523,6 +554,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
               if (pos == null) return;
               pickupLat = pos.latitude;
               pickupLng = pos.longitude;
+              fetchDeliveryFee();
               try {
                 final r = await dio.Dio().get(
                   'https://nominatim.openstreetmap.org/reverse',
@@ -577,7 +609,6 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
           // ─── Create the order ────────────────────
           Future<void> createOrder() async {
             final price = double.tryParse(priceCtrl.text.trim());
-            final fee = double.tryParse(feeCtrl.text.trim());
             if (price == null || price <= 0) {
               AppToast.error(context, 'Enter a valid order price');
               return;
@@ -1188,6 +1219,7 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                                   o2oDeliveryLat = result.lat;
                                   o2oDeliveryLng = result.lng;
                                 });
+                                fetchDeliveryFee();
                               }
                             },
                             child: Container(
@@ -1442,22 +1474,52 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
+                          // FIX: replaces an editable-but-ignored field
+                          // — the backend always computes the real
+                          // delivery fee from distance, for both the
+                          // O2O and the non-O2O order path, so nothing
+                          // the merchant typed here ever had any
+                          // effect. Mirrors
+                          // customer_dashboard_screen.dart's identical
+                          // fix: a live, read-only, server-quoted fee.
                           Expanded(
-                            child: AppInput(
-                              controller: feeCtrl,
-                              hint: '2.00',
-                              label: 'Delivery Fee \$',
-                              prefixIcon: Icons.delivery_dining_outlined,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                      decimal: true),
-                              // NEW — for O2O specifically, this
-                              // field is read-only and ignored: the
-                              // backend always computes delivery
-                              // fee from real distance. Left active
-                              // for the non-O2O manual-address flow
-                              // for now (separate, still-open item).
-                              readOnly: isO2O,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.glassWhite,
+                                borderRadius: BorderRadius.circular(14),
+                                border:
+                                    Border.all(color: AppColors.glassBorder),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Delivery Fee',
+                                      style: AppTextStyles.caption),
+                                  const SizedBox(height: 4),
+                                  if (isQuotingFee)
+                                    const SizedBox(
+                                      height: 18,
+                                      width: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppColors.primary),
+                                    )
+                                  else
+                                    Text(
+                                      quotedFee != null
+                                          ? '\$${quotedFee!.toStringAsFixed(2)}'
+                                          : 'Set both locations',
+                                      style: quotedFee != null
+                                          ? AppTextStyles.headlineSmall
+                                              .copyWith(color: AppColors.accent)
+                                          : AppTextStyles.caption.copyWith(
+                                              color: AppColors.textHint),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ]),
