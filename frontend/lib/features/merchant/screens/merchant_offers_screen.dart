@@ -592,6 +592,14 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
     Set<int> selectedCatIds = {};
     Set<int> selectedItemIds = {};
 
+    void toggleId(Set<int> ids, int id) {
+      if (ids.contains(id)) {
+        ids.remove(id);
+      } else {
+        ids.add(id);
+      }
+    }
+
     // Pre-fill scope from existing offer
     if (existing != null) {
       final cats = (existing['appliedToCategories'] as List?) ?? [];
@@ -867,13 +875,8 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
                               final catId = cat['id'] as int;
                               final isSelected = selectedCatIds.contains(catId);
                               return GestureDetector(
-                                onTap: () => setSheet(() {
-                                  if (isSelected) {
-                                    selectedCatIds.remove(catId);
-                                  } else {
-                                    selectedCatIds.add(catId);
-                                  }
-                                }),
+                                onTap: () =>
+                                    setSheet(() => toggleId(selectedCatIds, catId)),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 150),
                                   padding: const EdgeInsets.symmetric(
@@ -963,13 +966,8 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
                                   final isSel =
                                       selectedItemIds.contains(itemId);
                                   return GestureDetector(
-                                    onTap: () => setSheet(() {
-                                      if (isSel) {
-                                        selectedItemIds.remove(itemId);
-                                      } else {
-                                        selectedItemIds.add(itemId);
-                                      }
-                                    }),
+                                    onTap: () => setSheet(
+                                        () => toggleId(selectedItemIds, itemId)),
                                     child: Container(
                                       margin: const EdgeInsets.only(bottom: 8),
                                       padding: const EdgeInsets.all(12),
