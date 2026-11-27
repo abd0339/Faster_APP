@@ -282,19 +282,30 @@ class _MerchantDashboardScreenState extends State<MerchantDashboardScreen>
             ]),
             const SizedBox(height: 24),
             Expanded(
-              child: _activeOrders.isEmpty
-                  ? (_loadFailed
-                      ? AppErrorState(
-                          message: "Couldn't load orders",
-                          onRetry: _loadData,
-                        )
-                      : _buildEmptyState(Icons.receipt_long_rounded,
-                          'No orders yet', 'Orders will appear here'))
-                  : ListView.separated(
-                      itemCount: _activeOrders.length,
+              // Skeletons only on a first load, matching the Home tab --
+              // without this, a lazy first visit here briefly flashed
+              // "No orders yet" before the initial load finished.
+              child: _isLoading && _activeOrders.isEmpty
+                  ? ListView.separated(
+                      itemCount: _recentOrdersSkeletonCount,
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (_, i) => _buildOrderCard(_activeOrders[i]),
-                    ),
+                      itemBuilder: (_, __) => const AppSkeletonCard(),
+                    )
+                  : _activeOrders.isEmpty
+                      ? (_loadFailed
+                          ? AppErrorState(
+                              message: "Couldn't load orders",
+                              onRetry: _loadData,
+                            )
+                          : _buildEmptyState(Icons.receipt_long_rounded,
+                              'No orders yet', 'Orders will appear here'))
+                      : ListView.separated(
+                          itemCount: _activeOrders.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, i) =>
+                              _buildOrderCard(_activeOrders[i]),
+                        ),
             ),
           ],
         ),
