@@ -11,6 +11,7 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/image_source_sheet.dart';
 
 class MerchantItemsScreen extends StatefulWidget {
   final Map<String, dynamic> category;
@@ -68,135 +69,11 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
     }
 
     // On Mobile: show Camera / Gallery choice
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.glassBorder,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('Add Photo', style: AppTextStyles.headlineLarge),
-              const SizedBox(height: 20),
-
-              // Camera option
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx, ImageSource.camera),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassWhite,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.camera_alt_rounded,
-                          color: AppColors.primary,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Take a Photo',
-                              style: AppTextStyles.headlineSmall),
-                          Text('Use your camera',
-                              style: AppTextStyles.bodyMedium),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Gallery option
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.glassWhite,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.photo_library_rounded,
-                          color: AppColors.accent,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Choose from Gallery',
-                              style: AppTextStyles.headlineSmall),
-                          Text('Pick an existing photo',
-                              style: AppTextStyles.bodyMedium),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Cancel
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  alignment: Alignment.center,
-                  child: Text(
-                    'Cancel',
-                    style: AppTextStyles.labelLarge
-                        .copyWith(color: AppColors.textHint),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final source = await showImageSourceSheet(
+      context,
+      title: 'Add Photo',
+      cameraSubtitle: 'Use your camera',
+      gallerySubtitle: 'Pick an existing photo',
     );
 
     if (source == null) return;
@@ -559,6 +436,15 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
   }) {
     final hasImage = imageUrl != null && imageUrl.isNotEmpty;
 
+    Widget body;
+    if (isUploading) {
+      body = _imageSectionUploading();
+    } else if (hasImage) {
+      body = _imageSectionWithImage(imageUrl);
+    } else {
+      body = _imageSectionEmpty();
+    }
+
     return GestureDetector(
       onTap: () => _pickAndUploadImage(itemId),
       child: ClipRRect(
@@ -566,88 +452,91 @@ class _MerchantItemsScreenState extends State<MerchantItemsScreen> {
         child: SizedBox(
           width: double.infinity,
           height: hasImage ? 180 : 72,
-          child: isUploading
-              // ─── Uploading state ───────────────
-              ? Container(
-                  color: AppColors.glassWhite,
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const CircularProgressIndicator(
-                            color: AppColors.primary, strokeWidth: 2),
-                        const SizedBox(height: 8),
-                        Text('Uploading...', style: AppTextStyles.bodyMedium),
-                      ],
-                    ),
-                  ),
-                )
-              : hasImage
-                  // ─── Has image ─────────────────
-                  ? Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.network(
-                          '${ApiConstants.baseUrl}$imageUrl',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: AppColors.glassWhite,
-                            child: const Center(
-                              child: Icon(Icons.broken_image_outlined,
-                                  color: AppColors.textHint, size: 32),
-                            ),
-                          ),
-                        ),
-                        // Edit overlay
-                        Positioned(
-                          bottom: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color:
-                                  AppColors.background.withValues(alpha: 0.8),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.edit_rounded,
-                                    color: AppColors.primary, size: 14),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Change photo',
-                                  style: AppTextStyles.caption.copyWith(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  // ─── No image ──────────────────
-                  : Container(
-                      color: AppColors.glassWhite,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.add_photo_alternate_outlined,
-                              color: AppColors.primary, size: 22),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Add photo (optional)',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+          child: body,
         ),
+      ),
+    );
+  }
+
+  Widget _imageSectionUploading() {
+    return Container(
+      color: AppColors.glassWhite,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(
+                color: AppColors.primary, strokeWidth: 2),
+            const SizedBox(height: 8),
+            Text('Uploading...', style: AppTextStyles.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _imageSectionWithImage(String imageUrl) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.network(
+          '${ApiConstants.baseUrl}$imageUrl',
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            color: AppColors.glassWhite,
+            child: const Center(
+              child: Icon(Icons.broken_image_outlined,
+                  color: AppColors.textHint, size: 32),
+            ),
+          ),
+        ),
+        // Edit overlay
+        Positioned(
+          bottom: 8,
+          right: 8,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.background.withValues(alpha: 0.8),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.edit_rounded,
+                    color: AppColors.primary, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  'Change photo',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _imageSectionEmpty() {
+    return Container(
+      color: AppColors.glassWhite,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.add_photo_alternate_outlined,
+              color: AppColors.primary, size: 22),
+          const SizedBox(width: 8),
+          Text(
+            'Add photo (optional)',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.primary,
+            ),
+          ),
+        ],
       ),
     );
   }

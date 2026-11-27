@@ -23,6 +23,47 @@ import '../../auth/bloc/auth_bloc.dart';
 import '../../auth/bloc/auth_event.dart';
 import '../../auth/bloc/auth_state.dart';
 
+class _StatusStage {
+  final String next;
+  final String nextLabel;
+  final IconData nextIcon;
+  final String successMsg;
+
+  const _StatusStage({
+    required this.next,
+    required this.nextLabel,
+    required this.nextIcon,
+    required this.successMsg,
+  });
+}
+
+const _statusStages = <String, _StatusStage>{
+  'ACCEPTED': _StatusStage(
+    next: 'PREPARING',
+    nextLabel: 'Merchant Preparing',
+    nextIcon: Icons.restaurant_menu_rounded,
+    successMsg: 'Merchant is preparing!',
+  ),
+  'PREPARING': _StatusStage(
+    next: 'READY_FOR_PICKUP',
+    nextLabel: 'Ready for Pickup',
+    nextIcon: Icons.inventory_2_outlined,
+    successMsg: 'Order is ready!',
+  ),
+  'READY_FOR_PICKUP': _StatusStage(
+    next: 'PICKED_UP',
+    nextLabel: 'Picked Up',
+    nextIcon: Icons.delivery_dining,
+    successMsg: 'Picked up — on the way!',
+  ),
+  'PICKED_UP': _StatusStage(
+    next: 'DELIVERED',
+    nextLabel: 'Mark Delivered',
+    nextIcon: Icons.check_circle_outline,
+    successMsg: 'Delivered! Commission recorded.',
+  ),
+};
+
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
 
@@ -398,64 +439,19 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen> {
   }
 
   String _statusSuccessMsg(String s) {
-    switch (s) {
-      case 'PREPARING':
-        return 'Merchant is preparing!';
-      case 'READY_FOR_PICKUP':
-        return 'Order is ready!';
-      case 'PICKED_UP':
-        return 'Picked up — on the way!';
-      case 'DELIVERED':
-        return 'Delivered! Commission recorded.';
-      default:
-        return 'Status updated';
+    for (final stage in _statusStages.values) {
+      if (stage.next == s) return stage.successMsg;
     }
+    return 'Status updated';
   }
 
-  String? _nextStatus(String current) {
-    switch (current) {
-      case 'ACCEPTED':
-        return 'PREPARING';
-      case 'PREPARING':
-        return 'READY_FOR_PICKUP';
-      case 'READY_FOR_PICKUP':
-        return 'PICKED_UP';
-      case 'PICKED_UP':
-        return 'DELIVERED';
-      default:
-        return null;
-    }
-  }
+  String? _nextStatus(String current) => _statusStages[current]?.next;
 
-  String _nextStatusLabel(String current) {
-    switch (current) {
-      case 'ACCEPTED':
-        return 'Merchant Preparing';
-      case 'PREPARING':
-        return 'Ready for Pickup';
-      case 'READY_FOR_PICKUP':
-        return 'Picked Up';
-      case 'PICKED_UP':
-        return 'Mark Delivered';
-      default:
-        return 'Update';
-    }
-  }
+  String _nextStatusLabel(String current) =>
+      _statusStages[current]?.nextLabel ?? 'Update';
 
-  IconData _nextStatusIcon(String current) {
-    switch (current) {
-      case 'ACCEPTED':
-        return Icons.restaurant_menu_rounded;
-      case 'PREPARING':
-        return Icons.inventory_2_outlined;
-      case 'READY_FOR_PICKUP':
-        return Icons.delivery_dining;
-      case 'PICKED_UP':
-        return Icons.check_circle_outline;
-      default:
-        return Icons.update;
-    }
-  }
+  IconData _nextStatusIcon(String current) =>
+      _statusStages[current]?.nextIcon ?? Icons.update;
 
   // ─── BUILD ────────────────────────────────────────
   @override

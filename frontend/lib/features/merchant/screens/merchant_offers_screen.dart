@@ -11,6 +11,7 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_input.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/image_source_sheet.dart';
 
 class MerchantOffersScreen extends StatefulWidget {
   const MerchantOffersScreen({super.key});
@@ -121,7 +122,7 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
       await _doUpload(offerId, ImageSource.gallery);
       return;
     }
-    final src = await _showImageSourceSheet();
+    final src = await showImageSourceSheet(context, cameraLabel: 'Take Photo');
     if (src == null) return;
     await _doUpload(offerId, src);
   }
@@ -152,73 +153,6 @@ class _MerchantOffersScreenState extends State<MerchantOffersScreen>
     } finally {
       if (mounted) setState(() => _uploadingIds.remove(offerId));
     }
-  }
-
-  Future<ImageSource?> _showImageSourceSheet() {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _srcTile(ctx, ImageSource.camera, Icons.camera_alt_rounded,
-                  AppColors.primary, 'Take Photo'),
-              const SizedBox(height: 12),
-              _srcTile(ctx, ImageSource.gallery, Icons.photo_library_rounded,
-                  AppColors.accent, 'Choose from Gallery'),
-              const SizedBox(height: 12),
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  alignment: Alignment.center,
-                  child: Text('Cancel',
-                      style: AppTextStyles.labelLarge
-                          .copyWith(color: AppColors.textHint)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _srcTile(BuildContext ctx, ImageSource src, IconData icon, Color color,
-      String label) {
-    return GestureDetector(
-      onTap: () => Navigator.pop(ctx, src),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.glassWhite,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.glassBorder),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 22),
-            ),
-            const SizedBox(width: 14),
-            Text(label, style: AppTextStyles.headlineSmall),
-          ],
-        ),
-      ),
-    );
   }
 
   // ─── BUILD ────────────────────────────────────────
